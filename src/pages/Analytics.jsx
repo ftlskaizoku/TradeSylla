@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react"
-import { Trade } from "@/api/localStore"
+import { Trade } from "@/api/supabaseStore"
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   PieChart, Pie, Cell, ScatterChart, Scatter,

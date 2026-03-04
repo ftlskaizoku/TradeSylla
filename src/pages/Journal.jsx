@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
-import { Trade } from "@/api/localStore"
+import { Trade } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   Plus, Pencil, Trash2, X, List, CalendarDays,

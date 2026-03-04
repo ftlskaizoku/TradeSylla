@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { Trade, Playbook, SylledgeInsight } from "@/api/localStore"
+import { Trade, Playbook, SylledgeInsight } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   Brain, Sparkles, Send, RefreshCw, TrendingUp, TrendingDown,

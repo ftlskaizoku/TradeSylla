@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { BrokerConnection, Trade } from "@/api/localStore"
+import { BrokerConnection, Trade } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   Wifi, WifiOff, Plus, Trash2, X, RefreshCw,

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useUser } from "@/lib/UserContext"
-import { Trade, Playbook, BacktestSession, BrokerConnection, SylledgeInsight } from "@/api/localStore"
+import { Trade, Playbook, BacktestSession, BrokerConnection, SylledgeInsight } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   User, Key, Palette, Download, Upload, Trash2, Shield,

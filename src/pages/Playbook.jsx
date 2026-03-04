@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Playbook as PlaybookEntity } from "@/api/localStore"
+import { Playbook as PlaybookEntity } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   Plus, Pencil, Trash2, X, ChevronDown, ChevronUp,

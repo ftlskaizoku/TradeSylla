@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { BacktestSession } from "@/api/localStore"
+import { BacktestSession } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   Plus, Play, Trash2, X, ChevronDown, ChevronUp,
