@@ -13,6 +13,7 @@ import Sylledge from "@/pages/Sylledge"
 import Backtesting from "@/pages/Backtesting"
 import BrokerSync from "@/pages/BrokerSync"
 import Settings from "@/pages/Settings"
+import Admin from "@/pages/Admin"
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
 function ProtectedRoute({ children }) {
@@ -47,6 +48,7 @@ function AppRoutes() {
         { path:"Backtesting", El: Backtesting },
         { path:"BrokerSync",  El: BrokerSync  },
         { path:"Settings",    El: Settings    },
+        { path:"Admin",      El: Admin      },
       ].map(({ path, El }) => (
         <Route key={path} path={"/"+path}
           element={

@@ -6,6 +6,8 @@ import {
   Settings, Menu, X, ChevronRight, TrendingUp, Shield, Wifi, CalendarDays
 } from "lucide-react"
 import { useUser } from "@/lib/UserContext"
+import { supabase } from "@/lib/supabase"
+import { useEffect, useRef } from "react"
 
 const navItems = [
   { label: "Dashboard",   icon: LayoutDashboard, page: "Dashboard" },
@@ -23,6 +25,15 @@ export default function Layout({ children, currentPageName }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user } = useUser()
   const location = useLocation()
+  const lastTracked = useRef("")
+
+  // Track page views
+  useEffect(() => {
+    const page = location.pathname.replace("/", "") || "Dashboard"
+    if (!user || lastTracked.current === page) return
+    lastTracked.current = page
+    supabase.from("page_views").insert([{ user_id: user.id, page, referrer: document.referrer || null }]).then()
+  }, [location.pathname, user])
   const closeSidebar = () => setSidebarOpen(false)
 
   const isActive = (page) => {
