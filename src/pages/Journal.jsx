@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
-import { Trade } from "@/api/supabaseStore"
+import { Trade , subscribeToTable } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   Plus, Pencil, Trash2, X, List, CalendarDays,
@@ -433,18 +433,18 @@ function TableView({ trades, onEdit, onDelete }) {
 
 // ─── CSV/XLS Smart Importer ───────────────────────────────────────────────────
 const FIELD_MAP_J = {
-  symbol:     ["symbol","pair","instrument","asset","market","ticker","currency pair","item"],
-  direction:  ["direction","type","side","action","trade type","order type","buy/sell","b/s"],
-  entry_price:["entry price","entry","open price","open","price open","entryprice","entry_price","open rate"],
-  exit_price: ["exit price","exit","close price","close","price close","exitprice","exit_price","close rate"],
-  pnl:        ["pnl","p&l","profit","profit/loss","net profit","net p&l","gain/loss","profit loss","realized pl","realized p&l","net","result"],
-  pips:       ["pips","points","pip","ticks"],
-  entry_time: ["open time","open date","date","time","entry time","entry date","trade date","datetime","opened"],
-  session:    ["session","market session"],
-  timeframe:  ["timeframe","time frame","tf","period"],
-  outcome:    ["outcome","result","win/loss","trade result","status","win loss"],
-  notes:      ["notes","comment","comments","remark","description","note"],
-  quality:    ["quality","rating","score","grade"],
+  symbol:     ["symbol","pair","instrument","asset","market","ticker","currency pair","item","currency","contract"],
+  direction:  ["direction","type","side","action","trade type","order type","buy/sell","b/s","trade direction","position","position type","op type","deal type"],
+  entry_price:["entry price","entry","open price","open","price open","entryprice","entry_price","open rate","price","open_price","entryprice","openprice","entry rate"],
+  exit_price: ["exit price","exit","close price","close","price close","exitprice","exit_price","close rate","close_price","closeprice","exit rate","tp","take profit"],
+  pnl:        ["pnl","p&l","profit","profit/loss","net profit","net p&l","gain/loss","profit loss","realized pl","realized p&l","net","gross profit","gross p&l","pl","profit $","profit usd","profit eur","gain","return","trade p&l","realized","closed p&l"],
+  pips:       ["pips","points","pip","ticks","pip gain","pips gained","pips lost"],
+  entry_time: ["open time","open date","date","time","entry time","entry date","trade date","datetime","opened","open_time","entry_time","date/time","trade time","timestamp","close time","close date"],
+  session:    ["session","market session","trading session"],
+  timeframe:  ["timeframe","time frame","tf","period","chart period","interval"],
+  outcome:    ["outcome","result","win/loss","trade result","status","win loss","trade status","w/l","winning","profit/loss indicator"],
+  notes:      ["notes","comment","comments","remark","description","note","memo","annotation"],
+  quality:    ["quality","rating","score","grade","setup quality","setup rating"],
 }
 function normH(h) { return h.toLowerCase().trim().replace(/[_\-\.]/g," ") }
 
@@ -460,15 +460,31 @@ function safeDate(val) {
   return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
 }
 
-function sanitizeTrade(t) {
-  // Guarantee every field the app needs has a safe value
-  const pnl = safeFloat(t.pnl)
-  let outcome = (t.outcome || "").toUpperCase()
-  if (!["WIN","LOSS","BREAKEVEN"].includes(outcome)) {
-    outcome = pnl > 0 ? "WIN" : pnl < 0 ? "LOSS" : "BREAKEVEN"
+function parseDirection(raw) {
+  if (!raw) return null
+  const d = raw.toString().toUpperCase().trim()
+  if (["BUY","LONG","B","0","OP_BUY","BUY LIMIT","BUY STOP","ACHAT"].some(x => d.includes(x))) return "BUY"
+  if (["SELL","SHORT","S","1","OP_SELL","SELL LIMIT","SELL STOP","VENTE"].some(x => d.includes(x))) return "SELL"
+  return null
+}
+
+function parseOutcome(raw, pnl) {
+  if (raw) {
+    const o = raw.toString().toUpperCase().trim()
+    if (["WIN","W","1","PROFIT","PROFITABLE","WINNER","WON","GAGNÉ","GAGNE"].some(x => o === x || o.includes(x))) return "WIN"
+    if (["LOSS","L","-1","LOSE","LOSING","LOSER","LOST","PERDU"].some(x => o === x || o.includes(x))) return "LOSS"
+    if (["BREAKEVEN","BE","0","EVEN","SCRATCH"].some(x => o === x || o.includes(x))) return "BREAKEVEN"
   }
-  let direction = (t.direction || "").toUpperCase()
-  if (!["BUY","SELL"].includes(direction)) direction = "BUY"
+  // Infer from P&L
+  if (pnl > 0.01)  return "WIN"
+  if (pnl < -0.01) return "LOSS"
+  return "BREAKEVEN"
+}
+
+function sanitizeTrade(t) {
+  const pnl = safeFloat(t.pnl)
+  const outcome   = parseOutcome(t.outcome, pnl)
+  const direction = parseDirection(t.direction) || "BUY"
 
   return {
     symbol:      (t.symbol || "UNKNOWN").trim().toUpperCase() || "UNKNOWN",
@@ -652,7 +668,11 @@ export default function Journal() {
     const safe = data.map(safeTrade).filter(Boolean)
     setTrades(safe.sort((a,b)=>new Date(b.entry_time)-new Date(a.entry_time)))
   }
-  useEffect(() => { loadTrades() }, [])
+  useEffect(() => {
+    loadTrades()
+    const unsub = subscribeToTable('trades', loadTrades)
+    return () => unsub()
+  }, [])
 
   // Unique symbols from actual data
   const symbols = ["ALL", ...Array.from(new Set(trades.map(t=>t.symbol))).sort()]

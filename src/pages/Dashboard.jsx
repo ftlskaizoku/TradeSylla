@@ -6,7 +6,7 @@ import {
   DollarSign, Activity, ArrowUpRight, ArrowDownRight,
   Shield, ChevronRight, Plus, X, Calendar
 } from "lucide-react"
-import { Trade } from "@/api/supabaseStore"
+import { Trade , subscribeToTable } from "@/api/supabaseStore"
 import { useUser } from "@/lib/UserContext"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/toast"
@@ -398,7 +398,11 @@ export default function Dashboard() {
     const safe = data.map(safeTrade).filter(Boolean)
     setTrades(safe.sort((a,b)=>new Date(b.entry_time)-new Date(a.entry_time)))
   }
-  useEffect(() => { loadTrades() }, [])
+  useEffect(() => {
+    loadTrades()
+    const unsub = subscribeToTable('trades', loadTrades)
+    return () => unsub()
+  }, [])
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const wins   = trades.filter(t=>t.outcome==="WIN")

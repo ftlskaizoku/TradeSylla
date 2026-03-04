@@ -1088,9 +1088,28 @@ export default function Settings() {
   }
 
   return (
-    <div className="flex gap-6 h-full">
-      {/* Sidebar */}
-      <div className="w-48 flex-shrink-0">
+    <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+      {/* Mobile: horizontal scrollable tabs */}
+      <div className="md:hidden w-full overflow-x-auto pb-1">
+        <div className="flex gap-2 min-w-max px-1">
+          {PAGES.map(p => {
+            const active = activePage === p.id
+            return (
+              <button key={p.id} onClick={() => handlePageChange(p.id)}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium flex-shrink-0 transition-all"
+                style={{ background: active ? `${p.color}20` : "var(--bg-elevated)",
+                  color: active ? p.color : "var(--text-secondary)",
+                  border: `1px solid ${active ? p.color + "40" : "var(--border)"}` }}>
+                <p.icon size={14}/>
+                {p.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Desktop: vertical sidebar */}
+      <div className="hidden md:block w-48 flex-shrink-0">
         <div className="sticky top-0">
           <p className="text-xs font-semibold uppercase tracking-wider mb-3 px-3" style={{ color:"var(--text-muted)" }}>Settings</p>
           <nav className="space-y-1">
@@ -1112,12 +1131,12 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0 overflow-y-auto">
-        {activePage === "account"    && <AccountPage    user={user} updateUser={updateUser} stats={stats}/>}
-        {activePage === "appearance" && <AppearancePage/>}
-        {activePage === "data"       && <DataPage stats={stats} onStatsRefresh={loadStats}/>}
-        {activePage === "apikeys"    && <APIKeysPage/>}
+      {/* Content — full width on mobile */}
+      <div className="flex-1 min-w-0">
+        {activePage === "account"       && <AccountPage    user={user} updateUser={updateUser} stats={stats}/>}
+        {activePage === "appearance"    && <AppearancePage/>}
+        {activePage === "data"          && <DataPage stats={stats} onStatsRefresh={loadStats}/>}
+        {activePage === "apikeys"       && <APIKeysPage/>}
         {activePage === "notifications" && <NotificationsPage/>}
       </div>
     </div>

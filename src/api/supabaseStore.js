@@ -140,3 +140,31 @@ export async function migrateLocalToSupabase(userId) {
   localStorage.setItem('ts_migrated_' + userId, '1')
   return { migrated: total }
 }
+
+// ── Real-time sync across devices ────────────────────────────────────────────
+// Call this in any page to get live updates when data changes on another device
+// Usage: const unsub = subscribeToTable('trades', () => reloadTrades())
+export function subscribeToTable(table, onChange) {
+  let userId = null
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    if (!session) return
+    userId = session.user.id
+    const channel = supabase
+      .channel(`realtime_${table}_${userId}`)
+      .on('postgres_changes', {
+        event:  '*',
+        schema: 'public',
+        table,
+        filter: `user_id=eq.${userId}`,
+      }, () => onChange())
+      .subscribe()
+    // Store channel ref for cleanup
+    supabase._tradesyllaChannels = supabase._tradesyllaChannels || {}
+    supabase._tradesyllaChannels[table] = channel
+  })
+  // Return unsubscribe function
+  return () => {
+    const ch = supabase._tradesyllaChannels?.[table]
+    if (ch) supabase.removeChannel(ch)
+  }
+}

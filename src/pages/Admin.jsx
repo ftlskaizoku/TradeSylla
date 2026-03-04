@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 
 // ── Admin email — only this account can access the admin page ─────────────────
-const ADMIN_EMAIL = 'flamingoxv7@gmail.com' // ← your email here
+const ADMIN_EMAIL = 'khalifadylla@gmail.com' // ← your email here
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ icon: Icon, label, value, sub, color, trend }) {
@@ -65,16 +65,21 @@ export default function Admin() {
   const [fetching,    setFetching]    = useState(true)
   const [lastRefresh, setLastRefresh] = useState(null)
 
-  // Guard — redirect if not admin
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  // Guard — check session email directly from Supabase
   useEffect(() => {
-    if (!loading && (!user || user.email !== ADMIN_EMAIL)) {
-      navigate('/Dashboard')
-    }
-  }, [user, loading])
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const email = session?.user?.email
+      if (!email) { navigate('/Dashboard'); return }
+      if (email !== ADMIN_EMAIL) { navigate('/Dashboard'); return }
+      setIsAdmin(true)
+    })
+  }, [])
 
   useEffect(() => {
-    if (user?.email === ADMIN_EMAIL) fetchAll()
-  }, [user])
+    if (isAdmin) fetchAll()
+  }, [isAdmin])
 
   const fetchAll = async () => {
     setFetching(true)
@@ -104,13 +109,13 @@ export default function Admin() {
     setFetching(false)
   }
 
-  if (loading || !user) return (
+  if (!isAdmin && !fetching) return (
     <div className="flex items-center justify-center h-64">
       <div className="animate-spin w-8 h-8 rounded-full border-2" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}/>
     </div>
   )
 
-  if (user.email !== ADMIN_EMAIL) return null
+  if (!isAdmin) return null
 
   const s = stats || {}
 
