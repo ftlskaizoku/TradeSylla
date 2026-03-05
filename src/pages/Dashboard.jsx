@@ -6,7 +6,7 @@ import {
   DollarSign, Activity, ArrowUpRight, ArrowDownRight,
   Shield, ChevronRight, Plus, X, Calendar
 } from "lucide-react"
-import { Trade , subscribeToTable } from "@/api/supabaseStore"
+import { Trade, subscribeToTable } from "@/api/supabaseStore"
 import { useUser } from "@/lib/UserContext"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/toast"

@@ -91,16 +91,22 @@ const THEMES = [
   },
 ]
 
-function applyTheme(theme) {
+function applyTheme(theme, customColors) {
   const root = document.documentElement
   Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v))
+  // Apply custom color overrides on top
+  if (customColors) {
+    Object.entries(customColors).forEach(([k, v]) => { if (v) root.style.setProperty(k, v) })
+    localStorage.setItem("ts_custom_colors", JSON.stringify(customColors))
+  }
   localStorage.setItem("ts_theme", theme.id)
 }
 
 function loadSavedTheme() {
   const id = localStorage.getItem("ts_theme") || "dark"
   const theme = THEMES.find(t => t.id === id) || THEMES[0]
-  applyTheme(theme)
+  const customColors = JSON.parse(localStorage.getItem("ts_custom_colors") || "{}")
+  applyTheme(theme, customColors)
   return id
 }
 
@@ -245,11 +251,13 @@ function AccountPage({ user, updateUser, stats }) {
 // ═══════════════════════════════════════════════════════════════════
 function AppearancePage() {
   const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem("ts_theme") || "dark")
-  const [prefsLoaded, setPrefsLoaded]  = useState(false)
   const [defaultTF,   setDefaultTF]    = useState("H1")
   const [defaultSession, setDefaultSession] = useState("LONDON")
   const [showPnlHeader,  setShowPnlHeader]  = useState(true)
   const [compactMode,    setCompactMode]    = useState(false)
+  const [customColors,   setCustomColors]   = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ts_custom_colors") || "{}") } catch { return {} }
+  })
 
   useEffect(()=>{
     const p = JSON.parse(localStorage.getItem("ts_prefs") || "{}")
@@ -257,18 +265,48 @@ function AppearancePage() {
     if (p.defaultSession)   setDefaultSession(p.defaultSession)
     if (p.showPnlHeader !== undefined) setShowPnlHeader(p.showPnlHeader)
     if (p.compactMode   !== undefined) setCompactMode(p.compactMode)
-    setPrefsLoaded(true)
   }, [])
 
   const selectTheme = (theme) => {
     setActiveTheme(theme.id)
-    applyTheme(theme)
+    applyTheme(theme, customColors)
     toast.success(`${theme.name} theme applied!`)
+  }
+
+  const updateColor = (cssVar, value) => {
+    const updated = { ...customColors, [cssVar]: value }
+    setCustomColors(updated)
+    document.documentElement.style.setProperty(cssVar, value)
+    localStorage.setItem("ts_custom_colors", JSON.stringify(updated))
+  }
+
+  const resetColors = () => {
+    setCustomColors({})
+    localStorage.removeItem("ts_custom_colors")
+    const theme = THEMES.find(t => t.id === activeTheme) || THEMES[0]
+    applyTheme(theme, {})
+    toast.success("Colors reset to theme defaults")
   }
 
   const savePrefs = () => {
     localStorage.setItem("ts_prefs", JSON.stringify({ defaultTF, defaultSession, showPnlHeader, compactMode }))
     toast.success("Preferences saved!")
+  }
+
+  const COLOR_PICKERS = [
+    { label:"Accent / Primary",    var:"--accent",          desc:"Main buttons, active states" },
+    { label:"Accent Secondary",    var:"--accent-secondary",desc:"Gradients, charts" },
+    { label:"Win / Profit color",  var:"--accent-success",  desc:"Wins, positive P&L" },
+    { label:"Loss / Danger color", var:"--accent-danger",   desc:"Losses, negative P&L" },
+    { label:"Warning color",       var:"--accent-warning",  desc:"Alerts, cautions" },
+    { label:"Card background",     var:"--bg-card",         desc:"Main card color" },
+    { label:"Page background",     var:"--bg-primary",      desc:"Overall page background" },
+  ]
+
+  // Get current computed value for a CSS var
+  const getCurrentColor = (cssVar) => {
+    if (customColors[cssVar]) return customColors[cssVar]
+    return getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim() || "#6c63ff"
   }
 
   return (
@@ -304,6 +342,52 @@ function AppearancePage() {
               </button>
             )
           })}
+        </div>
+      </div>
+
+      {/* Custom Color Pickers */}
+      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+        <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom:"1px solid var(--border)" }}>
+          <div>
+            <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>Custom Colors</h3>
+            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Override individual colors on top of any theme</p>
+          </div>
+          {Object.keys(customColors).length > 0 && (
+            <button onClick={resetColors} className="text-xs px-3 py-1.5 rounded-lg border" style={{ color:"var(--accent-danger)", borderColor:"var(--accent-danger)", background:"rgba(255,71,87,0.05)" }}>
+              Reset all
+            </button>
+          )}
+        </div>
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {COLOR_PICKERS.map(cp => (
+            <div key={cp.var} className="flex items-center gap-3 p-3 rounded-xl" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+              <div className="relative flex-shrink-0">
+                <div className="w-10 h-10 rounded-xl border-2 overflow-hidden cursor-pointer" style={{ borderColor:"var(--border)" }}>
+                  <input
+                    type="color"
+                    value={getCurrentColor(cp.var)}
+                    onChange={e => updateColor(cp.var, e.target.value)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    style={{ transform:"scale(1.5)" }}
+                  />
+                  <div className="w-full h-full rounded-lg" style={{ background: getCurrentColor(cp.var) }}/>
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium" style={{ color:"var(--text-primary)" }}>{cp.label}</p>
+                <p className="text-xs" style={{ color:"var(--text-muted)" }}>{cp.desc}</p>
+              </div>
+              {customColors[cp.var] && (
+                <button onClick={()=>updateColor(cp.var, "")} className="text-xs px-2 py-1 rounded flex-shrink-0" style={{ color:"var(--text-muted)", background:"var(--bg-card)" }}>✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="px-5 pb-5">
+          <div className="p-3 rounded-xl flex items-center gap-2" style={{ background:"rgba(108,99,255,0.06)", border:"1px solid rgba(108,99,255,0.15)" }}>
+            <Info size={13} style={{ color:"var(--accent)", flexShrink:0 }}/>
+            <p className="text-xs" style={{ color:"var(--text-muted)" }}>Custom colors are applied on top of your selected theme and saved automatically.</p>
+          </div>
         </div>
       </div>
 

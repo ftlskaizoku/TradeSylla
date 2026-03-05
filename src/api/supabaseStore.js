@@ -39,6 +39,42 @@ function localEntity(name) {
   }
 }
 
+// ── Image helpers — store base64 in localStorage, only refs in Supabase ─────────
+function imgKey(id) { return 'ts_img_' + id }
+
+function stripAndCacheImages(payload) {
+  const clean = { ...payload }
+  const imageFields = ['screenshots', 'buy_images', 'sell_images']
+  for (const field of imageFields) {
+    if (!Array.isArray(clean[field])) continue
+    clean[field] = clean[field].map(img => {
+      if (!img || !img.id) return img
+      // If url is base64, cache it locally and store only the ref
+      if (img.url && img.url.startsWith('data:')) {
+        try { localStorage.setItem(imgKey(img.id), img.url) } catch {}
+        return { id: img.id, name: img.name || '', cached: true }
+      }
+      return img
+    })
+  }
+  return clean
+}
+
+function rehydrateImages(record) {
+  if (!record) return record
+  const imageFields = ['screenshots', 'buy_images', 'sell_images']
+  const out = { ...record }
+  for (const field of imageFields) {
+    if (!Array.isArray(out[field])) continue
+    out[field] = out[field].map(img => {
+      if (!img || !img.cached) return img
+      const cached = localStorage.getItem(imgKey(img.id))
+      return cached ? { ...img, url: cached } : img
+    })
+  }
+  return out
+}
+
 // ── Supabase entity factory ───────────────────────────────────────────────────
 function sbEntity(table) {
   return {
@@ -49,33 +85,30 @@ function sbEntity(table) {
       if (filters) Object.entries(filters).forEach(([k, v]) => { if (v) q = q.eq(k, v) })
       const { data, error } = await q
       if (error) { console.error(table, error); return [] }
-      return data || []
+      return (data || []).map(rehydrateImages)
     },
     async get(id) {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return localEntity(table).get(id)
       const { data, error } = await supabase.from(table).select('*').eq('id', id).single()
       if (error) return null
-      return data
+      return rehydrateImages(data)
     },
     async create(payload) {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return localEntity(table).create(payload)
-      // Remove undefined/null screenshots (base64) to avoid size issues — store separately if needed
-      const clean = { ...payload }
-      if (Array.isArray(clean.screenshots) && clean.screenshots.length > 0) {
-        clean.screenshots = clean.screenshots.map(s => ({ id: s.id, name: s.name, url: s.url }))
-      }
+      const clean = stripAndCacheImages(payload)
       const { data, error } = await supabase.from(table).insert([{ ...clean, user_id: session.user.id }]).select().single()
       if (error) { console.error('create', table, error); throw error }
-      return data
+      return rehydrateImages(data)
     },
     async update(id, payload) {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return localEntity(table).update(id, payload)
-      const { data, error } = await supabase.from(table).update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id).select().single()
+      const clean = stripAndCacheImages(payload)
+      const { data, error } = await supabase.from(table).update({ ...clean, updated_at: new Date().toISOString() }).eq('id', id).select().single()
       if (error) { console.error('update', table, error); throw error }
-      return data
+      return rehydrateImages(data)
     },
     async delete(id) {
       const { data: { session } } = await supabase.auth.getSession()

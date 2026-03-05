@@ -586,7 +586,7 @@ export default function Analytics() {
   const [activeTab,  setActiveTab]  = useState("Overview")
   const [filterSym,  setFilterSym]  = useState("ALL")
 
-  useEffect(()=>{ Trade.list().then(d=>setAllTrades(d)) }, [])
+  useEffect(()=>{ Trade.list().then(d=>setAllTrades((d||[]).map(safeTrade).filter(Boolean))) }, [])
 
   const symbols = ["ALL", ...Array.from(new Set(allTrades.map(t=>t.symbol))).sort()]
   const trades  = filterSym==="ALL" ? allTrades : allTrades.filter(t=>t.symbol===filterSym)

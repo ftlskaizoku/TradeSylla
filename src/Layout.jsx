@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { createPageUrl } from "@/utils"
 import {
@@ -7,7 +7,6 @@ import {
 } from "lucide-react"
 import { useUser } from "@/lib/UserContext"
 import { supabase } from "@/lib/supabase"
-import { useEffect, useRef } from "react"
 
 const navItems = [
   { label: "Dashboard",   icon: LayoutDashboard, page: "Dashboard" },

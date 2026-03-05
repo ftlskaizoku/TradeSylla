@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
-import { Trade , subscribeToTable } from "@/api/supabaseStore"
+import { Trade, subscribeToTable } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   Plus, Pencil, Trash2, X, List, CalendarDays,
-  TrendingUp, TrendingDown, Activity, ChevronLeft, ChevronRight
-, Upload, CheckCircle} from "lucide-react"
+  TrendingUp, TrendingDown, Activity, ChevronLeft, ChevronRight,
+  Upload, CheckCircle
+} from "lucide-react"
 
 
 // ─── Trade sanitizer ──────────────────────────────────────────────────────────
@@ -431,131 +432,243 @@ function TableView({ trades, onEdit, onDelete }) {
 
 // ─── Main Journal Page ────────────────────────────────────────────────────────
 
-// ─── CSV/XLS Smart Importer ───────────────────────────────────────────────────
-const FIELD_MAP_J = {
-  symbol:     ["symbol","pair","instrument","asset","market","ticker","currency pair","item","currency","contract"],
-  direction:  ["direction","type","side","action","trade type","order type","buy/sell","b/s","trade direction","position","position type","op type","deal type"],
-  entry_price:["entry price","entry","open price","open","price open","entryprice","entry_price","open rate","price","open_price","entryprice","openprice","entry rate"],
-  exit_price: ["exit price","exit","close price","close","price close","exitprice","exit_price","close rate","close_price","closeprice","exit rate","tp","take profit"],
-  pnl:        ["pnl","p&l","profit","profit/loss","net profit","net p&l","gain/loss","profit loss","realized pl","realized p&l","net","gross profit","gross p&l","pl","profit $","profit usd","profit eur","gain","return","trade p&l","realized","closed p&l"],
-  pips:       ["pips","points","pip","ticks","pip gain","pips gained","pips lost"],
-  entry_time: ["open time","open date","date","time","entry time","entry date","trade date","datetime","opened","open_time","entry_time","date/time","trade time","timestamp","close time","close date"],
-  session:    ["session","market session","trading session"],
-  timeframe:  ["timeframe","time frame","tf","period","chart period","interval"],
-  outcome:    ["outcome","result","win/loss","trade result","status","win loss","trade status","w/l","winning","profit/loss indicator"],
-  notes:      ["notes","comment","comments","remark","description","note","memo","annotation"],
-  quality:    ["quality","rating","score","grade","setup quality","setup rating"],
-}
-function normH(h) { return h.toLowerCase().trim().replace(/[_\-\.]/g," ") }
+// ─── CSV/XLS Smart Importer — Universal Broker Parser ────────────────────────
+//
+// Strategy: instead of exact column matching, we SCORE every column header
+// against every known field and pick the best match. This handles any broker,
+// any language, any column order.
 
-function safeFloat(val) {
-  if (val === undefined || val === null || val === "") return 0
-  const n = parseFloat(String(val).replace(/[^0-9.\-]/g,""))
+const FIELD_SCORES = {
+  symbol: {
+    keywords: ["symbol","pair","instrument","asset","market","ticker","currency","contract","item","devise","paire","actif","marché"],
+    must_not: ["profit","price","time","date","lot","volume","order","deal"]
+  },
+  direction: {
+    keywords: ["direction","type","side","action","operation","deal type","order type","position","sens","côté","opération","transaction type","b/s","buy/sell","long/short"],
+    must_not: ["profit","price","time","date","stop","limit","take","order id"]
+  },
+  entry_price: {
+    keywords: ["entry","open price","open rate","price open","entryprice","open","prix entrée","prix ouverture","entry price","entry rate","rate open","price at open","opening price","ouverture"],
+    must_not: ["close","exit","time","date","take profit","stop loss"]
+  },
+  exit_price: {
+    keywords: ["exit","close price","close rate","price close","exitprice","closing price","close","prix sortie","prix fermeture","exit price","exit rate","rate close","price at close","fermeture","tp","take profit"],
+    must_not: ["open","entry","time","date","stop loss"]
+  },
+  pnl: {
+    keywords: ["profit","p&l","pnl","gain","loss","result","net","pl","bénéfice","perte","résultat","closed p&l","realized","gross profit","profit/loss","profit usd","profit eur","profit $","gain/loss","net p&l","trade p&l","net profit"],
+    must_not: ["factor","open","entry","exit","time","date","position","order"]
+  },
+  pips: {
+    keywords: ["pip","pips","point","points","tick","ticks","pip gain","pip loss","pips gained","pips lost","spread"],
+    must_not: ["profit","price","time","date","order","lot"]
+  },
+  volume: {
+    keywords: ["volume","lot","lots","size","quantity","position size","lot size","units","contracts","qty","vol"],
+    must_not: ["profit","price","time","date","order","deal"]
+  },
+  entry_time: {
+    keywords: ["open time","open date","entry time","entry date","trade date","date","time","datetime","opened","timestamp","date/time","open_time","date ouverture","heure entrée","date entrée","date open","close time","close date"],
+    must_not: []
+  },
+  session: {
+    keywords: ["session","market session","trading session","séance"],
+    must_not: []
+  },
+  timeframe: {
+    keywords: ["timeframe","time frame","tf","period","interval","chart period","frame","période"],
+    must_not: []
+  },
+  outcome: {
+    keywords: ["outcome","result","status","win","loss","win/loss","w/l","résultat","statut","trade result","winning","profit indicator"],
+    must_not: ["profit","price","time","date","order","take","stop"]
+  },
+  notes: {
+    keywords: ["note","notes","comment","comments","remark","description","memo","annotation","commentaire","remarque"],
+    must_not: []
+  },
+}
+
+function scoreHeader(header, fieldDef) {
+  const h = header.toLowerCase().trim().replace(/[_\-\.\/]/g,' ')
+  let score = 0
+  for (const kw of fieldDef.keywords) {
+    if (h === kw)           { score += 10; break }
+    if (h.includes(kw))     { score += 5;  break }
+    if (kw.includes(h) && h.length > 2) { score += 3; break }
+  }
+  if (score > 0) {
+    for (const bad of (fieldDef.must_not || [])) {
+      if (h.includes(bad)) { score -= 3; break }
+    }
+  }
+  return Math.max(0, score)
+}
+
+function buildColumnMap(headers) {
+  // For each field, find the best-scoring column index
+  const map = {}
+  const used = new Set()
+  // Sort fields by specificity (more specific ones first)
+  const fieldOrder = ['outcome','direction','symbol','pnl','entry_price','exit_price','pips','volume','entry_time','session','timeframe','notes']
+  for (const field of fieldOrder) {
+    const def = FIELD_SCORES[field]
+    if (!def) continue
+    let best = -1, bestScore = 0
+    for (let i = 0; i < headers.length; i++) {
+      if (used.has(i)) continue
+      const s = scoreHeader(headers[i], def)
+      if (s > bestScore) { bestScore = s; best = i }
+    }
+    if (best >= 0 && bestScore >= 3) {
+      map[field] = best
+      used.add(best)
+    }
+  }
+  return map
+}
+
+function normalizeDirection(raw) {
+  if (!raw) return null
+  const v = raw.toString().toUpperCase().trim()
+  const BUY_VALS  = ['BUY','LONG','B','0','OP_BUY','ACHAT','HAUSSE','CALL','UP','BUY LIMIT','BUY STOP','1']
+  const SELL_VALS = ['SELL','SHORT','S','1','OP_SELL','VENTE','BAISSE','PUT','DOWN','SELL LIMIT','SELL STOP','0']
+  // exact match first
+  if (BUY_VALS.includes(v))  return 'BUY'
+  if (SELL_VALS.includes(v)) return 'SELL'
+  // partial
+  if (v.includes('BUY') || v.includes('LONG') || v.includes('ACHAT')) return 'BUY'
+  if (v.includes('SELL') || v.includes('SHORT') || v.includes('VENTE')) return 'SELL'
+  return null
+}
+
+function normalizeOutcome(raw, pnl) {
+  if (raw) {
+    const v = raw.toString().toUpperCase().trim()
+    const WIN_VALS  = ['WIN','W','PROFIT','WINNER','WON','WINNING','PROFITABLE','GAGNÉ','GAGNE','YES','TRUE','1','POSITIVE','GREEN']
+    const LOSS_VALS = ['LOSS','L','LOSE','LOSER','LOSING','LOST','PERDU','NO','FALSE','-1','NEGATIVE','RED']
+    const BE_VALS   = ['BREAKEVEN','BE','EVEN','0','SCRATCH','NEUTRAL']
+    if (WIN_VALS.includes(v)  || WIN_VALS.some(x  => v.includes(x))) return 'WIN'
+    if (LOSS_VALS.includes(v) || LOSS_VALS.some(x => v.includes(x))) return 'LOSS'
+    if (BE_VALS.includes(v)   || BE_VALS.some(x   => v.includes(x))) return 'BREAKEVEN'
+  }
+  // Infer from P&L
+  const n = parseFloat(pnl) || 0
+  if (n >  0.001) return 'WIN'
+  if (n < -0.001) return 'LOSS'
+  return 'BREAKEVEN'
+}
+
+function safeNum(val) {
+  if (val === undefined || val === null || val === '') return 0
+  const n = parseFloat(String(val).replace(/[^\d.\-]/g,''))
   return isNaN(n) ? 0 : n
 }
 
 function safeDate(val) {
-  if (!val) return new Date().toISOString()
-  const d = new Date(val)
-  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
+  if (!val || val.toString().trim() === '') return new Date().toISOString()
+  // Try common broker date formats
+  const str = val.toString().trim()
+  // Try native parse first
+  const d1 = new Date(str)
+  if (!isNaN(d1.getTime())) return d1.toISOString()
+  // DD.MM.YYYY or DD/MM/YYYY
+  const m1 = str.match(/^(\d{1,2})[\.\/\-](\d{1,2})[\.\/\-](\d{4})/)
+  if (m1) { const d = new Date(m1[3], m1[2]-1, m1[1]); if (!isNaN(d.getTime())) return d.toISOString() }
+  // YYYY.MM.DD
+  const m2 = str.match(/^(\d{4})[\.\/\-](\d{1,2})[\.\/\-](\d{1,2})/)
+  if (m2) { const d = new Date(m2[1], m2[2]-1, m2[3]); if (!isNaN(d.getTime())) return d.toISOString() }
+  return new Date().toISOString()
 }
 
-function parseDirection(raw) {
-  if (!raw) return null
-  const d = raw.toString().toUpperCase().trim()
-  if (["BUY","LONG","B","0","OP_BUY","BUY LIMIT","BUY STOP","ACHAT"].some(x => d.includes(x))) return "BUY"
-  if (["SELL","SHORT","S","1","OP_SELL","SELL LIMIT","SELL STOP","VENTE"].some(x => d.includes(x))) return "SELL"
-  return null
-}
-
-function parseOutcome(raw, pnl) {
-  if (raw) {
-    const o = raw.toString().toUpperCase().trim()
-    if (["WIN","W","1","PROFIT","PROFITABLE","WINNER","WON","GAGNÉ","GAGNE"].some(x => o === x || o.includes(x))) return "WIN"
-    if (["LOSS","L","-1","LOSE","LOSING","LOSER","LOST","PERDU"].some(x => o === x || o.includes(x))) return "LOSS"
-    if (["BREAKEVEN","BE","0","EVEN","SCRATCH"].some(x => o === x || o.includes(x))) return "BREAKEVEN"
-  }
-  // Infer from P&L
-  if (pnl > 0.01)  return "WIN"
-  if (pnl < -0.01) return "LOSS"
-  return "BREAKEVEN"
-}
-
-function sanitizeTrade(t) {
-  const pnl = safeFloat(t.pnl)
-  const outcome   = parseOutcome(t.outcome, pnl)
-  const direction = parseDirection(t.direction) || "BUY"
+function rowToTrade(row, colMap) {
+  const g = (field) => colMap[field] !== undefined ? (row[colMap[field]] || '').toString().trim() : ''
+  const pnlRaw = g('pnl')
+  const pnl    = safeNum(pnlRaw)
+  const dir    = normalizeDirection(g('direction'))
+  const out    = normalizeOutcome(g('outcome'), pnl)
+  const sym    = g('symbol').toUpperCase().replace(/\s+/g,'') || 'UNKNOWN'
 
   return {
-    symbol:      (t.symbol || "UNKNOWN").trim().toUpperCase() || "UNKNOWN",
-    direction,
-    entry_price: safeFloat(t.entry_price),
-    exit_price:  safeFloat(t.exit_price),
+    symbol:      sym,
+    direction:   dir || 'BUY',
+    entry_price: safeNum(g('entry_price')),
+    exit_price:  safeNum(g('exit_price')),
     pnl,
-    pips:        safeFloat(t.pips),
-    outcome,
-    session:     ["LONDON","NEW_YORK","ASIAN","SYDNEY"].includes((t.session||"").toUpperCase())
-                   ? t.session.toUpperCase() : "LONDON",
-    timeframe:   ["M1","M5","M15","M30","H1","H4","D1"].includes((t.timeframe||"").toUpperCase())
-                   ? t.timeframe.toUpperCase() : "H1",
-    entry_time:  safeDate(t.entry_time),
-    quality:     Math.min(10, Math.max(1, parseInt(t.quality) || 5)),
-    notes:       t.notes || "",
+    pips:        safeNum(g('pips')),
+    volume:      safeNum(g('volume')),
+    outcome:     out,
+    session:     ['LONDON','NEW_YORK','ASIAN','SYDNEY'].includes(g('session').toUpperCase()) ? g('session').toUpperCase() : 'LONDON',
+    timeframe:   ['M1','M5','M15','M30','H1','H4','D1'].includes(g('timeframe').toUpperCase()) ? g('timeframe').toUpperCase() : 'H1',
+    entry_time:  safeDate(g('entry_time')),
+    quality:     5,
+    notes:       g('notes'),
     screenshots: [],
-    chart_url:   "",
-    playbook_id: "",
+    chart_url:   '',
+    playbook_id: '',
   }
 }
 
-function mapRow(headers, row) {
-  const mapped = {}
-  for (const [field, aliases] of Object.entries(FIELD_MAP_J)) {
-    for (let hi = 0; hi < headers.length; hi++) {
-      if (aliases.some(a => normH(headers[hi]) === a || normH(headers[hi]).includes(a))) {
-        mapped[field] = row[hi]?.trim() || ""; break
-      }
-    }
-  }
-  return sanitizeTrade(mapped)
-}
 function parseCSVJ(text) {
-  const lines = text.split(/\r?\n/).filter(l=>l.trim())
-  if (lines.length < 2) return { trades:[], skipped:0 }
-  const delim = lines[0].includes("\t") ? "\t" : lines[0].includes(";") ? ";" : ","
+  // Detect delimiter
+  const firstLine = text.split(/
+?
+/)[0] || ''
+  const tabCount   = (firstLine.match(/	/g)  || []).length
+  const semiCount  = (firstLine.match(/;/g)   || []).length
+  const commaCount = (firstLine.match(/,/g)   || []).length
+  const delim = tabCount > semiCount && tabCount > commaCount ? '	'
+              : semiCount > commaCount ? ';' : ','
+
   const parseRow = (line) => {
-    const r=[]; let inQ=false, cur=""
-    for (let c of line) {
-      if (c==='"'){inQ=!inQ} else if(c===delim&&!inQ){r.push(cur);cur=""} else{cur+=c}
+    const r = []; let inQ = false, cur = ''
+    for (const c of line) {
+      if (c === '"') { inQ = !inQ }
+      else if (c === delim && !inQ) { r.push(cur.trim()); cur = '' }
+      else { cur += c }
     }
-    r.push(cur); return r
+    r.push(cur.trim())
+    return r
   }
+
+  const lines = text.split(/
+?
+/).filter(l => l.trim())
+  if (lines.length < 2) return { trades: [], skipped: 0, colMap: {}, headers: [] }
+
   const headers = parseRow(lines[0])
-  const trades=[]; let skipped=0
-  for (let i=1;i<lines.length;i++) {
+  const colMap  = buildColumnMap(headers)
+
+  const trades = []; let skipped = 0
+  for (let i = 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue
-    const row = parseRow(lines[i])
-    const m   = mapRow(headers, row)
-    if (m.symbol === "UNKNOWN" && m.pnl === 0 && m.entry_price === 0) { skipped++; continue }
-    trades.push(m)
+    const row   = parseRow(lines[i])
+    const trade = rowToTrade(row, colMap)
+    // Skip completely empty rows
+    if (trade.symbol === 'UNKNOWN' && trade.pnl === 0 && trade.entry_price === 0) { skipped++; continue }
+    trades.push(trade)
   }
-  return { trades, skipped }
+
+  return { trades, skipped, colMap, headers }
 }
 
 // ─── CSV Import Modal ─────────────────────────────────────────────────────────
 function CSVImportModal({ open, onClose, onImported }) {
-  const [file,     setFile]     = useState(null)
-  const [preview,  setPreview]  = useState(null)
-  const [importing,setImporting]= useState(false)
-  const [result,   setResult]   = useState(null)
+  const [file,      setFile]      = useState(null)
+  const [preview,   setPreview]   = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [result,    setResult]    = useState(null)
+  const [progress,  setProgress]  = useState(0)
 
   const handleFile = (e) => {
     const f = e.target.files?.[0]
     if (!f) return
-    setFile(f); setResult(null)
+    setFile(f); setResult(null); setPreview(null)
     const reader = new FileReader()
     reader.onload = ev => {
       try {
-        setPreview(parseCSVJ(ev.target.result))
+        const parsed = parseCSVJ(ev.target.result)
+        setPreview(parsed)
       } catch(err) {
         console.error("CSV parse error:", err)
         toast.error("Could not read file — make sure it's a valid CSV.")
@@ -563,83 +676,156 @@ function CSVImportModal({ open, onClose, onImported }) {
       }
     }
     reader.onerror = () => { toast.error("Failed to read file"); setFile(null) }
-    reader.readAsText(f)
+    reader.readAsText(f, 'UTF-8')
     e.target.value = ""
   }
 
   const doImport = async () => {
     if (!preview?.trades?.length) return
-    setImporting(true)
+    setImporting(true); setProgress(0)
     let imported = 0
-    for (const t of preview.trades) {
-      try { await Trade.create(t); imported++ } catch {}
+    const total = preview.trades.length
+    for (let i = 0; i < total; i++) {
+      try { await Trade.create(preview.trades[i]); imported++ } catch(e) { console.warn("row skip:", e) }
+      setProgress(Math.round(((i+1)/total)*100))
     }
     setImporting(false)
-    setResult({ imported, skipped: preview.skipped })
+    setResult({ imported, skipped: preview.skipped + (total - imported) })
     setFile(null); setPreview(null)
     onImported()
     toast.success(imported + " trades imported!")
   }
 
+  const detectedFields = preview ? Object.keys(preview.colMap || {}) : []
+
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose}/>
-      <div className="relative w-full max-w-md rounded-2xl shadow-2xl z-10" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <h2 className="font-bold" style={{ color:"var(--text-primary)" }}>Import Trades from CSV</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)" }}><X size={15}/></button>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={!importing ? onClose : undefined}/>
+      <div className="relative w-full max-w-lg rounded-2xl shadow-2xl z-10 flex flex-col max-h-[90vh]" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+        
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 flex-shrink-0" style={{ borderBottom:"1px solid var(--border)" }}>
+          <div>
+            <h2 className="font-bold" style={{ color:"var(--text-primary)" }}>Import Trades from CSV</h2>
+            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Works with any broker export</p>
+          </div>
+          <button onClick={onClose} disabled={importing} className="p-1.5 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)" }}><X size={15}/></button>
         </div>
-        <div className="p-5 space-y-4">
+
+        <div className="overflow-y-auto flex-1 p-5 space-y-4">
+          {/* Broker badges */}
           <div className="flex flex-wrap gap-1.5">
-            {["MT4","MT5","cTrader","TradingView","Generic CSV"].map(b=>(
-              <span key={b} className="px-2 py-0.5 rounded-lg text-xs" style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.2)" }}>{b}</span>
+            {["MT4","MT5","cTrader","TradingView","FTMO","IC Markets","Pepperstone","Any CSV"].map(b=>(
+              <span key={b} className="px-2 py-0.5 rounded-lg text-xs font-medium" style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.2)" }}>{b}</span>
             ))}
           </div>
-          {!file ? (
-            <label className="flex flex-col items-center gap-3 p-8 rounded-xl border-2 border-dashed cursor-pointer hover:opacity-80"
+
+          {/* Drop zone */}
+          {!file && !result && (
+            <label className="flex flex-col items-center gap-3 p-10 rounded-xl border-2 border-dashed cursor-pointer hover:opacity-80 transition-opacity"
               style={{ borderColor:"var(--border)" }}>
-              <Upload size={24} style={{ color:"var(--accent)" }}/>
+              <Upload size={28} style={{ color:"var(--accent)" }}/>
               <div className="text-center">
-                <p className="text-sm font-medium" style={{ color:"var(--text-primary)" }}>Drop CSV file or click to browse</p>
-                <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>Unrecognized columns are automatically ignored</p>
+                <p className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>Click to browse or drop your CSV here</p>
+                <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>The importer auto-detects all columns — unknown ones are ignored</p>
               </div>
-              <input type="file" accept=".csv,.txt,.tsv" onChange={handleFile} className="hidden"/>
+              <input type="file" accept=".csv,.txt,.tsv,.xls" onChange={handleFile} className="hidden"/>
             </label>
-          ) : preview && (
-            <div className="rounded-xl p-4 space-y-3" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
-              <div className="flex items-center justify-between">
+          )}
+
+          {/* Preview */}
+          {file && preview && (
+            <div className="space-y-3">
+              {/* File info */}
+              <div className="flex items-center justify-between p-3 rounded-xl" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
                 <div className="flex items-center gap-2">
-                  <CheckCircle size={14} style={{ color:"var(--accent-success)" }}/>
-                  <span className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>{file.name}</span>
+                  <CheckCircle size={15} style={{ color:"var(--accent-success)" }}/>
+                  <span className="text-sm font-semibold truncate max-w-48" style={{ color:"var(--text-primary)" }}>{file.name}</span>
                 </div>
-                <button onClick={()=>{setFile(null);setPreview(null)}} className="text-xs px-2 py-1 rounded" style={{ color:"var(--text-muted)", background:"var(--bg-card)" }}>✕</button>
+                <button onClick={()=>{setFile(null);setPreview(null)}} className="text-xs px-2 py-1 rounded-lg" style={{ color:"var(--text-muted)", background:"var(--bg-card)", border:"1px solid var(--border)" }}>Change</button>
               </div>
-              <p className="text-sm" style={{ color:"var(--accent-success)" }}>✓ {preview.trades.length} trades ready to import</p>
-              {preview.skipped>0 && <p className="text-xs" style={{ color:"var(--accent-warning)" }}>⚠ {preview.skipped} rows skipped</p>}
-              {preview.trades.slice(0,3).map((t,i)=>(
-                <div key={i} className="flex gap-3 text-xs p-2 rounded-lg" style={{ background:"var(--bg-card)" }}>
-                  <span className="font-bold" style={{ color:"var(--text-primary)" }}>{t.symbol}</span>
-                  <span style={{ color:t.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)" }}>{t.direction}</span>
-                  {t.pnl!==undefined && <span style={{ color:t.pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>{t.pnl>=0?"+":""}{t.pnl}</span>}
-                  <span style={{ color:t.outcome==="WIN"?"var(--accent-success)":t.outcome==="LOSS"?"var(--accent-danger)":"var(--accent)" }}>{t.outcome}</span>
+
+              {/* Detected fields */}
+              {detectedFields.length > 0 && (
+                <div className="p-3 rounded-xl" style={{ background:"rgba(108,99,255,0.06)", border:"1px solid rgba(108,99,255,0.15)" }}>
+                  <p className="text-xs font-semibold mb-2" style={{ color:"var(--accent)" }}>✓ Detected fields ({detectedFields.length})</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {detectedFields.map(f => (
+                      <span key={f} className="px-2 py-0.5 rounded text-xs font-medium" style={{ background:"rgba(108,99,255,0.15)", color:"var(--accent)" }}>{f}</span>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              )}
+
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="p-2.5 rounded-xl text-center" style={{ background:"rgba(46,213,115,0.08)", border:"1px solid rgba(46,213,115,0.15)" }}>
+                  <p className="text-lg font-bold" style={{ color:"var(--accent-success)" }}>{preview.trades.length}</p>
+                  <p className="text-xs" style={{ color:"var(--text-muted)" }}>Trades found</p>
+                </div>
+                <div className="p-2.5 rounded-xl text-center" style={{ background:"rgba(46,213,115,0.08)", border:"1px solid rgba(46,213,115,0.15)" }}>
+                  <p className="text-lg font-bold" style={{ color:"var(--accent-success)" }}>{preview.trades.filter(t=>t.outcome==='WIN').length}</p>
+                  <p className="text-xs" style={{ color:"var(--text-muted)" }}>Wins</p>
+                </div>
+                <div className="p-2.5 rounded-xl text-center" style={{ background:"rgba(255,71,87,0.08)", border:"1px solid rgba(255,71,87,0.15)" }}>
+                  <p className="text-lg font-bold" style={{ color:"var(--accent-danger)" }}>{preview.trades.filter(t=>t.outcome==='LOSS').length}</p>
+                  <p className="text-xs" style={{ color:"var(--text-muted)" }}>Losses</p>
+                </div>
+              </div>
+
+              {/* Sample rows */}
+              <div>
+                <p className="text-xs font-semibold mb-2" style={{ color:"var(--text-muted)" }}>PREVIEW (first 3 trades)</p>
+                <div className="space-y-1.5">
+                  {preview.trades.slice(0,3).map((t,i)=>(
+                    <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg text-xs" style={{ background:"var(--bg-elevated)" }}>
+                      <span className="font-bold w-16 truncate" style={{ color:"var(--text-primary)" }}>{t.symbol}</span>
+                      <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background:t.direction==="BUY"?"rgba(46,213,115,0.15)":"rgba(255,71,87,0.15)", color:t.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)" }}>{t.direction}</span>
+                      <span className="flex-1 font-semibold" style={{ color:t.pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>{t.pnl>=0?"+":""}{t.pnl.toFixed(2)}</span>
+                      <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background:t.outcome==="WIN"?"rgba(46,213,115,0.15)":t.outcome==="LOSS"?"rgba(255,71,87,0.15)":"rgba(108,99,255,0.15)", color:t.outcome==="WIN"?"var(--accent-success)":t.outcome==="LOSS"?"var(--accent-danger)":"var(--accent)" }}>{t.outcome}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {preview.skipped > 0 && (
+                <p className="text-xs" style={{ color:"var(--accent-warning)" }}>⚠ {preview.skipped} rows skipped (empty or unreadable)</p>
+              )}
             </div>
           )}
+
+          {/* Progress bar */}
+          {importing && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs" style={{ color:"var(--text-muted)" }}>
+                <span>Importing trades...</span><span>{progress}%</span>
+              </div>
+              <div className="h-2 rounded-full overflow-hidden" style={{ background:"var(--bg-elevated)" }}>
+                <div className="h-full rounded-full transition-all duration-300" style={{ width:progress+"%", background:"linear-gradient(90deg,var(--accent),var(--accent-secondary))" }}/>
+              </div>
+            </div>
+          )}
+
+          {/* Result */}
           {result && (
-            <div className="flex items-center gap-2 p-3 rounded-xl" style={{ background:"rgba(46,213,115,0.1)", border:"1px solid rgba(46,213,115,0.2)" }}>
-              <CheckCircle size={14} style={{ color:"var(--accent-success)" }}/>
-              <p className="text-sm" style={{ color:"var(--accent-success)" }}>Imported {result.imported} trades{result.skipped>0?` · ${result.skipped} skipped`:""}</p>
+            <div className="p-4 rounded-xl text-center space-y-1" style={{ background:"rgba(46,213,115,0.08)", border:"1px solid rgba(46,213,115,0.2)" }}>
+              <CheckCircle size={22} className="mx-auto" style={{ color:"var(--accent-success)" }}/>
+              <p className="font-bold" style={{ color:"var(--accent-success)" }}>Import Complete!</p>
+              <p className="text-sm" style={{ color:"var(--text-secondary)" }}>{result.imported} trades imported{result.skipped>0?`, ${result.skipped} skipped`:""}</p>
             </div>
           )}
         </div>
-        <div className="flex gap-3 px-5 pb-5">
-          <button onClick={onClose} className="flex-1 h-9 rounded-lg text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>Close</button>
-          {preview?.trades?.length>0 && (
-            <button onClick={doImport} disabled={importing} className="flex-1 h-9 rounded-lg text-sm font-semibold text-white"
-              style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", opacity:importing?0.7:1 }}>
-              {importing?"Importing...":"Import "+preview.trades.length+" Trades"}
+
+        {/* Footer */}
+        <div className="flex gap-3 px-5 py-4 flex-shrink-0" style={{ borderTop:"1px solid var(--border)" }}>
+          <button onClick={onClose} disabled={importing} className="flex-1 h-10 rounded-xl text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>
+            {result ? "Done" : "Cancel"}
+          </button>
+          {preview?.trades?.length > 0 && !result && (
+            <button onClick={doImport} disabled={importing} className="flex-1 h-10 rounded-xl text-sm font-bold text-white"
+              style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", opacity:importing?0.8:1 }}>
+              {importing ? `Importing... ${progress}%` : `Import ${preview.trades.length} Trades`}
             </button>
           )}
         </div>
