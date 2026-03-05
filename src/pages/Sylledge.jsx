@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { Trade, Playbook, SylledgeInsight } from "@/api/supabaseStore"
+import { useUser } from "@/lib/UserContext"
 import { toast } from "@/components/ui/toast"
 import {
   Brain, Sparkles, Send, RefreshCw, TrendingUp, TrendingDown,
@@ -201,7 +202,7 @@ Be direct, insightful and encouraging. The trader wants to improve.`
 
     try {
       const anthropicKey = localStorage.getItem("ts_anthropic_key") || ""
-      if (!anthropicKey) return "No API key found. Please add your Anthropic API key in Settings → SYLLEDGE AI."
+      if (!anthropicKey) return "No Anthropic API key found. Add it in Settings → API Keys → SYLLEDGE AI to enable AI coaching."
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },

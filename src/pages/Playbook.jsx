@@ -90,6 +90,45 @@ function RuleList({ label, icon: Icon, color, rules, onChange }) {
   )
 }
 
+
+// ─── Playbook Image Uploader ──────────────────────────────────────────────────
+function PlaybookImageUploader({ images, onChange }) {
+  const add = (files) => {
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith("image/")) return
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const img = { id: Date.now() + Math.random().toString(36).slice(2), name: file.name, url: e.target.result }
+        onChange([...(images || []), img])
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+  const remove = (id) => onChange((images || []).filter(i => i.id !== id))
+
+  return (
+    <div className="space-y-2">
+      {(images || []).map(img => (
+        <div key={img.id} className="relative rounded-xl overflow-hidden group" style={{ maxHeight: 120 }}>
+          <img src={img.url} alt={img.name} className="w-full object-cover rounded-xl" style={{ maxHeight: 120 }}/>
+          <button type="button" onClick={() => remove(img.id)}
+            className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ background: "rgba(255,71,87,0.9)" }}>
+            <X size={12} className="text-white"/>
+          </button>
+        </div>
+      ))}
+      <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed cursor-pointer hover:opacity-80 transition-opacity"
+        style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+        <ImagePlus size={14}/>
+        <span className="text-xs">Add screenshot</span>
+        <input type="file" accept="image/*" multiple className="hidden"
+          onChange={e => { add(e.target.files); e.target.value = "" }}/>
+      </label>
+    </div>
+  )
+}
+
 // ─── Playbook Form Modal ──────────────────────────────────────────────────────
 function PlaybookModal({ open, onClose, onSaved, editItem }) {
   const [form, setForm]   = useState(EMPTY)
@@ -462,8 +501,10 @@ export default function Playbook() {
   const [filterCat,   setFilterCat]   = useState("all")
 
   const load = async () => {
-    const data = await PlaybookEntity.list()
-    setItems(data.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))
+    try {
+      const data = await PlaybookEntity.list()
+      setItems((data || []).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))
+    } catch(e) { console.error("Playbook load:", e) }
   }
   useEffect(()=>{ load() }, [])
 

@@ -58,8 +58,13 @@ export const UserProvider = ({ children }) => {
 
   const signOut = () => authHelpers.signOut()
 
+  // Plan helpers — admin always has full Pro access
+  const ADMIN_EMAIL = "khalifadylla@gmail.com"
+  const isAdmin = user?.email === ADMIN_EMAIL
+  const isPro   = isAdmin || false  // extend here when real billing is added
+
   return (
-    <UserContext.Provider value={{ user, session, loading, updateUser, signOut }}>
+    <UserContext.Provider value={{ user, session, loading, updateUser, signOut, isAdmin, isPro }}>
       {children}
     </UserContext.Provider>
   )
