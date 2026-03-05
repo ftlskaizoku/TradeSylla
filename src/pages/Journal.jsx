@@ -5,7 +5,7 @@ import { toast } from "@/components/ui/toast"
 import {
   Plus, Pencil, Trash2, X, List, CalendarDays,
   TrendingUp, TrendingDown, Activity, ChevronLeft, ChevronRight,
-  Upload, CheckCircle, Brain, Sparkles
+  Upload, CheckCircle, Brain, Sparkles, Download, AlertTriangle, ChevronDown, ChevronUp
 } from "lucide-react"
 
 
@@ -840,9 +840,137 @@ Be direct, reference their actual numbers. No generic advice.`
   )
 }
 
+
+// ─── CSV Template Download ────────────────────────────────────────────────────
+function downloadCSVTemplate() {
+  const headers = ["symbol","direction","entry_price","exit_price","pnl","pips","volume","entry_time","session","timeframe","outcome","notes"]
+  const examples = [
+    ["EURUSD","BUY","1.08500","1.08750","25.00","25","0.10","2025-01-15 09:30:00","LONDON","H1","WIN","Clean breakout entry"],
+    ["GBPUSD","SELL","1.27300","1.27100","20.00","20","0.10","2025-01-15 14:00:00","NEW_YORK","M15","WIN","Rejection at resistance"],
+    ["XAUUSD","BUY","2020.00","2015.00","-50.00","-50","0.05","2025-01-16 09:00:00","LONDON","H4","LOSS","Stopped out at news"],
+    ["USDJPY","SELL","148.500","148.200","30.00","30","0.10","2025-01-16 15:30:00","NEW_YORK","H1","WIN","Trend continuation"],
+  ]
+  const rows = [headers, ...examples].map(r => r.join(",")).join("\n")
+  const blob = new Blob([rows], { type: "text/csv" })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement("a")
+  a.href     = url
+  a.download = "tradesylla_template.csv"
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// ─── Column Mapping Panel ─────────────────────────────────────────────────────
+// Lets the user manually fix any column that the auto-detector got wrong
+const FIELD_LABELS = {
+  symbol:      { label: "Symbol",      desc: "Asset pair (EURUSD, XAUUSD…)" },
+  direction:   { label: "Direction",   desc: "BUY or SELL" },
+  entry_price: { label: "Entry Price", desc: "Price at trade open" },
+  exit_price:  { label: "Exit Price",  desc: "Price at trade close" },
+  pnl:         { label: "P&L",         desc: "Profit or loss (number)" },
+  pips:        { label: "Pips",        desc: "Pip gain/loss" },
+  volume:      { label: "Volume/Lots", desc: "Position size in lots" },
+  entry_time:  { label: "Date/Time",   desc: "Trade open timestamp" },
+  session:     { label: "Session",     desc: "LONDON, NEW_YORK…" },
+  timeframe:   { label: "Timeframe",   desc: "H1, M15, D1…" },
+  outcome:     { label: "Outcome",     desc: "WIN, LOSS, BREAKEVEN" },
+  notes:       { label: "Notes",       desc: "Comments or remarks" },
+}
+
+function ColumnMappingPanel({ headers, colMap, onMapChange }) {
+  const [open, setOpen] = useState(false)
+
+  // Build reverse map: colIndex → fieldName
+  const reverseMap = {}
+  Object.entries(colMap).forEach(([field, idx]) => { reverseMap[idx] = field })
+
+  const fields = Object.keys(FIELD_LABELS)
+
+  const handleChange = (field, newIdx) => {
+    const updated = { ...colMap }
+    if (newIdx === "") {
+      // Remove this field mapping
+      delete updated[field]
+    } else {
+      // Unassign any other field that had this column
+      Object.keys(updated).forEach(f => { if (updated[f] === parseInt(newIdx) && f !== field) delete updated[f] })
+      updated[field] = parseInt(newIdx)
+    }
+    onMapChange(updated)
+  }
+
+  const unmappedRequired = ["symbol","direction","pnl"].filter(f => colMap[f] === undefined)
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border:"1px solid var(--border)" }}>
+      <button type="button" onClick={()=>setOpen(o=>!o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold"
+        style={{ background:"var(--bg-elevated)", color:"var(--text-primary)" }}>
+        <div className="flex items-center gap-2">
+          {unmappedRequired.length > 0
+            ? <AlertTriangle size={14} style={{ color:"var(--accent-warning)" }}/>
+            : <CheckCircle  size={14} style={{ color:"var(--accent-success)" }}/>}
+          <span>Column Mapping</span>
+          <span className="text-xs font-normal px-2 py-0.5 rounded-full" style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)" }}>
+            {Object.keys(colMap).length}/{fields.length} matched
+          </span>
+        </div>
+        {open ? <ChevronUp size={14} style={{ color:"var(--text-muted)" }}/> : <ChevronDown size={14} style={{ color:"var(--text-muted)" }}/>}
+      </button>
+
+      {open && (
+        <div className="p-4 space-y-2" style={{ background:"var(--bg-card)" }}>
+          {unmappedRequired.length > 0 && (
+            <p className="text-xs px-3 py-2 rounded-lg" style={{ background:"rgba(255,165,2,0.08)", color:"var(--accent-warning)", border:"1px solid rgba(255,165,2,0.15)" }}>
+              ⚠ Required fields not detected: <strong>{unmappedRequired.join(", ")}</strong>. Map them manually below.
+            </p>
+          )}
+          <div className="grid grid-cols-1 gap-2">
+            {fields.map(field => {
+              const info    = FIELD_LABELS[field]
+              const mapped  = colMap[field] !== undefined
+              const colName = mapped ? headers[colMap[field]] : null
+              const required = ["symbol","direction","pnl"].includes(field)
+              return (
+                <div key={field} className="flex items-center gap-3 p-2.5 rounded-lg"
+                  style={{ background: mapped ? "rgba(46,213,115,0.04)" : required ? "rgba(255,165,2,0.04)" : "var(--bg-elevated)", border:`1px solid ${mapped?"rgba(46,213,115,0.15)":required?"rgba(255,165,2,0.15)":"var(--border)"}` }}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold" style={{ color: mapped?"var(--accent-success)":required?"var(--accent-warning)":"var(--text-secondary)" }}>
+                        {info.label}
+                      </span>
+                      {required && <span className="text-xs" style={{ color:"var(--text-muted)" }}>*</span>}
+                    </div>
+                    <p className="text-xs truncate" style={{ color:"var(--text-muted)" }}>{info.desc}</p>
+                  </div>
+                  <select
+                    value={colMap[field] !== undefined ? colMap[field] : ""}
+                    onChange={e => handleChange(field, e.target.value)}
+                    className="h-8 rounded-lg px-2 text-xs border flex-shrink-0"
+                    style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)", minWidth: 130, maxWidth: 160 }}>
+                    <option value="">— not mapped —</option>
+                    {headers.map((h, i) => (
+                      <option key={i} value={i}>
+                        {h} {reverseMap[i] && reverseMap[i] !== field ? `(→ ${reverseMap[i]})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-xs" style={{ color:"var(--text-muted)" }}>* Required for import. Fields not mapped will use defaults.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CSVImportModal({ open, onClose, onImported }) {
   const [file,      setFile]      = useState(null)
   const [preview,   setPreview]   = useState(null)
+  const [colMap,    setColMap]    = useState({})
+  const [rawText,   setRawText]   = useState("")
   const [importing, setImporting] = useState(false)
   const [result,    setResult]    = useState(null)
   const [progress,  setProgress]  = useState(0)
@@ -854,11 +982,14 @@ function CSVImportModal({ open, onClose, onImported }) {
     const reader = new FileReader()
     reader.onload = ev => {
       try {
-        const parsed = parseCSVJ(ev.target.result)
+        const text   = ev.target.result
+        const parsed = parseCSVJ(text)
         setPreview(parsed)
+        setColMap(parsed.colMap || {})
+        setRawText(text)
       } catch(err) {
         console.error("CSV parse error:", err)
-        toast.error("Could not read file — make sure it's a valid CSV.")
+        toast.error("Could not read file \u2014 make sure it's a valid CSV.")
         setFile(null)
       }
     }
@@ -867,23 +998,51 @@ function CSVImportModal({ open, onClose, onImported }) {
     e.target.value = ""
   }
 
+  // Re-parse trades from raw text using the current colMap (updated by user)
+  const getTrades = () => {
+    if (!preview || !rawText) return []
+    try {
+      const lines = rawText.replace(/\r/g, "").split("\n").filter(l => l.trim())
+      if (lines.length < 2) return []
+      const parseRow = (line) => {
+        const r=[]; let inQ=false, cur=""
+        for (const c of line) {
+          if (c==='"') { inQ=!inQ }
+          else if (!inQ && (line.includes("\t") ? c==="\t" : c===",")) { r.push(cur.trim()); cur="" }
+          else { cur+=c }
+        }
+        r.push(cur.trim()); return r
+      }
+      const trades=[]
+      for (let i=1; i<lines.length; i++) {
+        if (!lines[i].trim()) continue
+        const row = parseRow(lines[i])
+        const t   = rowToTrade(row, colMap)
+        if (t.symbol==="UNKNOWN" && t.pnl===0 && t.entry_price===0) continue
+        trades.push(t)
+      }
+      return trades
+    } catch { return preview.trades || [] }
+  }
+
   const doImport = async () => {
-    if (!preview?.trades?.length) return
+    const trades = getTrades()
+    if (!trades.length) return
     setImporting(true); setProgress(0)
     let imported = 0
-    const total = preview.trades.length
-    for (let i = 0; i < total; i++) {
-      try { await Trade.create(preview.trades[i]); imported++ } catch(e) { console.warn("row skip:", e) }
-      setProgress(Math.round(((i+1)/total)*100))
+    for (let i = 0; i < trades.length; i++) {
+      try { await Trade.create(trades[i]); imported++ } catch(e) { console.warn("row skip:", e) }
+      setProgress(Math.round(((i+1)/trades.length)*100))
     }
     setImporting(false)
-    setResult({ imported, skipped: preview.skipped + (total - imported) })
-    setFile(null); setPreview(null)
+    setResult({ imported, skipped: (preview?.skipped||0) + (trades.length - imported) })
+    setFile(null); setPreview(null); setColMap({}); setRawText("")
     onImported()
     toast.success(imported + " trades imported!")
   }
 
-  const detectedFields = preview ? Object.keys(preview.colMap || {}) : []
+  const liveTrades    = preview ? getTrades() : []
+  const detectedFields = Object.keys(colMap || {})
 
   if (!open) return null
   return (
@@ -897,7 +1056,14 @@ function CSVImportModal({ open, onClose, onImported }) {
             <h2 className="font-bold" style={{ color:"var(--text-primary)" }}>Import Trades from CSV</h2>
             <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Works with any broker export</p>
           </div>
-          <button onClick={onClose} disabled={importing} className="p-1.5 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)" }}><X size={15}/></button>
+          <div className="flex items-center gap-2">
+            <button onClick={downloadCSVTemplate} title="Download template CSV"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border"
+              style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--accent)" }}>
+              <Download size={12}/> Template
+            </button>
+            <button onClick={onClose} disabled={importing} className="p-1.5 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)" }}><X size={15}/></button>
+          </div>
         </div>
 
         <div className="overflow-y-auto flex-1 p-5 space-y-4">
@@ -945,18 +1111,25 @@ function CSVImportModal({ open, onClose, onImported }) {
                 </div>
               )}
 
+              {/* Column Mapping */}
+              <ColumnMappingPanel
+                headers={preview.headers || []}
+                colMap={colMap}
+                onMapChange={setColMap}
+              />
+
               {/* Stats */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="p-2.5 rounded-xl text-center" style={{ background:"rgba(46,213,115,0.08)", border:"1px solid rgba(46,213,115,0.15)" }}>
-                  <p className="text-lg font-bold" style={{ color:"var(--accent-success)" }}>{preview.trades.length}</p>
+                  <p className="text-lg font-bold" style={{ color:"var(--accent-success)" }}>{liveTrades.length}</p>
                   <p className="text-xs" style={{ color:"var(--text-muted)" }}>Trades found</p>
                 </div>
                 <div className="p-2.5 rounded-xl text-center" style={{ background:"rgba(46,213,115,0.08)", border:"1px solid rgba(46,213,115,0.15)" }}>
-                  <p className="text-lg font-bold" style={{ color:"var(--accent-success)" }}>{preview.trades.filter(t=>t.outcome==='WIN').length}</p>
+                  <p className="text-lg font-bold" style={{ color:"var(--accent-success)" }}>{liveTrades.filter(t=>t.outcome==='WIN').length}</p>
                   <p className="text-xs" style={{ color:"var(--text-muted)" }}>Wins</p>
                 </div>
                 <div className="p-2.5 rounded-xl text-center" style={{ background:"rgba(255,71,87,0.08)", border:"1px solid rgba(255,71,87,0.15)" }}>
-                  <p className="text-lg font-bold" style={{ color:"var(--accent-danger)" }}>{preview.trades.filter(t=>t.outcome==='LOSS').length}</p>
+                  <p className="text-lg font-bold" style={{ color:"var(--accent-danger)" }}>{liveTrades.filter(t=>t.outcome==='LOSS').length}</p>
                   <p className="text-xs" style={{ color:"var(--text-muted)" }}>Losses</p>
                 </div>
               </div>
@@ -965,7 +1138,7 @@ function CSVImportModal({ open, onClose, onImported }) {
               <div>
                 <p className="text-xs font-semibold mb-2" style={{ color:"var(--text-muted)" }}>PREVIEW (first 3 trades)</p>
                 <div className="space-y-1.5">
-                  {preview.trades.slice(0,3).map((t,i)=>(
+                  {liveTrades.slice(0,3).map((t,i)=>(
                     <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg text-xs" style={{ background:"var(--bg-elevated)" }}>
                       <span className="font-bold w-16 truncate" style={{ color:"var(--text-primary)" }}>{t.symbol}</span>
                       <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background:t.direction==="BUY"?"rgba(46,213,115,0.15)":"rgba(255,71,87,0.15)", color:t.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)" }}>{t.direction}</span>
