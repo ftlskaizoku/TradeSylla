@@ -731,8 +731,7 @@ Be direct, reference their actual numbers. No generic advice.`
 
   // Format markdown-ish feedback into JSX
   const formatFeedback = (text) => {
-    return text.split("
-").map((line, i) => {
+    return text.split("\n").map((line, i) => {
       if (line.startsWith("**") && line.endsWith("**"))
         return <p key={i} className="font-bold mt-4 mb-1" style={{ color:"var(--accent)" }}>{line.replace(/\*\*/g,"")}</p>
       if (line.match(/^\*\*(.+)\*\*/))
