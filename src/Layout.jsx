@@ -3,11 +3,13 @@ import { Link, useLocation } from "react-router-dom"
 import { createPageUrl } from "@/utils"
 import {
   LayoutDashboard, BookOpen, BarChart3, Brain, FlaskConical,
-  Settings, Menu, X, ChevronRight, TrendingUp, Shield, Wifi, CalendarDays, Zap
+  Settings, Menu, X, ChevronRight, TrendingUp, Shield, Wifi, CalendarDays, Zap, LayoutGrid
 } from "lucide-react"
 import { useUser } from "@/lib/UserContext"
 import { supabase } from "@/lib/supabase"
 import InstallPrompt from "@/components/InstallPrompt"
+
+const ADMIN_EMAIL = "khalifadylla@gmail.com"
 
 const navItems = [
   { label: "Dashboard",   icon: LayoutDashboard, page: "Dashboard" },
@@ -88,6 +90,20 @@ export default function Layout({ children, currentPageName }) {
               </Link>
             )
           })}
+
+          {/* Admin link — only visible to admin */}
+          {user?.email === ADMIN_EMAIL && (
+            <Link
+              to="/Admin"
+              onClick={closeSidebar}
+              className={"sidebar-nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium " + (isActive("Admin") ? "active" : "")}
+              style={{ color: isActive("Admin") ? "#ffa502" : "var(--text-muted)", background: isActive("Admin") ? "rgba(255,165,2,0.1)" : "transparent", marginTop: "8px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}
+            >
+              <LayoutGrid size={17} />
+              <span>Admin Panel</span>
+              {isActive("Admin") && <ChevronRight size={13} className="ml-auto" style={{ color: "#ffa502" }} />}
+            </Link>
+          )}
         </nav>
 
         {/* Upgrade CTA */}
