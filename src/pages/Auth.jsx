@@ -115,6 +115,24 @@ function SignIn({ switchTo }) {
 
   return (
     <div className="space-y-5">
+      {/* OAuth first — biggest conversion */}
+      <div className="space-y-3">
+        <div className="flex gap-3">
+          <OAuthBtn icon={<GoogleIcon/>} label="Continue with Google"
+            onClick={handleGoogle} loading={oauthLoading === 'google'} />
+        </div>
+        <div className="flex gap-3">
+          <OAuthBtn icon={<MicrosoftIcon/>} label="Continue with Microsoft"
+            onClick={handleMicrosoft} loading={oauthLoading === 'microsoft'} />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-px" style={{ background: 'var(--border)' }}/>
+        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>or sign in with email</span>
+        <div className="flex-1 h-px" style={{ background: 'var(--border)' }}/>
+      </div>
+
       <div className="space-y-4">
         <Field label="Email" type="email" value={email} onChange={setEmail}
           placeholder="you@example.com" icon={Mail} />
@@ -141,25 +159,17 @@ function SignIn({ switchTo }) {
         {loading ? 'Signing in...' : <><span>Sign In</span><ArrowRight size={15}/></>}
       </button>
 
-      <div className="flex items-center gap-3">
-        <div className="flex-1 h-px" style={{ background: 'var(--border)' }}/>
-        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>or continue with</span>
-        <div className="flex-1 h-px" style={{ background: 'var(--border)' }}/>
-      </div>
-
-      <div className="flex gap-3">
-        <OAuthBtn icon={<GoogleIcon/>} label="Google"
-          onClick={handleGoogle} loading={oauthLoading === 'google'} />
-        <OAuthBtn icon={<MicrosoftIcon/>} label="Microsoft"
-          onClick={handleMicrosoft} loading={oauthLoading === 'microsoft'} />
-      </div>
-
       <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>
         No account?{' '}
         <button onClick={() => switchTo('signup')} className="font-semibold hover:opacity-70"
           style={{ color: 'var(--accent)' }}>
-          Create one
+          Create one free
         </button>
+        {' · '}
+        <a href="/pricing" className="font-semibold hover:opacity-70"
+          style={{ color: 'var(--text-muted)' }}>
+          See plans
+        </a>
       </p>
     </div>
   )

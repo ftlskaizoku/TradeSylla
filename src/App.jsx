@@ -14,6 +14,7 @@ import Backtesting from "@/pages/Backtesting"
 import BrokerSync from "@/pages/BrokerSync"
 import Settings from "@/pages/Settings"
 import Admin from "@/pages/Admin"
+import Pricing from "@/pages/Pricing"
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
 function ProtectedRoute({ children }) {
@@ -37,7 +38,8 @@ function AppRoutes() {
   const { user } = useUser()
   return (
     <Routes>
-      <Route path="/auth" element={user ? <Navigate to="/Dashboard" replace/> : <Auth/>} />
+      <Route path="/auth"    element={user ? <Navigate to="/Dashboard" replace/> : <Auth/>} />
+      <Route path="/pricing" element={<Pricing/>} />
       <Route path="/" element={<Navigate to="/Dashboard" replace />} />
       {[
         { path:"Dashboard",   El: Dashboard   },

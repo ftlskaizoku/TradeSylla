@@ -5,7 +5,7 @@ import { toast } from "@/components/ui/toast"
 import {
   Plus, Pencil, Trash2, X, List, CalendarDays,
   TrendingUp, TrendingDown, Activity, ChevronLeft, ChevronRight,
-  Upload, CheckCircle
+  Upload, CheckCircle, Brain, Sparkles
 } from "lucide-react"
 
 
@@ -353,7 +353,7 @@ function CalendarView({ trades, onNewTrade }) {
 }
 
 // ─── Table View ───────────────────────────────────────────────────────────────
-function TableView({ trades, onEdit, onDelete }) {
+function TableView({ trades, onEdit, onDelete, onAI }) {
   const COLS = ["Symbol","Dir","Entry","Exit","P&L","Pips","Outcome","Session","TF","Quality","Date","Actions"]
 
   if (!trades.length) {
@@ -413,6 +413,9 @@ function TableView({ trades, onEdit, onDelete }) {
                 </td>
                 <td className="px-3 py-3">
                   <div className="flex items-center gap-1">
+                    <button onClick={()=>onAI(t)} title="AI Feedback" className="p-1.5 rounded-lg hover:opacity-70 transition-opacity" style={{ color:"var(--accent-secondary)" }}>
+                      <Brain size={13}/>
+                    </button>
                     <button onClick={()=>onEdit(t)} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity" style={{ color:"var(--accent)" }}>
                       <Pencil size={13}/>
                     </button>
@@ -645,6 +648,199 @@ function parseCSVJ(text) {
 
   return { trades, skipped, colMap, headers }
 }
+
+// ─── AI Trade Feedback Panel ──────────────────────────────────────────────────
+function AiFeedbackPanel({ trade, allTrades, onClose }) {
+  const [feedback, setFeedback] = useState("")
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState("")
+
+  useEffect(() => {
+    generateFeedback()
+  }, [trade.id])
+
+  const generateFeedback = async () => {
+    setLoading(true); setError(""); setFeedback("")
+    const key = localStorage.getItem("ts_anthropic_key") || ""
+    if (!key) {
+      setError("No Anthropic API key found. Add it in Settings → API Keys → SYLLEDGE AI.")
+      setLoading(false); return
+    }
+
+    // Build context from all trades
+    const wins   = allTrades.filter(t => t.outcome === "WIN").length
+    const losses = allTrades.filter(t => t.outcome === "LOSS").length
+    const winRate = allTrades.length ? ((wins / allTrades.length) * 100).toFixed(1) : 0
+    const netPnl  = allTrades.reduce((s,t) => s + (t.pnl||0), 0).toFixed(2)
+    const sameSymbol = allTrades.filter(t => t.symbol === trade.symbol)
+    const symWinRate = sameSymbol.length
+      ? ((sameSymbol.filter(t=>t.outcome==="WIN").length / sameSymbol.length)*100).toFixed(1)
+      : "N/A"
+
+    const prompt = `You are SYLLEDGE AI, an elite trading coach. Analyze this specific trade and give brutally honest, actionable feedback.
+
+TRADE DETAILS:
+- Symbol: ${trade.symbol}
+- Direction: ${trade.direction}
+- Entry: ${trade.entry_price} | Exit: ${trade.exit_price}
+- P&L: ${trade.pnl >= 0 ? "+" : ""}$${parseFloat(trade.pnl||0).toFixed(2)}
+- Pips: ${trade.pips || "N/A"}
+- Outcome: ${trade.outcome}
+- Session: ${trade.session} | Timeframe: ${trade.timeframe}
+- Setup Quality (self-rated): ${trade.quality}/10
+- Notes: ${trade.notes || "None"}
+- Date: ${trade.entry_time ? new Date(trade.entry_time).toLocaleDateString() : "N/A"}
+
+TRADER CONTEXT:
+- Overall win rate: ${winRate}% (${wins}W / ${losses}L across ${allTrades.length} trades)
+- Net P&L all trades: $${netPnl}
+- Win rate on ${trade.symbol}: ${symWinRate}% across ${sameSymbol.length} trades
+
+Give feedback in these exact sections:
+1. **Trade Assessment** — Was this a good trade execution? (2-3 sentences)
+2. **What Went Well** — Specific positives (bullet points)
+3. **What To Improve** — Specific critique tied to their numbers (bullet points)
+4. **Key Lesson** — One concrete takeaway in 1 sentence
+
+Be direct, reference their actual numbers. No generic advice.`
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": key,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 600,
+          messages: [{ role: "user", content: prompt }]
+        })
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error.message)
+      const text = data.content?.map(b => b.text || "").join("") || ""
+      setFeedback(text)
+    } catch(e) {
+      setError("Failed to get AI feedback: " + (e.message || "unknown error"))
+    }
+    setLoading(false)
+  }
+
+  // Format markdown-ish feedback into JSX
+  const formatFeedback = (text) => {
+    return text.split("
+").map((line, i) => {
+      if (line.startsWith("**") && line.endsWith("**"))
+        return <p key={i} className="font-bold mt-4 mb-1" style={{ color:"var(--accent)" }}>{line.replace(/\*\*/g,"")}</p>
+      if (line.match(/^\*\*(.+)\*\*/))
+        return <p key={i} className="font-bold mt-4 mb-1" style={{ color:"var(--accent)" }}>{line.replace(/\*\*/g,"")}</p>
+      if (line.startsWith("- ") || line.startsWith("• "))
+        return <p key={i} className="text-sm pl-3 border-l-2 my-1" style={{ color:"var(--text-secondary)", borderColor:"var(--border-light)" }}>
+          {line.replace(/^[-•]\s/,"")}
+        </p>
+      if (!line.trim()) return <div key={i} className="h-1"/>
+      return <p key={i} className="text-sm" style={{ color:"var(--text-secondary)" }}>{line}</p>
+    })
+  }
+
+  const pnlColor = (trade.pnl||0) >= 0 ? "var(--accent-success)" : "var(--accent-danger)"
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-end">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}/>
+      <div className="relative h-full w-full max-w-md flex flex-col shadow-2xl z-10 overflow-hidden"
+        style={{ background:"var(--bg-card)", borderLeft:"1px solid var(--border)" }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
+          style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+              style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))" }}>
+              <Brain size={15} className="text-white"/>
+            </div>
+            <div>
+              <p className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>SYLLEDGE AI Feedback</p>
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>Per-trade analysis</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70" style={{ color:"var(--text-muted)" }}>
+            <X size={16}/>
+          </button>
+        </div>
+
+        {/* Trade summary card */}
+        <div className="px-5 py-3 flex-shrink-0" style={{ background:"var(--bg-elevated)", borderBottom:"1px solid var(--border)" }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-bold" style={{ color:"var(--text-primary)" }}>{trade.symbol}</span>
+              <span className="px-2 py-0.5 rounded text-xs font-semibold"
+                style={{ background:trade.direction==="BUY"?"rgba(46,213,115,0.15)":"rgba(255,71,87,0.15)",
+                  color:trade.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)" }}>
+                {trade.direction==="BUY"?"▲":"▼"} {trade.direction}
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                style={{ background:trade.outcome==="WIN"?"rgba(46,213,115,0.15)":"rgba(255,71,87,0.15)",
+                  color:trade.outcome==="WIN"?"var(--accent-success)":"var(--accent-danger)" }}>
+                {trade.outcome}
+              </span>
+            </div>
+            <span className="font-bold text-sm" style={{ color:pnlColor }}>
+              {(trade.pnl||0)>=0?"+":""}${parseFloat(trade.pnl||0).toFixed(2)}
+            </span>
+          </div>
+          <div className="flex gap-3 mt-1.5 text-xs" style={{ color:"var(--text-muted)" }}>
+            <span>{trade.session}</span>
+            <span>{trade.timeframe}</span>
+            <span>Quality: {trade.quality}/10</span>
+            {trade.entry_time && <span>{new Date(trade.entry_time).toLocaleDateString()}</span>}
+          </div>
+        </div>
+
+        {/* Feedback body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {loading && (
+            <div className="flex flex-col items-center justify-center h-full gap-4">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center"
+                style={{ background:"rgba(108,99,255,0.1)" }}>
+                <Sparkles size={22} className="animate-pulse" style={{ color:"var(--accent)" }}/>
+              </div>
+              <p className="text-sm animate-pulse" style={{ color:"var(--text-muted)" }}>
+                SYLLEDGE is analysing your trade...
+              </p>
+            </div>
+          )}
+          {error && (
+            <div className="p-4 rounded-xl mt-4" style={{ background:"rgba(255,71,87,0.08)", border:"1px solid rgba(255,71,87,0.2)" }}>
+              <p className="text-sm" style={{ color:"var(--accent-danger)" }}>{error}</p>
+            </div>
+          )}
+          {feedback && !loading && (
+            <div className="space-y-0.5">
+              {formatFeedback(feedback)}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 flex gap-2 flex-shrink-0" style={{ borderTop:"1px solid var(--border)" }}>
+          <button onClick={generateFeedback} disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border"
+            style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>
+            <Sparkles size={12}/> Regenerate
+          </button>
+          <p className="text-xs my-auto ml-auto" style={{ color:"var(--text-muted)" }}>
+            Powered by Claude AI
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CSVImportModal({ open, onClose, onImported }) {
   const [file,      setFile]      = useState(null)
   const [preview,   setPreview]   = useState(null)
@@ -834,6 +1030,7 @@ export default function Journal() {
   const [modalOpen, setModalOpen]   = useState(false)
   const [editTrade, setEditTrade]   = useState(null)
   const [deleteTrade, setDeleteTrade] = useState(null)
+  const [aiFeedbackTrade, setAiFeedbackTrade] = useState(null)
 
   // Filters
   const [filterSymbol,   setFilterSymbol]   = useState("ALL")
@@ -970,7 +1167,7 @@ export default function Journal() {
       {/* Content */}
       {viewMode==="calendar"
         ? <CalendarView trades={filtered} onNewTrade={openNew}/>
-        : <TableView trades={filtered} onEdit={handleEdit} onDelete={setDeleteTrade}/>
+        : <TableView trades={filtered} onEdit={handleEdit} onDelete={setDeleteTrade} onAI={setAiFeedbackTrade}/>
       }
 
       {/* Floating + button */}

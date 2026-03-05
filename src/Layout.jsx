@@ -3,10 +3,11 @@ import { Link, useLocation } from "react-router-dom"
 import { createPageUrl } from "@/utils"
 import {
   LayoutDashboard, BookOpen, BarChart3, Brain, FlaskConical,
-  Settings, Menu, X, ChevronRight, TrendingUp, Shield, Wifi, CalendarDays
+  Settings, Menu, X, ChevronRight, TrendingUp, Shield, Wifi, CalendarDays, Zap
 } from "lucide-react"
 import { useUser } from "@/lib/UserContext"
 import { supabase } from "@/lib/supabase"
+import InstallPrompt from "@/components/InstallPrompt"
 
 const navItems = [
   { label: "Dashboard",   icon: LayoutDashboard, page: "Dashboard" },
@@ -85,6 +86,15 @@ export default function Layout({ children, currentPageName }) {
           })}
         </nav>
 
+        {/* Upgrade CTA */}
+        <div className="px-3 pt-2 pb-1">
+          <a href="/pricing"
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold w-full"
+            style={{ background:"linear-gradient(135deg,rgba(108,99,255,0.15),rgba(0,212,170,0.15))", border:"1px solid rgba(108,99,255,0.25)", color:"var(--accent)" }}>
+            <Zap size={14}/> Upgrade to Pro
+          </a>
+        </div>
+
         <div className="px-3 py-4" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg" style={{ background: "var(--bg-elevated)" }}>
             <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: "linear-gradient(135deg, #6c63ff, #00d4aa)", color: "#fff" }}>
@@ -124,6 +134,7 @@ export default function Layout({ children, currentPageName }) {
           <div className="p-4 md:p-6 min-h-full">{children}</div>
         </main>
       </div>
+      <InstallPrompt/>
     </div>
   )
 }
