@@ -610,14 +610,12 @@ function rowToTrade(row, colMap) {
 }
 
 function parseCSVJ(text) {
-  // Detect delimiter
-  const firstLine = text.split(/
-?
-/)[0] || ''
-  const tabCount   = (firstLine.match(/	/g)  || []).length
-  const semiCount  = (firstLine.match(/;/g)   || []).length
-  const commaCount = (firstLine.match(/,/g)   || []).length
-  const delim = tabCount > semiCount && tabCount > commaCount ? '	'
+  // Detect delimiter from first line
+  const firstLine = text.replace(/\r/g, '').split('\n')[0] || ''
+  const tabCount   = (firstLine.match(/\t/g)   || []).length
+  const semiCount  = (firstLine.match(/;/g)    || []).length
+  const commaCount = (firstLine.match(/,/g)    || []).length
+  const delim = tabCount > semiCount && tabCount > commaCount ? '\t'
               : semiCount > commaCount ? ';' : ','
 
   const parseRow = (line) => {
@@ -631,9 +629,7 @@ function parseCSVJ(text) {
     return r
   }
 
-  const lines = text.split(/
-?
-/).filter(l => l.trim())
+  const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim())
   if (lines.length < 2) return { trades: [], skipped: 0, colMap: {}, headers: [] }
 
   const headers = parseRow(lines[0])
@@ -644,15 +640,12 @@ function parseCSVJ(text) {
     if (!lines[i].trim()) continue
     const row   = parseRow(lines[i])
     const trade = rowToTrade(row, colMap)
-    // Skip completely empty rows
     if (trade.symbol === 'UNKNOWN' && trade.pnl === 0 && trade.entry_price === 0) { skipped++; continue }
     trades.push(trade)
   }
 
   return { trades, skipped, colMap, headers }
 }
-
-// ─── CSV Import Modal ─────────────────────────────────────────────────────────
 function CSVImportModal({ open, onClose, onImported }) {
   const [file,      setFile]      = useState(null)
   const [preview,   setPreview]   = useState(null)
