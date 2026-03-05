@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from "react"
-import { BrokerConnection, Trade } from "@/api/supabaseStore"
+import { Trade, BrokerConnection } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   Wifi, WifiOff, Plus, Trash2, X, RefreshCw,
   CheckCircle, AlertCircle, Clock, ChevronRight,
   Shield, Info, Terminal, Download, Activity,
-  ChevronDown, Eye, EyeOff, Zap
-} from "lucide-react"
+  ChevronDown, Eye, EyeOff, Zap, Globe} from "lucide-react"
 
 const BRIDGE_URL = "http://localhost:5001"
 
@@ -372,6 +371,113 @@ function AddManualModal({ open, onClose, onSaved }) {
   )
 }
 
+
+// ─── Meta API Connect Panel ────────────────────────────────────────────────────
+function MetaApiConnectPanel() {
+  const [token,     setToken]     = useState(() => localStorage.getItem("ts_metaapi_token")  || "")
+  const [accountId, setAccountId] = useState(() => localStorage.getItem("ts_metaapi_account") || "")
+  const [status,    setStatus]    = useState(null) // null | "connecting" | "ok" | "error"
+  const [message,   setMessage]   = useState("")
+  const [trades,    setTrades]    = useState([])
+
+  const connect = async () => {
+    if (!token.trim() || !accountId.trim()) { toast.error("Enter both Token and Account ID"); return }
+    setStatus("connecting"); setMessage("Connecting to MetaApi...")
+    try {
+      // MetaApi REST endpoint to get account deals
+      const res = await fetch(
+        `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${accountId.trim()}/history-deals/time/2000-01-01T00:00:00.000Z/${new Date().toISOString()}?limit=1000`,
+        { headers: { "auth-token": token.trim(), "Content-Type": "application/json" } }
+      )
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({ message: res.statusText }))
+        throw new Error(err.message || "Connection failed")
+      }
+      const deals = await res.json()
+      localStorage.setItem("ts_metaapi_token",   token.trim())
+      localStorage.setItem("ts_metaapi_account", accountId.trim())
+      const mapped = (deals || [])
+        .filter(d => d.type === "DEAL_TYPE_BUY" || d.type === "DEAL_TYPE_SELL")
+        .map(d => ({
+          symbol:      (d.symbol || "UNKNOWN").toUpperCase(),
+          direction:   d.type === "DEAL_TYPE_BUY" ? "BUY" : "SELL",
+          entry_price: d.price  || 0,
+          exit_price:  0,
+          pnl:         d.profit || 0,
+          pips:        0,
+          outcome:     (d.profit || 0) > 0 ? "WIN" : (d.profit || 0) < 0 ? "LOSS" : "BREAKEVEN",
+          entry_time:  d.time   || new Date().toISOString(),
+          session:     "LONDON", timeframe: "H1", quality: 5,
+          notes: `MetaApi import · ticket: ${d.id || ""}`,
+          screenshots: [], chart_url: "", playbook_id: "",
+        }))
+      setTrades(mapped)
+      setStatus("ok")
+      setMessage(`Connected! ${mapped.length} trades ready to import.`)
+    } catch(e) {
+      setStatus("error")
+      setMessage(e.message || "Connection failed")
+    }
+  }
+
+  const importTrades = async () => {
+    if (!trades.length) return
+    let n = 0
+    for (const t of trades) { try { await Trade.create(t); n++ } catch {} }
+    toast.success(`${n} trades imported from MetaApi!`)
+    setTrades([]); setStatus(null); setMessage("")
+  }
+
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+      <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
+        <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>Connect your account</h3>
+      </div>
+      <div className="p-5 space-y-4">
+        {[
+          { label:"MetaApi Auth Token", val:token, set:setToken, placeholder:"eyJhbGci..." },
+          { label:"Account ID",         val:accountId, set:setAccountId, placeholder:"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+        ].map(f=>(
+          <div key={f.label}>
+            <label className="block text-xs font-medium mb-1.5" style={{ color:"var(--text-muted)" }}>{f.label}</label>
+            <input value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.placeholder}
+              className="w-full h-10 rounded-xl px-3 text-sm border font-mono" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+          </div>
+        ))}
+
+        {/* Status */}
+        {status && (
+          <div className="flex items-center gap-2 p-3 rounded-xl text-sm"
+            style={{ background: status==="ok"?"rgba(46,213,115,0.08)":status==="error"?"rgba(255,71,87,0.08)":"rgba(108,99,255,0.08)",
+              border:`1px solid ${status==="ok"?"rgba(46,213,115,0.2)":status==="error"?"rgba(255,71,87,0.2)":"rgba(108,99,255,0.2)"}`,
+              color: status==="ok"?"var(--accent-success)":status==="error"?"var(--accent-danger)":"var(--accent)" }}>
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${status==="connecting"?"animate-pulse bg-purple-400":status==="ok"?"bg-green-400":"bg-red-400"}`}/>
+            {message}
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          <button onClick={connect} disabled={status==="connecting"}
+            className="flex-1 h-10 rounded-xl text-sm font-bold text-white"
+            style={{ background:"linear-gradient(135deg,#1877f2,#0d5dbf)", opacity:status==="connecting"?0.7:1 }}>
+            {status==="connecting" ? "Connecting..." : "Connect & Fetch Trades"}
+          </button>
+          {trades.length > 0 && (
+            <button onClick={importTrades}
+              className="flex-1 h-10 rounded-xl text-sm font-bold text-white"
+              style={{ background:"linear-gradient(135deg,var(--accent-success),#00b894)" }}>
+              Import {trades.length} Trades
+            </button>
+          )}
+        </div>
+        <p className="text-xs" style={{ color:"var(--text-muted)" }}>
+          Your MetaApi credentials are stored locally and never sent to TradeSylla servers.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main BrokerSync Page ──────────────────────────────────────────────────────
 export default function BrokerSync() {
   const [tab,          setTab]          = useState("mt5")
@@ -503,9 +609,10 @@ export default function BrokerSync() {
       {/* Tabs */}
       <div className="flex gap-1 mb-5 rounded-xl p-1" style={{ background:"var(--bg-elevated)", width:"fit-content" }}>
         {[
-          { id:"mt5", label:"MT5 Auto-Sync", icon:Zap },
-          { id:"manual", label:`Manual (${manualConns.length})`, icon:Shield },
-          { id:"setup", label:"Setup Guide", icon:Terminal },
+          { id:"mt5",   label:"MT5 Auto-Sync",         icon:Zap },
+          { id:"meta",  label:"Meta API",              icon:Globe },
+          { id:"manual",label:`Manual (${manualConns.length})`, icon:Shield },
+          { id:"setup", label:"Setup Guide",           icon:Terminal },
         ].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all"
@@ -536,6 +643,69 @@ export default function BrokerSync() {
               <MT5ConnectPanel onConnected={handleMT5Connected}/>
             </div>
           )}
+        </div>
+      )}
+
+
+      {/* Meta API Tab */}
+      {tab === "meta" && (
+        <div className="max-w-2xl space-y-5">
+          {/* What is Meta API */}
+          <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+            <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)", background:"rgba(24,119,242,0.06)" }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-sm" style={{ background:"linear-gradient(135deg,#1877f2,#0d5dbf)" }}>M</div>
+                <div>
+                  <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>Meta API Bridge</h3>
+                  <p className="text-xs" style={{ color:"var(--text-muted)" }}>Connect any MetaTrader 4 or MT5 account via cloud — no local bridge needed</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  { icon:"☁️", title:"Cloud-based",   desc:"No local Python script required — works from anywhere" },
+                  { icon:"🔌", title:"MT4 + MT5",      desc:"Supports both MetaTrader 4 and MetaTrader 5 accounts" },
+                  { icon:"🔒", title:"Read-only",      desc:"Uses Investor password — TradeSylla can never place trades" },
+                ].map(f=>(
+                  <div key={f.title} className="p-3 rounded-xl" style={{ background:"var(--bg-elevated)" }}>
+                    <span className="text-xl">{f.icon}</span>
+                    <p className="text-sm font-semibold mt-1" style={{ color:"var(--text-primary)" }}>{f.title}</p>
+                    <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{f.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Setup Steps */}
+          <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+            <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
+              <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>How to connect via Meta API</h3>
+              <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>5 steps · free tier available · works on any OS</p>
+            </div>
+            <div className="p-5 space-y-4">
+              {[
+                { n:1, title:"Create a MetaApi account", body:"Go to app.metaapi.cloud and sign up for a free account. No credit card required.", link:"https://app.metaapi.cloud", linkLabel:"Open MetaApi →" },
+                { n:2, title:"Deploy a new account", body:'In the MetaApi dashboard click "New Account" and enter your MT4/MT5 broker credentials (server, login, Investor password).' },
+                { n:3, title:"Copy your API Token", body:'In MetaApi → API Access → copy your "auth token" (starts with "eyJ...").' },
+                { n:4, title:"Copy your Account ID", body:'In MetaApi → your deployed account → copy the "Account ID" (a UUID like "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx").' },
+                { n:5, title:"Paste them in the form below", body:"Enter your MetaApi token and account ID below. TradeSylla will sync your trades automatically." },
+              ].map(step=>(
+                <div key={step.n} className="flex gap-3">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5" style={{ background:"#1877f2", color:"#fff" }}>{step.n}</div>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>{step.title}</p>
+                    <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{step.body}</p>
+                    {step.link && <a href={step.link} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color:"#1877f2" }}>{step.linkLabel}</a>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Connect Form */}
+          <MetaApiConnectPanel/>
         </div>
       )}
 

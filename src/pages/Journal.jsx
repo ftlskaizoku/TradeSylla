@@ -543,19 +543,18 @@ function normalizeDirection(raw) {
 }
 
 function normalizeOutcome(raw, pnl) {
+  const n = parseFloat(String(pnl).replace(/[^\d.\-]/g,'')) || 0
+  // PNL is the ground truth — always use it when available
+  if (n >  0.001) return 'WIN'
+  if (n < -0.001) return 'LOSS'
+  // P&L is 0 or missing — try to read from the outcome column
   if (raw) {
     const v = raw.toString().toUpperCase().trim()
     const WIN_VALS  = ['WIN','W','PROFIT','WINNER','WON','WINNING','PROFITABLE','GAGNÉ','GAGNE','YES','TRUE','1','POSITIVE','GREEN']
     const LOSS_VALS = ['LOSS','L','LOSE','LOSER','LOSING','LOST','PERDU','NO','FALSE','-1','NEGATIVE','RED']
-    const BE_VALS   = ['BREAKEVEN','BE','EVEN','0','SCRATCH','NEUTRAL']
     if (WIN_VALS.includes(v)  || WIN_VALS.some(x  => v.includes(x))) return 'WIN'
     if (LOSS_VALS.includes(v) || LOSS_VALS.some(x => v.includes(x))) return 'LOSS'
-    if (BE_VALS.includes(v)   || BE_VALS.some(x   => v.includes(x))) return 'BREAKEVEN'
   }
-  // Infer from P&L
-  const n = parseFloat(pnl) || 0
-  if (n >  0.001) return 'WIN'
-  if (n < -0.001) return 'LOSS'
   return 'BREAKEVEN'
 }
 

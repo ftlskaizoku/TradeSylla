@@ -123,23 +123,37 @@ function PlaybookModal({ open, onClose, onSaved, editItem }) {
     if (!form.name.trim()) { toast.error("Strategy name is required"); return }
     setSaving(true)
     try {
+      // Map "retired" → "inactive" to match DB constraint (active/inactive/testing)
+      const dbStatus = form.status === "retired" ? "inactive" : (form.status || "active")
+      // Only send fields that exist in the DB schema
       const payload = {
-        ...form,
-        entry_rules:  form.entry_rules.filter(r=>r.trim()),
-        exit_rules:   form.exit_rules.filter(r=>r.trim()),
-        risk_rules:   form.risk_rules.filter(r=>r.trim()),
-        buy_rules:    form.buy_rules.filter(r=>r.trim()),
-        sell_rules:   form.sell_rules.filter(r=>r.trim()),
-        buy_images:   form.buy_images  || [],
-        sell_images:  form.sell_images || [],
-        win_rate:     parseFloat(form.win_rate)     || null,
-        profit_factor:parseFloat(form.profit_factor)|| null,
-        avg_rr:       parseFloat(form.avg_rr)       || null,
+        name:          form.name.trim(),
+        category:      form.category      || "Price Action",
+        status:        dbStatus,
+        description:   form.description   || "",
+        custom_pairs:  form.custom_pairs  || "",
+        sessions:      Array.isArray(form.sessions)   ? form.sessions   : [],
+        timeframes:    Array.isArray(form.timeframes) ? form.timeframes : [],
+        pairs:         Array.isArray(form.pairs)      ? form.pairs      : [],
+        entry_rules:   (form.entry_rules  || []).filter(r => r && r.trim()),
+        exit_rules:    (form.exit_rules   || []).filter(r => r && r.trim()),
+        risk_rules:    (form.risk_rules   || []).filter(r => r && r.trim()),
+        buy_rules:     (form.buy_rules    || []).filter(r => r && r.trim()),
+        sell_rules:    (form.sell_rules   || []).filter(r => r && r.trim()),
+        buy_images:    Array.isArray(form.buy_images)  ? form.buy_images  : [],
+        sell_images:   Array.isArray(form.sell_images) ? form.sell_images : [],
+        notes:         form.notes         || "",
+        win_rate:      parseFloat(form.win_rate)      || null,
+        profit_factor: parseFloat(form.profit_factor) || null,
+        avg_rr:        parseFloat(form.avg_rr)        || null,
       }
       if (isEdit) { await PlaybookEntity.update(editItem.id, payload); toast.success("Strategy updated!") }
       else        { await PlaybookEntity.create(payload);              toast.success("Strategy added!") }
       onSaved(); onClose()
-    } catch { toast.error("Failed to save") }
+    } catch(err) {
+      console.error("Playbook save error:", err)
+      toast.error("Failed to save: " + (err?.message || "unknown error"))
+    }
     setSaving(false)
   }
 
