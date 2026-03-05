@@ -21,9 +21,13 @@ export const UserProvider = ({ children }) => {
       if (session) {
         setUser(buildProfile(session.user))
         if (event === 'SIGNED_IN') {
-          migrateLocalToSupabase(session.user.id).then(({ migrated }) => {
-            if (migrated > 0) console.log(`Migrated ${migrated} records to Supabase`)
-          })
+          try {
+            migrateLocalToSupabase(session.user.id)
+              .then(({ migrated }) => {
+                if (migrated > 0) console.log(`Migrated ${migrated} records to Supabase`)
+              })
+              .catch(() => {})
+          } catch {}
         }
       } else {
         setUser(null)

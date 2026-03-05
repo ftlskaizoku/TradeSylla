@@ -1038,14 +1038,16 @@ export default function Journal() {
   const [filterSession,  setFilterSession]  = useState("ALL")
 
   const loadTrades = async () => {
-    const data = await Trade.list()
-    const safe = data.map(safeTrade).filter(Boolean)
-    setTrades(safe.sort((a,b)=>new Date(b.entry_time)-new Date(a.entry_time)))
+    try {
+      const data = await Trade.list()
+      const safe = (data || []).map(safeTrade).filter(Boolean)
+      setTrades(safe.sort((a,b)=>new Date(b.entry_time)-new Date(a.entry_time)))
+    } catch(e) { console.error("Journal loadTrades:", e) }
   }
   useEffect(() => {
     loadTrades()
     const unsub = subscribeToTable('trades', loadTrades)
-    return () => unsub()
+    return () => { try { unsub() } catch {} }
   }, [])
 
   // Unique symbols from actual data

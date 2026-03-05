@@ -27,12 +27,16 @@ export default function Layout({ children, currentPageName }) {
   const location = useLocation()
   const lastTracked = useRef("")
 
-  // Track page views
+  // Track page views — wrapped in try/catch so failures never crash the app
   useEffect(() => {
     const page = location.pathname.replace("/", "") || "Dashboard"
     if (!user || lastTracked.current === page) return
     lastTracked.current = page
-    supabase.from("page_views").insert([{ user_id: user.id, page, referrer: document.referrer || null }]).then()
+    try {
+      supabase.from("page_views")
+        .insert([{ user_id: user.id, page, referrer: document.referrer || null }])
+        .then(() => {}).catch(() => {})
+    } catch {}
   }, [location.pathname, user])
   const closeSidebar = () => setSidebarOpen(false)
 

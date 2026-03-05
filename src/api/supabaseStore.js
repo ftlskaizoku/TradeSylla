@@ -79,13 +79,15 @@ function rehydrateImages(record) {
 function sbEntity(table) {
   return {
     async list(filters) {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return localEntity(table).list(filters)
-      let q = supabase.from(table).select('*').eq('user_id', session.user.id).order('created_at', { ascending: false })
-      if (filters) Object.entries(filters).forEach(([k, v]) => { if (v) q = q.eq(k, v) })
-      const { data, error } = await q
-      if (error) { console.error(table, error); return [] }
-      return (data || []).map(rehydrateImages)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return localEntity(table).list(filters)
+        let q = supabase.from(table).select('*').eq('user_id', session.user.id).order('created_at', { ascending: false })
+        if (filters) Object.entries(filters).forEach(([k, v]) => { if (v) q = q.eq(k, v) })
+        const { data, error } = await q
+        if (error) { console.error(table, error); return [] }
+        return (data || []).map(rehydrateImages)
+      } catch(e) { console.error('list error', table, e); return [] }
     },
     async get(id) {
       const { data: { session } } = await supabase.auth.getSession()
@@ -95,20 +97,24 @@ function sbEntity(table) {
       return rehydrateImages(data)
     },
     async create(payload) {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return localEntity(table).create(payload)
-      const clean = stripAndCacheImages(payload)
-      const { data, error } = await supabase.from(table).insert([{ ...clean, user_id: session.user.id }]).select().single()
-      if (error) { console.error('create', table, error); throw error }
-      return rehydrateImages(data)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return localEntity(table).create(payload)
+        const clean = stripAndCacheImages(payload)
+        const { data, error } = await supabase.from(table).insert([{ ...clean, user_id: session.user.id }]).select().single()
+        if (error) { console.error('create', table, error); throw error }
+        return rehydrateImages(data)
+      } catch(e) { console.error('create error', table, e); throw e }
     },
     async update(id, payload) {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return localEntity(table).update(id, payload)
-      const clean = stripAndCacheImages(payload)
-      const { data, error } = await supabase.from(table).update({ ...clean, updated_at: new Date().toISOString() }).eq('id', id).select().single()
-      if (error) { console.error('update', table, error); throw error }
-      return rehydrateImages(data)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return localEntity(table).update(id, payload)
+        const clean = stripAndCacheImages(payload)
+        const { data, error } = await supabase.from(table).update({ ...clean, updated_at: new Date().toISOString() }).eq('id', id).select().single()
+        if (error) { console.error('update', table, error); throw error }
+        return rehydrateImages(data)
+      } catch(e) { console.error('update error', table, e); throw e }
     },
     async delete(id) {
       const { data: { session } } = await supabase.auth.getSession()

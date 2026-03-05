@@ -394,14 +394,16 @@ export default function Dashboard() {
   const [tradeModalOpen, setTradeModalOpen] = useState(false)
 
   const loadTrades = async () => {
-    const data = await Trade.list()
-    const safe = data.map(safeTrade).filter(Boolean)
-    setTrades(safe.sort((a,b)=>new Date(b.entry_time)-new Date(a.entry_time)))
+    try {
+      const data = await Trade.list()
+      const safe = (data || []).map(safeTrade).filter(Boolean)
+      setTrades(safe.sort((a,b)=>new Date(b.entry_time)-new Date(a.entry_time)))
+    } catch(e) { console.error("Dashboard loadTrades:", e) }
   }
   useEffect(() => {
     loadTrades()
     const unsub = subscribeToTable('trades', loadTrades)
-    return () => unsub()
+    return () => { try { unsub() } catch {} }
   }, [])
 
   // ── Stats ──────────────────────────────────────────────────────────────────
