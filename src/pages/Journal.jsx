@@ -661,12 +661,6 @@ function AiFeedbackPanel({ trade, allTrades, onClose }) {
 
   const generateFeedback = async () => {
     setLoading(true); setError(""); setFeedback("")
-    const key = localStorage.getItem("ts_anthropic_key") || ""
-    if (!key) {
-      setError("No Anthropic API key found. Add it in Settings → API Keys → SYLLEDGE AI.")
-      setLoading(false); return
-    }
-
     // Build context from all trades
     const wins   = allTrades.filter(t => t.outcome === "WIN").length
     const losses = allTrades.filter(t => t.outcome === "LOSS").length
@@ -705,18 +699,12 @@ Give feedback in these exact sections:
 Be direct, reference their actual numbers. No generic advice.`
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/ai", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": key,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          messages:   [{ role: "user", content: prompt }],
           max_tokens: 600,
-          messages: [{ role: "user", content: prompt }]
         })
       })
       const data = await res.json()

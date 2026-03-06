@@ -23,8 +23,15 @@ export const authHelpers = {
       options: { data: { full_name: fullName } },
     }),
 
-  signIn: (email, password) =>
-    supabase.auth.signInWithPassword({ email, password }),
+  signIn: (email, password, rememberMe = false) =>
+    supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: {
+        // 30 days if remembered, browser session only if not
+        expiresIn: rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 8,
+      }
+    }),
 
   signInGoogle: () =>
     supabase.auth.signInWithOAuth({

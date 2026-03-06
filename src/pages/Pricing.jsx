@@ -124,15 +124,42 @@ export default function Pricing() {
   const navigate = useNavigate()
   const { user } = useUser()
 
-  const handleCTA = (plan) => {
+  const [checkoutLoading, setCheckoutLoading] = useState("")
+
+  const handleCTA = async (plan, billingCycle) => {
     if (plan.id === "free") {
-      navigate(user ? "/Dashboard" : "/auth")
-    } else if (plan.id === "elite") {
-      window.open("mailto:hello@tradesylla.com?subject=Elite Plan Inquiry", "_blank")
-    } else {
-      // Pro — coming soon toast / redirect to checkout
-      navigate(user ? "/Settings" : "/auth")
+      navigate(user ? "/Dashboard" : "/auth"); return
     }
+    if (plan.id === "elite") {
+      window.open("mailto:hello@tradesylla.com?subject=Elite Plan Inquiry", "_blank"); return
+    }
+    if (!user) { navigate("/auth"); return }
+
+    // Pro — start Stripe checkout
+    const planKey = `${plan.id}_${billingCycle}`
+    setCheckoutLoading(planKey)
+    try {
+      const res  = await fetch("/api/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan:       planKey,
+          userId:     user.id,
+          email:      user.email,
+          successUrl: `${window.location.origin}/Settings?upgraded=true`,
+          cancelUrl:  `${window.location.origin}/pricing`,
+        }),
+      })
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        alert("Could not start checkout: " + (data.error || "unknown error"))
+      }
+    } catch(e) {
+      alert("Checkout error: " + e.message)
+    }
+    setCheckoutLoading("")
   }
 
   return (
@@ -219,14 +246,16 @@ export default function Pricing() {
                     )}
                   </div>
 
-                  <button onClick={()=>handleCTA(plan)}
+                  <button onClick={()=>handleCTA(plan, billing)}
+                    disabled={!!checkoutLoading}
                     className="w-full h-11 rounded-xl text-sm font-bold mb-6 transition-all"
-                    style={
-                      plan.ctaStyle==="gradient" ? { background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", color:"#fff" } :
-                      plan.ctaStyle==="gold"     ? { background:"linear-gradient(135deg,#ffa502,#ff6b35)", color:"#fff" } :
-                      { background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--text-primary)" }
-                    }>
-                    {plan.cta}
+                    style={{
+                      opacity: checkoutLoading === `${plan.id}_${billing}` ? 0.7 : 1,
+                      ...(plan.ctaStyle==="gradient" ? { background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", color:"#fff" } :
+                         plan.ctaStyle==="gold"     ? { background:"linear-gradient(135deg,#ffa502,#ff6b35)", color:"#fff" } :
+                         { background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--text-primary)" })
+                    }}>
+                    {checkoutLoading === `${plan.id}_${billing}` ? "Redirecting..." : plan.cta}
                   </button>
 
                   <div className="space-y-2.5">

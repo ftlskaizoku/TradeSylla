@@ -85,18 +85,27 @@ function OAuthBtn({ icon, label, onClick, loading }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function SignIn({ switchTo }) {
   const navigate   = useNavigate()
-  const [email,    setEmail]    = useState('')
+  const [email,    setEmail]    = useState(() => localStorage.getItem('ts_saved_email') || '')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
-  const [loading,  setLoading]  = useState(false)
+  const [loading,     setLoading]     = useState(false)
+  const [rememberMe,  setRememberMe]  = useState(() => localStorage.getItem('ts_remember') === '1')
   const [oauthLoading, setOauthLoading] = useState('')
 
   const handleSignIn = async () => {
     if (!email || !password) { toast.error('Please fill in all fields'); return }
     setLoading(true)
-    const { error } = await authHelpers.signIn(email, password)
+    const { error } = await authHelpers.signIn(email, password, rememberMe)
     setLoading(false)
     if (error) { toast.error(error.message); return }
+    // Save remember-me preference and email
+    if (rememberMe) {
+      localStorage.setItem('ts_remember', '1')
+      localStorage.setItem('ts_saved_email', email)
+    } else {
+      localStorage.removeItem('ts_remember')
+      localStorage.removeItem('ts_saved_email')
+    }
     toast.success('Welcome back!')
     navigate('/Dashboard')
   }
@@ -146,7 +155,25 @@ function SignIn({ switchTo }) {
         />
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        {/* Remember me */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <div
+            onClick={() => setRememberMe(v => !v)}
+            className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-all"
+            style={{
+              background:   rememberMe ? 'var(--accent)' : 'transparent',
+              border:       `2px solid ${rememberMe ? 'var(--accent)' : 'var(--border-light)'}`,
+              cursor:       'pointer',
+            }}>
+            {rememberMe && (
+              <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+                <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </div>
+          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Remember me</span>
+        </label>
         <button onClick={() => switchTo('forgot')} className="text-xs hover:opacity-70"
           style={{ color: 'var(--accent)' }}>
           Forgot password?

@@ -201,19 +201,17 @@ Be direct, insightful and encouraging. The trader wants to improve.`
     const history = messages.slice(-10).map(m => ({ role: m.role, content: m.content }))
 
     try {
-      const anthropicKey = localStorage.getItem("ts_anthropic_key") || ""
-      if (!anthropicKey) return "No Anthropic API key found. Add it in Settings → API Keys → SYLLEDGE AI to enable AI coaching."
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/ai", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          system:     systemPrompt,
+          messages:   [...history, { role: "user", content: userMessage }],
           max_tokens: 1000,
-          system: systemPrompt,
-          messages: [...history, { role: "user", content: userMessage }]
         })
       })
       const data = await response.json()
+      if (data.error) return `AI error: ${data.error}`
       const text = data.content?.map(b => b.text || "").join("") || "Sorry, I couldn't generate a response. Please try again."
       return text
     } catch (e) {

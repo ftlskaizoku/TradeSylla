@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from "react"
 import { Trade, BrokerConnection } from "@/api/supabaseStore"
+import { useUser } from "@/lib/UserContext"
+import { supabase } from "@/lib/supabase"
 import { toast } from "@/components/ui/toast"
 import {
   Wifi, WifiOff, Plus, Trash2, X, RefreshCw,
   CheckCircle, AlertCircle, Clock, ChevronRight,
   Shield, Info, Terminal, Download, Activity,
-  ChevronDown, Eye, EyeOff, Zap, Globe} from "lucide-react"
+  ChevronDown, Eye, EyeOff, Zap, Globe, Copy, Key, Bot} from "lucide-react"
 
 const BRIDGE_URL = "http://localhost:5001"
 
@@ -479,8 +481,234 @@ function MetaApiConnectPanel() {
 }
 
 // ─── Main BrokerSync Page ──────────────────────────────────────────────────────
+
+// ─── EA Setup Panel ───────────────────────────────────────────────────────────
+function EASetupPanel() {
+  const { user } = useUser()
+  const [token,       setToken]       = useState("")
+  const [generating,  setGenerating]  = useState(false)
+  const [copied,      setCopied]      = useState("")
+  const [step,        setStep]        = useState(1)
+
+  useEffect(() => {
+    // Load existing token
+    if (user) {
+      supabase.from("profiles").select("ea_token").eq("id", user.id).single()
+        .then(({ data }) => { if (data?.ea_token) setToken(data.ea_token) })
+    }
+  }, [user])
+
+  const generateToken = async () => {
+    setGenerating(true)
+    try {
+      // Generate a random token
+      const array = new Uint8Array(24)
+      crypto.getRandomValues(array)
+      const newToken = Array.from(array).map(b => b.toString(16).padStart(2,"0")).join("")
+      const { error } = await supabase
+        .from("profiles")
+        .update({ ea_token: newToken })
+        .eq("id", user.id)
+      if (error) throw error
+      setToken(newToken)
+      toast.success("Token generated!")
+    } catch(e) {
+      toast.error("Failed to generate token: " + e.message)
+    }
+    setGenerating(false)
+  }
+
+  const copy = (text, key) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key)
+      setTimeout(() => setCopied(""), 2000)
+    })
+  }
+
+  const STEPS = [
+    {
+      n: 1, title: "Download the EA file",
+      content: (
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
+            The Expert Advisor (EA) is a small program that runs silently inside MT5 and sends your closed trades to TradeSylla automatically.
+          </p>
+          <a href="/ea/TradeSylla_Sync.ex5" download
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))" }}>
+            <Download size={14}/> Download TradeSylla_Sync.ex5
+          </a>
+          <p className="text-xs" style={{ color:"var(--text-muted)" }}>
+            No Python, no Meta API account, no terminal required.
+          </p>
+        </div>
+      )
+    },
+    {
+      n: 2, title: "Install the EA in MT5",
+      content: (
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
+            In MetaTrader 5, go to <strong style={{ color:"var(--text-primary)" }}>File → Open Data Folder</strong>. Then navigate to:
+          </p>
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-mono text-xs" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--accent)" }}>
+            <span className="flex-1">MQL5 / Experts /</span>
+            <button onClick={()=>copy("MQL5/Experts/", "path")} className="hover:opacity-70">
+              {copied==="path" ? <CheckCircle size={12} style={{ color:"var(--accent-success)" }}/> : <Copy size={12}/>}
+            </button>
+          </div>
+          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
+            Drop <code style={{ color:"var(--accent)" }}>TradeSylla_Sync.ex5</code> into that folder. Then in MT5, press <strong style={{ color:"var(--text-primary)" }}>F5</strong> or right-click the Expert Advisors list and hit <strong style={{ color:"var(--text-primary)" }}>Refresh</strong>.
+          </p>
+        </div>
+      )
+    },
+    {
+      n: 3, title: "Generate your User Token",
+      content: (
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
+            This token identifies your account. The EA uses it to send trades to the right journal. Keep it private.
+          </p>
+          {token ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-mono text-xs" style={{ background:"var(--bg-elevated)", border:"1px solid rgba(46,213,115,0.3)", color:"var(--accent-success)" }}>
+                <span className="flex-1 truncate">{token}</span>
+                <button onClick={()=>copy(token,"token")} className="hover:opacity-70 flex-shrink-0">
+                  {copied==="token" ? <CheckCircle size={12}/> : <Copy size={12}/>}
+                </button>
+              </div>
+              <button onClick={generateToken} disabled={generating}
+                className="text-xs px-3 py-1.5 rounded-lg border"
+                style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-muted)" }}>
+                {generating ? "Generating..." : "↺ Regenerate token"}
+              </button>
+            </div>
+          ) : (
+            <button onClick={generateToken} disabled={generating}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold"
+              style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--accent)" }}>
+              <Key size={14}/>{generating ? "Generating..." : "Generate My Token"}
+            </button>
+          )}
+        </div>
+      )
+    },
+    {
+      n: 4, title: "Attach the EA to a chart",
+      content: (
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
+            In MT5, open any chart (e.g. EURUSD H1). In the Navigator panel, find <strong style={{ color:"var(--text-primary)" }}>TradeSylla_Sync</strong> under Expert Advisors. Double-click it or drag it onto the chart.
+          </p>
+          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
+            In the EA settings window, paste your <strong style={{ color:"var(--accent)" }}>User Token</strong> from step 3 into the <code>UserToken</code> field.
+          </p>
+          <div className="p-3 rounded-xl text-sm" style={{ background:"rgba(255,165,2,0.08)", border:"1px solid rgba(255,165,2,0.2)", color:"var(--accent-warning)" }}>
+            ⚠ Make sure <strong>Auto Trading</strong> is enabled (green button at top of MT5) and the EA shows a smiley face icon on the chart.
+          </div>
+        </div>
+      )
+    },
+    {
+      n: 5, title: "Allow WebRequest in MT5",
+      content: (
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
+            MT5 blocks external connections by default. You need to whitelist TradeSylla once:
+          </p>
+          <ol className="space-y-2 text-sm" style={{ color:"var(--text-secondary)" }}>
+            <li>1. In MT5: <strong style={{ color:"var(--text-primary)" }}>Tools → Options → Expert Advisors</strong></li>
+            <li>2. Check <strong style={{ color:"var(--text-primary)" }}>Allow WebRequest for listed URL</strong></li>
+            <li>3. Click <strong style={{ color:"var(--text-primary)" }}>+</strong> and add:</li>
+          </ol>
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-mono text-xs" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--accent)" }}>
+            <span className="flex-1">https://tradesylla.vercel.app</span>
+            <button onClick={()=>copy("https://tradesylla.vercel.app","url")} className="hover:opacity-70">
+              {copied==="url" ? <CheckCircle size={12} style={{ color:"var(--accent-success)" }}/> : <Copy size={12}/>}
+            </button>
+          </div>
+          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
+            4. Click <strong style={{ color:"var(--text-primary)" }}>OK</strong>. The EA will now sync your trades every 30 seconds automatically.
+          </p>
+        </div>
+      )
+    },
+  ]
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      {/* Header */}
+      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+        <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom:"1px solid var(--border)", background:"linear-gradient(135deg,rgba(108,99,255,0.08),rgba(0,212,170,0.04))" }}>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+            style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))" }}>
+            <Bot size={18} className="text-white"/>
+          </div>
+          <div>
+            <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>MT5 Expert Advisor Sync</h3>
+            <p className="text-xs" style={{ color:"var(--text-muted)" }}>Automatic sync — no Meta API, no Python, no terminal</p>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
+            style={{ background:"rgba(46,213,115,0.1)", color:"var(--accent-success)", border:"1px solid rgba(46,213,115,0.2)" }}>
+            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
+            Zero setup for users
+          </div>
+        </div>
+        <div className="grid grid-cols-3 divide-x p-0" style={{ borderBottom:"1px solid var(--border)" }}>
+          {[
+            { icon:"🖥️", label:"Works on",      val:"MT4 & MT5" },
+            { icon:"⏱️", label:"Sync interval", val:"Every 30s"  },
+            { icon:"🔒", label:"Access",         val:"Read-only"  },
+          ].map(s => (
+            <div key={s.label} className="py-3 text-center">
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.icon} {s.label}</p>
+              <p className="text-sm font-bold mt-0.5" style={{ color:"var(--text-primary)" }}>{s.val}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Step-by-step guide */}
+      <div className="space-y-3">
+        {STEPS.map(s => (
+          <div key={s.n} className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:`1px solid ${step===s.n?"var(--accent)":"var(--border)"}` }}>
+            <button type="button" onClick={()=>setStep(step===s.n ? 0 : s.n)}
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
+              style={{ background: step===s.n ? "rgba(108,99,255,0.06)" : "transparent" }}>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                style={{ background: step===s.n ? "var(--accent)" : "var(--bg-elevated)", color: step===s.n ? "#fff" : "var(--text-muted)" }}>
+                {s.n}
+              </div>
+              <span className="font-semibold text-sm flex-1" style={{ color: step===s.n ? "var(--accent)" : "var(--text-primary)" }}>
+                {s.title}
+              </span>
+              <ChevronDown size={14} style={{ color:"var(--text-muted)", transform: step===s.n ? "rotate(180deg)" : "none", transition:"transform 0.2s" }}/>
+            </button>
+            {step===s.n && (
+              <div className="px-4 pb-4 pt-1">
+                {s.content}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Status note */}
+      {token && (
+        <div className="p-4 rounded-2xl text-sm" style={{ background:"rgba(46,213,115,0.06)", border:"1px solid rgba(46,213,115,0.15)" }}>
+          <p className="font-semibold" style={{ color:"var(--accent-success)" }}>✓ Token active — EA is ready to connect</p>
+          <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>
+            Once the EA is running, your closed trades will appear in the Journal automatically. No action needed on TradeSylla.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function BrokerSync() {
-  const [tab,          setTab]          = useState("mt5")
+  const [tab,          setTab]          = useState("ea")
   const [mt5Account,   setMt5Account]   = useState(null)
   const [mt5TradeCount,setMt5TradeCount]= useState(0)
   const [lastSync,     setLastSync]     = useState(null)
@@ -609,7 +837,8 @@ export default function BrokerSync() {
       {/* Tabs */}
       <div className="flex gap-1 mb-5 rounded-xl p-1" style={{ background:"var(--bg-elevated)", width:"fit-content" }}>
         {[
-          { id:"mt5",   label:"MT5 Auto-Sync",         icon:Zap },
+          { id:"ea",    label:"MT5 EA",                icon:Bot },
+          { id:"mt5",   label:"MT5 Bridge",            icon:Zap },
           { id:"meta",  label:"Meta API",              icon:Globe },
           { id:"manual",label:`Manual (${manualConns.length})`, icon:Shield },
           { id:"setup", label:"Setup Guide",           icon:Terminal },
@@ -621,6 +850,11 @@ export default function BrokerSync() {
           </button>
         ))}
       </div>
+
+      {/* MT5 EA Tab */}
+      {tab === "ea" && (
+        <EASetupPanel/>
+      )}
 
       {/* MT5 Auto-Sync Tab */}
       {tab === "mt5" && (

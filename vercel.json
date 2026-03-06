@@ -2,13 +2,14 @@
   "buildCommand": "node node_modules/vite/bin/vite.js build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)",     "destination": "/index.html" }
   ],
   "headers": [
     {
       "source": "/sw.js",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache" },
+        { "key": "Cache-Control",          "value": "no-cache" },
         { "key": "Service-Worker-Allowed", "value": "/" }
       ]
     }

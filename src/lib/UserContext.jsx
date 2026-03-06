@@ -12,14 +12,14 @@ export const UserProvider = ({ children }) => {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      setUser(session ? buildProfile(session.user) : null)
+      if (session) { buildProfileWithPlan(session.user).then(setUser) } else { setUser(null) }
       setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session)
       if (session) {
-        setUser(buildProfile(session.user))
+        buildProfileWithPlan(session.user).then(setUser)
         if (event === 'SIGNED_IN') {
           try {
             migrateLocalToSupabase(session.user.id)
@@ -37,6 +37,25 @@ export const UserProvider = ({ children }) => {
     return () => subscription.unsubscribe()
   }, [])
 
+  async function buildProfileWithPlan(u) {
+    const m = u.user_metadata || {}
+    const base = {
+      id:         u.id,
+      email:      u.email,
+      full_name:  m.full_name || m.name || u.email?.split('@')[0] || 'Trader',
+      avatar_url: m.avatar_url || m.picture || null,
+      currency:   m.currency || 'USD',
+      bio:        m.bio || '',
+      created_at: u.created_at,
+      plan:       'free',
+    }
+    try {
+      const { data } = await supabase.from('profiles').select('plan').eq('id', u.id).single()
+      if (data?.plan) base.plan = data.plan
+    } catch {}
+    return base
+  }
+
   function buildProfile(u) {
     const m = u.user_metadata || {}
     return {
@@ -47,6 +66,7 @@ export const UserProvider = ({ children }) => {
       currency:   m.currency || 'USD',
       bio:        m.bio || '',
       created_at: u.created_at,
+      plan:       'free',
     }
   }
 
@@ -58,13 +78,14 @@ export const UserProvider = ({ children }) => {
 
   const signOut = () => authHelpers.signOut()
 
-  // Plan helpers — admin always has full Pro access
+  // Plan helpers
   const ADMIN_EMAIL = "khalifadylla@gmail.com"
   const isAdmin = user?.email === ADMIN_EMAIL
-  const isPro   = isAdmin || false  // extend here when real billing is added
+  const isPro   = isAdmin || user?.plan === "pro" || user?.plan === "elite"
+  const isElite = isAdmin || user?.plan === "elite"
 
   return (
-    <UserContext.Provider value={{ user, session, loading, updateUser, signOut, isAdmin, isPro }}>
+    <UserContext.Provider value={{ user, session, loading, updateUser, signOut, isAdmin, isPro, isElite }}>
       {children}
     </UserContext.Provider>
   )
