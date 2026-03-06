@@ -1,8 +1,6 @@
 // Vercel Serverless Function — Stripe Webhook
 // Listens for payment events and updates user plan in Supabase
 
-export const config = { runtime: "nodejs20.x" }
-
 import { createClient } from "@supabase/supabase-js"
 
 export default async function handler(req) {

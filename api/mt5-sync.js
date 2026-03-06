@@ -2,8 +2,6 @@
 // Receives trades POSTed from the TradeSylla_Sync.mq5 Expert Advisor
 // Authenticates via user token, saves trades to Supabase
 
-export const config = { runtime: "edge" }
-
 import { createClient } from "@supabase/supabase-js"
 
 export default async function handler(req) {
