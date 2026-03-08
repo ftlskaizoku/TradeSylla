@@ -5,7 +5,7 @@ import { toast } from "@/components/ui/toast"
 import {
   Brain, Sparkles, Send, RefreshCw, TrendingUp, TrendingDown,
   Target, BarChart3, Shield, Zap, ChevronRight, Clock, X,
-  AlertTriangle, CheckCircle, Lightbulb, MessageSquare
+  AlertTriangle, CheckCircle, Lightbulb, MessageSquare, Activity, LineChart
 } from "lucide-react"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -60,6 +60,45 @@ function buildTradeSummary(trades) {
 - Top Symbols: ${symbolSummary}
 - Last 10 trades:
 ${recentTrades}`
+}
+
+
+// ─── Chart context builder for AI ─────────────────────────────────────────────
+function buildChartContext(chartData) {
+  if (!chartData || Object.keys(chartData).length === 0) return ""
+
+  let ctx = "\n\nLIVE CHART DATA (from MT5 bridge):"
+  for (const [symbol, candles] of Object.entries(chartData)) {
+    if (!candles || candles.length === 0) continue
+    const last    = candles[candles.length - 1]
+    const prev    = candles[candles.length - 2] || last
+    const oldest  = candles[0]
+    const highs   = candles.map(c => c.high)
+    const lows    = candles.map(c => c.low)
+    const maxHigh = Math.max(...highs).toFixed(5)
+    const minLow  = Math.min(...lows).toFixed(5)
+    const trend   = last.close > oldest.close ? "Bullish" : last.close < oldest.close ? "Bearish" : "Ranging"
+    const change  = ((last.close - oldest.close) / oldest.close * 100).toFixed(2)
+
+    ctx += `\n${symbol} (last ${candles.length} candles):`
+    ctx += `\n  Current: O=${last.open} H=${last.high} L=${last.low} C=${last.close} Vol=${last.volume}`
+    ctx += `\n  Range: High=${maxHigh} Low=${minLow}`
+    ctx += `\n  Trend: ${trend} (${change}% over period)`
+    ctx += `\n  Previous close: ${prev.close}`
+  }
+  return ctx
+}
+
+function buildPositionContext(positions) {
+  if (!positions || positions.length === 0) return ""
+  let ctx = `\n\nOPEN POSITIONS (${positions.length} live trades):`
+  positions.forEach(p => {
+    const unrealized = p.profit >= 0 ? `+$${p.profit.toFixed(2)}` : `-$${Math.abs(p.profit).toFixed(2)}`
+    ctx += `\n  ${p.direction} ${p.symbol} | ${p.volume} lots | Entry: ${p.entry_price} | Now: ${p.current_price} | P&L: ${unrealized}`
+    if (p.sl) ctx += ` | SL: ${p.sl}`
+    if (p.tp) ctx += ` | TP: ${p.tp}`
+  })
+  return ctx
 }
 
 // ─── Quick Insight prompts ─────────────────────────────────────────────────────
@@ -147,13 +186,15 @@ function InsightCard({ insight, onDelete }) {
 
 // ─── Main Sylledge Page ───────────────────────────────────────────────────────
 export default function Sylledge() {
-  const [trades,    setTrades]    = useState([])
-  const [playbooks, setPlaybooks] = useState([])
-  const [insights,  setInsights]  = useState([])
-  const [messages,  setMessages]  = useState([])
-  const [input,     setInput]     = useState("")
-  const [loading,   setLoading]   = useState(false)
-  const [activeTab, setActiveTab] = useState("chat")
+  const [trades,      setTrades]      = useState([])
+  const [playbooks,   setPlaybooks]   = useState([])
+  const [insights,    setInsights]    = useState([])
+  const [messages,    setMessages]    = useState([])
+  const [input,       setInput]       = useState("")
+  const [loading,     setLoading]     = useState(false)
+  const [activeTab,   setActiveTab]   = useState("chat")
+  const [bridgeCtx,   setBridgeCtx]   = useState(null)   // live MT5 context
+  const [bridgeStatus,setBridgeStatus]= useState("idle") // idle | fetching | connected | offline
   const bottomRef = useRef(null)
   const inputRef  = useRef(null)
 
@@ -169,7 +210,25 @@ export default function Sylledge() {
       content: "Hey! I'm SYLLEDGE AI — your personal trading coach. I have full access to your trade history and can give you deep, data-driven analysis.\n\nAsk me anything about your performance, or use one of the quick prompts below to get started. 🎯",
       timestamp: new Date().toISOString()
     }])
+    // Try to fetch live MT5 context from local bridge
+    fetchBridgeContext()
   }, [])
+
+  const fetchBridgeContext = async () => {
+    setBridgeStatus("fetching")
+    try {
+      const res = await fetch("http://localhost:5001/api/context?timeframe=H1&bars=50", {
+        signal: AbortSignal.timeout(4000)
+      })
+      if (!res.ok) throw new Error("Bridge error")
+      const data = await res.json()
+      setBridgeCtx(data)
+      setBridgeStatus("connected")
+    } catch {
+      setBridgeStatus("offline")
+      setBridgeCtx(null)
+    }
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -182,19 +241,30 @@ export default function Sylledge() {
       ? `\n\nPLAYBOOK STRATEGIES (${playbooks.length}): ${playbooks.map(p => `${p.name} (${p.status})`).join(", ")}`
       : ""
 
-    const systemPrompt = `You are SYLLEDGE AI, an elite trading coach and performance analyst embedded in TradeSylla — a professional trading journal app. You have access to the trader's full performance data.
+    // Build live chart + position context from MT5 bridge if available
+    const chartContext    = bridgeCtx?.charts    ? buildChartContext(bridgeCtx.charts)       : ""
+    const positionContext = bridgeCtx?.positions ? buildPositionContext(bridgeCtx.positions) : ""
+    const accountContext  = bridgeCtx?.account
+      ? `\n\nLIVE ACCOUNT (MT5 bridge): Balance=$${bridgeCtx.account.balance} | Equity=$${bridgeCtx.account.equity} | Leverage=1:${bridgeCtx.account.leverage} | Currency=${bridgeCtx.account.currency}`
+      : ""
+    const bridgeNote = bridgeCtx
+      ? "\n\nYou have access to LIVE data from the trader's MT5 terminal including real-time chart candles and open positions."
+      : "\n\nNote: MT5 bridge is offline — analysis is based on trade journal data only."
 
-${tradeSummary}${playbookSummary}
+    const systemPrompt = `You are SYLLEDGE AI, an elite trading coach and performance analyst embedded in TradeSylla — a professional trading journal app. You have deep access to the trader's full performance data, live charts, and open positions.
+
+${tradeSummary}${playbookSummary}${accountContext}${chartContext}${positionContext}${bridgeNote}
 
 Your role:
-- Analyze trading data with precision and depth
+- Analyze trading data AND live chart structure with precision and depth
+- Reference specific price levels, candle patterns, and chart context when available
 - Give brutally honest, actionable feedback
-- Identify patterns, strengths and weaknesses
-- Suggest concrete improvements with specifics
-- Keep responses clear, structured and motivating
-- Use trader terminology (sessions, R:R, drawdown, expectancy etc.)
+- Identify patterns, strengths and weaknesses across journal AND chart data
+- Correlate trade outcomes with market structure (was the trader trading with or against trend?)
+- Suggest concrete improvements with specifics — always reference actual numbers
+- Use trader terminology (sessions, R:R, drawdown, expectancy, structure, liquidity etc.)
 - Format with line breaks for readability
-- Never give generic advice — always reference their actual numbers
+- When live chart data is available, always mention what the chart is showing
 
 Be direct, insightful and encouraging. The trader wants to improve.`
 
@@ -274,6 +344,26 @@ Be direct, insightful and encouraging. The trader wants to improve.`
           <div>
             <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>SYLLEDGE AI</h1>
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>Your personal trading coach · {trades.length} trades analyzed</p>
+            {/* Bridge status pill */}
+            <div className="flex items-center gap-1.5 mt-1">
+              {bridgeStatus === "connected" ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                  style={{ background:"rgba(46,213,115,0.1)", color:"var(--accent-success)", border:"1px solid rgba(46,213,115,0.2)" }}>
+                  <Activity size={9} className="animate-pulse"/> MT5 live data
+                </span>
+              ) : bridgeStatus === "fetching" ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
+                  style={{ background:"var(--bg-elevated)", color:"var(--text-muted)" }}>
+                  <RefreshCw size={9} className="animate-spin"/> Connecting...
+                </span>
+              ) : bridgeStatus === "offline" ? (
+                <button onClick={fetchBridgeContext}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs hover:opacity-80"
+                  style={{ background:"var(--bg-elevated)", color:"var(--text-muted)", border:"1px solid var(--border)" }}>
+                  <LineChart size={9}/> Connect MT5 for chart data
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
         {/* Tabs */}
