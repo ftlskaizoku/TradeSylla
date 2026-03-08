@@ -533,13 +533,13 @@ function EASetupPanel() {
           <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
             The Expert Advisor (EA) is a small program that runs silently inside MT5 and sends your closed trades to TradeSylla automatically.
           </p>
-          <a href="/ea/TradeSylla_Sync.ex5" download
+          <a href="/ea/TradeSylla_Sync.mq5" download="TradeSylla_Sync.mq5"
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
             style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))" }}>
             <Download size={14}/> Download TradeSylla_Sync.ex5
           </a>
           <p className="text-xs" style={{ color:"var(--text-muted)" }}>
-            No Python, no Meta API account, no terminal required.
+            You'll need to compile it once in MetaEditor (free, comes with MT5). Takes 10 seconds.
           </p>
         </div>
       )

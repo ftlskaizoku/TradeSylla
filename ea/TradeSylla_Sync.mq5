@@ -1,41 +1,46 @@
 //+------------------------------------------------------------------+
-//| TradeSylla Sync EA                                               |
-//| Automatically sends every closed trade to TradeSylla journal     |
-//| Install: Copy to MQL5/Experts/ folder in MT5 data directory      |
+//| TradeSylla Sync EA v1.1                                          |
+//| Sends every closed trade to TradeSylla journal automatically     |
+//|                                                                  |
+//| INSTALL:                                                         |
+//|   1. Copy this file to MT5 → File → Open Data Folder            |
+//|      → MQL5 → Experts                                           |
+//|   2. In MetaEditor press F7 to compile (or open and press F7)   |
+//|   3. Attach to any chart, paste your User Token from TradeSylla  |
+//|   4. Tools → Options → Expert Advisors → Allow WebRequest        |
+//|      → Add: https://tradesylla.vercel.app                       |
 //+------------------------------------------------------------------+
 #property copyright "TradeSylla"
-#property version   "1.00"
+#property version   "1.01"
 #property strict
 
-// ─── User inputs ────────────────────────────────────────────────────────────
-input string   UserToken    = "";                                       // Your TradeSylla User Token
-input string   ServerURL    = "https://tradesylla.vercel.app/api/mt5-sync"; // API endpoint
-input int      SyncInterval = 30;                                       // Sync every N seconds
-input bool     SyncHistory  = true;                                     // Import full history on first run
+//--- User inputs
+input string UserToken    = "";   // Paste your TradeSylla User Token here
+input string ServerURL    = "https://tradesylla.vercel.app/api/mt5-sync";
+input int    SyncInterval = 30;   // Sync every N seconds
+input bool   SyncHistory  = true; // Import full history on first run
 
-// ─── Internal state ─────────────────────────────────────────────────────────
-datetime lastSyncTime   = 0;
-datetime lastDealTime   = 0;
-bool     firstRunDone   = false;
-string   sentDealIds    = "";    // comma-separated deal tickets already sent
+//--- Internal state
+bool     firstRunDone = false;
+datetime lastDealTime = 0;
 
-//+------------------------------------------------------------------+
-//| EA initialisation                                                |
+// Simple string array to track already-sent tickets
+string sentTickets[];
+int    sentCount = 0;
+
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   if(UserToken == "")
+   if(StringLen(UserToken) == 0)
    {
-      Alert("TradeSylla: Please enter your User Token in EA settings.");
+      Alert("[TradeSylla] Please enter your User Token in EA input settings.");
       return INIT_PARAMETERS_INCORRECT;
    }
-   Print("TradeSylla Sync EA started. Server: ", ServerURL);
+   Print("[TradeSylla] EA started. Syncing to: ", ServerURL);
    EventSetTimer(SyncInterval);
    return INIT_SUCCEEDED;
 }
 
-//+------------------------------------------------------------------+
-//| Timer tick — runs every SyncInterval seconds                     |
 //+------------------------------------------------------------------+
 void OnTimer()
 {
@@ -43,176 +48,218 @@ void OnTimer()
 }
 
 //+------------------------------------------------------------------+
-//| Main sync logic                                                  |
+bool AlreadySent(string ticket)
+{
+   for(int i = 0; i < sentCount; i++)
+      if(sentTickets[i] == ticket) return true;
+   return false;
+}
+
+void MarkSent(string ticket)
+{
+   ArrayResize(sentTickets, sentCount + 1);
+   sentTickets[sentCount] = ticket;
+   sentCount++;
+}
+
 //+------------------------------------------------------------------+
 void SyncClosedTrades()
 {
-   datetime fromTime = SyncHistory && !firstRunDone ? 0 : lastDealTime;
+   datetime fromTime = (SyncHistory && !firstRunDone) ? 0 : lastDealTime;
    firstRunDone = true;
 
-   // Request history from Supabase
-   if(!HistorySelect(fromTime, TimeCurrent()))
+   if(!HistorySelect(fromTime, TimeCurrent())) return;
+
+   int total = HistoryDealsTotal();
+   if(total == 0) return;
+
+   // ── Collect all open deals first (entry prices) ─────────────────
+   // We store them in a simple parallel array keyed by position ID
+   // This avoids calling HistorySelectByPosition which resets the selection
+
+   // Max reasonable size
+   int maxDeals = 10000;
+   long   openPosIds[];   ArrayResize(openPosIds,   maxDeals);
+   double openPrices[];   ArrayResize(openPrices,   maxDeals);
+   int    openTypes[];    ArrayResize(openTypes,    maxDeals);
+   int    openCount = 0;
+
+   for(int i = 0; i < total; i++)
    {
-      Print("TradeSylla: HistorySelect failed");
-      return;
+      ulong tk = HistoryDealGetTicket(i);
+      if(tk == 0) continue;
+      ENUM_DEAL_ENTRY et = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(tk, DEAL_ENTRY);
+      if(et != DEAL_ENTRY_IN) continue;
+      openPosIds[openCount]  = HistoryDealGetInteger(tk, DEAL_POSITION_ID);
+      openPrices[openCount]  = HistoryDealGetDouble (tk, DEAL_PRICE);
+      openTypes[openCount]   = (int)HistoryDealGetInteger(tk, DEAL_TYPE);
+      openCount++;
    }
 
-   int totalDeals = HistoryDealsTotal();
-   if(totalDeals == 0) return;
-
+   // ── Build JSON array of new closed trades ────────────────────────
    string tradesJson = "[";
-   int    added      = 0;
+   int    added = 0;
 
-   for(int i = 0; i < totalDeals; i++)
+   for(int i = 0; i < total; i++)
    {
       ulong ticket = HistoryDealGetTicket(i);
       if(ticket == 0) continue;
 
-      // Only process SELL (close) deals — these represent closed positions
-      ENUM_DEAL_ENTRY entryType = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY);
-      if(entryType != DEAL_ENTRY_OUT && entryType != DEAL_ENTRY_OUT_BY) continue;
+      // Only close entries
+      ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY);
+      if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_OUT_BY) continue;
 
-      // Skip deals already sent
-      string ticketStr = IntegerToString((long)ticket);
-      if(StringFind(sentDealIds, ticketStr + ",") >= 0) continue;
+      // Skip already sent
+      string tickStr = IntegerToString((long)ticket);
+      if(AlreadySent(tickStr)) continue;
 
-      // ── Extract deal data ────────────────────────────────────────
-      string symbol    = HistoryDealGetString (ticket, DEAL_SYMBOL);
-      double profit    = HistoryDealGetDouble (ticket, DEAL_PROFIT);
-      double swap      = HistoryDealGetDouble (ticket, DEAL_SWAP);
-      double commission= HistoryDealGetDouble (ticket, DEAL_COMMISSION);
-      double netProfit = profit + swap + commission;
-      double price     = HistoryDealGetDouble (ticket, DEAL_PRICE);
-      double volume    = HistoryDealGetDouble (ticket, DEAL_VOLUME);
-      datetime closeTime = (datetime)HistoryDealGetInteger(ticket, DEAL_TIME);
-      ENUM_DEAL_TYPE dealType = (ENUM_DEAL_TYPE)HistoryDealGetInteger(ticket, DEAL_TYPE);
-      string comment   = HistoryDealGetString (ticket, DEAL_COMMENT);
-      long   posId     = HistoryDealGetInteger(ticket, DEAL_POSITION_ID);
+      // ── Core deal data ───────────────────────────────────────────
+      string   symbol     = HistoryDealGetString (ticket, DEAL_SYMBOL);
+      double   closePrice = HistoryDealGetDouble (ticket, DEAL_PRICE);
+      double   volume     = HistoryDealGetDouble (ticket, DEAL_VOLUME);
+      double   profit     = HistoryDealGetDouble (ticket, DEAL_PROFIT);
+      double   swap       = HistoryDealGetDouble (ticket, DEAL_SWAP);
+      double   commission = HistoryDealGetDouble (ticket, DEAL_COMMISSION);
+      double   netPnl     = profit + swap + commission;
+      datetime closeTime  = (datetime)HistoryDealGetInteger(ticket, DEAL_TIME);
+      long     posId      = HistoryDealGetInteger(ticket, DEAL_POSITION_ID);
+      string   comment    = HistoryDealGetString (ticket, DEAL_COMMENT);
 
-      // Find the matching open deal for entry price + direction
-      double entryPrice = price;
-      string direction  = "BUY";  // closed BUY = original was BUY
-      if(dealType == DEAL_TYPE_BUY)  direction = "SELL"; // closing deal type is opposite
-      if(dealType == DEAL_TYPE_SELL) direction = "BUY";
+      // ── Find matching open deal ──────────────────────────────────
+      double openPrice = closePrice; // fallback
+      string direction = "BUY";
 
-      // Get open price from position history
-      if(HistorySelectByPosition(posId))
+      for(int j = 0; j < openCount; j++)
       {
-         for(int j = 0; j < HistoryDealsTotal(); j++)
+         if(openPosIds[j] == posId)
          {
-            ulong openTicket = HistoryDealGetTicket(j);
-            ENUM_DEAL_ENTRY oe = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(openTicket, DEAL_ENTRY);
-            if(oe == DEAL_ENTRY_IN)
-            {
-               entryPrice = HistoryDealGetDouble(openTicket, DEAL_PRICE);
-               ENUM_DEAL_TYPE oType = (ENUM_DEAL_TYPE)HistoryDealGetInteger(openTicket, DEAL_TYPE);
-               direction = (oType == DEAL_TYPE_BUY) ? "BUY" : "SELL";
-               break;
-            }
+            openPrice = openPrices[j];
+            direction = (openTypes[j] == DEAL_TYPE_BUY) ? "BUY" : "SELL";
+            break;
          }
-         // Restore full history selection
-         HistorySelect(fromTime, TimeCurrent());
       }
 
-      // ── Determine outcome ────────────────────────────────────────
-      string outcome = "BREAKEVEN";
-      if(netProfit >  0.001) outcome = "WIN";
-      if(netProfit < -0.001) outcome = "LOSS";
-
-      // ── Calculate pips ───────────────────────────────────────────
-      double pips = 0;
-      double pipSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
-      int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
-      if(digits == 5 || digits == 3) pipSize *= 10;
+      // ── Pips calculation ─────────────────────────────────────────
+      double pips    = 0;
+      int    digits  = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+      double pipSize = SymbolInfoDouble(symbol, SYMBOL_POINT);
+      if(digits == 5 || digits == 3) pipSize *= 10; // 5-digit broker
       if(pipSize > 0)
       {
-         double priceDiff = direction == "BUY" ? price - entryPrice : entryPrice - price;
-         pips = NormalizeDouble(priceDiff / pipSize, 1);
+         double diff = (direction == "BUY") ? closePrice - openPrice
+                                            : openPrice  - closePrice;
+         pips = NormalizeDouble(diff / pipSize, 1);
       }
 
-      // ── Detect session ───────────────────────────────────────────
-      MqlDateTime dt; TimeToStruct(closeTime, dt);
-      int hour = dt.hour;
+      // ── Session detection ────────────────────────────────────────
+      MqlDateTime dt;
+      TimeToStruct(closeTime, dt);
       string session = "UNKNOWN";
-      if(hour >= 0  && hour < 8)  session = "ASIAN";
-      if(hour >= 7  && hour < 9)  session = "SYDNEY";
-      if(hour >= 8  && hour < 12) session = "LONDON";
-      if(hour >= 12 && hour < 17) session = "NEW_YORK";
-      if(hour >= 13 && hour < 16) session = "LONDON"; // overlap
+      int    h = dt.hour;
+      if(h >= 0  && h <  8) session = "ASIAN";
+      if(h >= 8  && h < 12) session = "LONDON";
+      if(h >= 12 && h < 17) session = "NEW_YORK";
+      if(h == 12 || h == 13) session = "LONDON_NY"; // overlap
 
-      // ── Format ISO timestamp ─────────────────────────────────────
+      // ── ISO timestamp ────────────────────────────────────────────
       string closeISO = StringFormat("%04d-%02d-%02dT%02d:%02d:%02dZ",
          dt.year, dt.mon, dt.day, dt.hour, dt.min, dt.sec);
 
-      // ── Build JSON trade object ──────────────────────────────────
-      string tradeJson = StringFormat(
-         "{\"mt5_ticket\":\"%s\",\"symbol\":\"%s\",\"direction\":\"%s\","
-         "\"entry_price\":%.5f,\"exit_price\":%.5f,\"pnl\":%.2f,"
-         "\"pips\":%.1f,\"volume\":%.2f,\"entry_time\":\"%s\","
-         "\"session\":\"%s\",\"outcome\":\"%s\",\"notes\":\"%s\"}",
-         ticketStr, symbol, direction,
-         entryPrice, price, netProfit,
-         pips, volume, closeISO,
-         session, outcome,
-         StringReplace(comment, "\"", "'")
+      // ── Outcome ──────────────────────────────────────────────────
+      string outcome = (netPnl > 0.001) ? "WIN" : (netPnl < -0.001) ? "LOSS" : "BREAKEVEN";
+
+      // ── Clean comment (strip quotes for JSON safety) ──────────────
+      StringReplace(comment, "\"", "'");
+      StringReplace(comment, "\n", " ");
+      StringReplace(comment, "\r", " ");
+
+      // ── Build JSON object for this trade ─────────────────────────
+      string obj = StringFormat(
+         "{\"mt5_ticket\":\"%s\","
+         "\"symbol\":\"%s\","
+         "\"direction\":\"%s\","
+         "\"entry_price\":%.5f,"
+         "\"exit_price\":%.5f,"
+         "\"pnl\":%.2f,"
+         "\"pips\":%.1f,"
+         "\"volume\":%.2f,"
+         "\"entry_time\":\"%s\","
+         "\"session\":\"%s\","
+         "\"outcome\":\"%s\","
+         "\"notes\":\"%s\"}",
+         tickStr,
+         symbol,
+         direction,
+         openPrice,
+         closePrice,
+         netPnl,
+         pips,
+         volume,
+         closeISO,
+         session,
+         outcome,
+         comment
       );
 
       if(added > 0) tradesJson += ",";
-      tradesJson += tradeJson;
+      tradesJson += obj;
       added++;
 
-      // Track sent
-      sentDealIds += ticketStr + ",";
+      MarkSent(tickStr);
       if(closeTime > lastDealTime) lastDealTime = closeTime;
    }
 
    tradesJson += "]";
-
    if(added == 0) return;
 
-   // ── POST to TradeSylla API ────────────────────────────────────────
+   // ── POST to TradeSylla ───────────────────────────────────────────
+   // Correct MQL5 WebRequest signature (header-based, NOT cookie-based):
+   // int WebRequest(method, url, headers, timeout, char &data[], char &result[], string &headers_out)
+
    string payload = StringFormat("{\"token\":\"%s\",\"trades\":%s}", UserToken, tradesJson);
-   string headers = "Content-Type: application/json\r\n";
+
+   // Convert string to char array (CP_UTF8, subtract 1 to strip null terminator)
    char   postData[];
-   char   result[];
+   char   response[];
    string responseHeaders;
+   string requestHeaders = "Content-Type: application/json\r\n";
 
-   StringToCharArray(payload, postData, 0, StringLen(payload), CP_UTF8);
-   ArrayResize(postData, ArraySize(postData) - 1); // remove null terminator
+   ArrayResize(postData, StringToCharArray(payload, postData, 0, WHOLE_ARRAY, CP_UTF8) - 1);
 
-   int res = WebRequest("POST", ServerURL, headers, 5000, postData, result, responseHeaders);
+   int httpCode = WebRequest(
+      "POST",
+      ServerURL,
+      requestHeaders,
+      10000,       // 10 second timeout
+      postData,
+      response,
+      responseHeaders
+   );
 
-   if(res == 200)
+   if(httpCode == 200)
    {
-      Print("TradeSylla: ", added, " trade(s) synced successfully");
-      lastSyncTime = TimeCurrent();
+      string respStr = CharArrayToString(response, 0, WHOLE_ARRAY, CP_UTF8);
+      Print("[TradeSylla] Synced ", added, " trade(s). Server: ", respStr);
    }
-   else if(res == -1)
+   else if(httpCode == -1)
    {
-      Print("TradeSylla: WebRequest failed. Make sure ", ServerURL, " is whitelisted in MT5 Tools → Options → Expert Advisors → Allow WebRequest");
+      int err = GetLastError();
+      if(err == 4014 || err == 5203)
+         Print("[TradeSylla] WebRequest blocked. Go to: Tools → Options → Expert Advisors → Allow WebRequest → Add https://tradesylla.vercel.app");
+      else
+         Print("[TradeSylla] WebRequest error code: ", err, " — see MQL5 error list");
    }
    else
    {
-      string respStr = CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
-      Print("TradeSylla: Server response ", res, ": ", respStr);
+      string respStr = CharArrayToString(response, 0, WHOLE_ARRAY, CP_UTF8);
+      Print("[TradeSylla] Server returned HTTP ", httpCode, ": ", respStr);
    }
 }
 
-string StringReplace(string str, string search, string replace)
-{
-   string result = str;
-   int pos = StringFind(result, search);
-   while(pos >= 0)
-   {
-      result = StringSubstr(result, 0, pos) + replace + StringSubstr(result, pos + StringLen(search));
-      pos = StringFind(result, search, pos + StringLen(replace));
-   }
-   return result;
-}
-
+//+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
    EventKillTimer();
-   Print("TradeSylla Sync EA stopped.");
+   Print("[TradeSylla] EA stopped.");
 }
 //+------------------------------------------------------------------+
