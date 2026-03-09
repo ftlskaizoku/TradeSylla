@@ -6,7 +6,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      // All files are at root level, not inside src/
+      '@': path.resolve(__dirname, '.'),
     },
   },
 })
