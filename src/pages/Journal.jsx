@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Trade, subscribeToTable } from "@/api/supabaseStore"
+import { supabase } from "@/lib/supabase"
 import { toast } from "@/components/ui/toast"
 import {
   Plus, Pencil, Trash2, X, List, CalendarDays,
   TrendingUp, TrendingDown, Activity, ChevronLeft, ChevronRight,
-  Upload, CheckCircle, Brain, Sparkles, Download, AlertTriangle, ChevronDown, ChevronUp
+  Upload, CheckCircle, Brain, Sparkles, Download, AlertTriangle, ChevronDown, ChevronUp,
+  BarChart2, Clock, Hash
 } from "lucide-react"
 
 
@@ -352,9 +354,227 @@ function CalendarView({ trades, onNewTrade }) {
   )
 }
 
+// ─── Mini Candlestick Chart (SVG) ────────────────────────────────────────────
+function CandlestickChart({ candles, entryPrice, exitPrice, entryTime, exitTime }) {
+  if (!candles || candles.length === 0) return (
+    <div className="flex items-center justify-center h-40 rounded-xl" style={{ background:"var(--bg-elevated)" }}>
+      <p className="text-xs" style={{ color:"var(--text-muted)" }}>No chart data available for this trade</p>
+    </div>
+  )
+
+  const W = 600, H = 160, PAD = { top:8, right:8, bottom:20, left:48 }
+  const chartW = W - PAD.left - PAD.right
+  const chartH = H - PAD.top - PAD.bottom
+
+  const highs  = candles.map(c => parseFloat(c.h))
+  const lows   = candles.map(c => parseFloat(c.l))
+  const minP   = Math.min(...lows,  entryPrice || Infinity, exitPrice || Infinity)
+  const maxP   = Math.max(...highs, entryPrice || 0,        exitPrice || 0)
+  const range  = maxP - minP || 0.0001
+
+  const toY = p => PAD.top + chartH - ((p - minP) / range) * chartH
+  const toX = i => PAD.left + (i / (candles.length - 1 || 1)) * chartW
+
+  // Find entry/exit candle indices by time
+  const entryIdx = entryTime ? candles.findIndex(c => new Date(c.t) >= new Date(entryTime)) : -1
+  const exitIdx  = exitTime  ? candles.findIndex(c => new Date(c.t) >= new Date(exitTime))  : -1
+
+  const candleW = Math.max(2, Math.min(8, chartW / candles.length - 1))
+
+  // Price axis labels
+  const steps = 4
+  const priceLabels = Array.from({length: steps+1}, (_,i) => minP + (range/steps)*i)
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight:160 }}>
+      {/* Grid lines */}
+      {priceLabels.map((p,i) => (
+        <g key={i}>
+          <line x1={PAD.left} x2={W-PAD.right} y1={toY(p)} y2={toY(p)}
+            stroke="var(--border)" strokeWidth="0.5" strokeDasharray="3,3"/>
+          <text x={PAD.left-3} y={toY(p)+3} textAnchor="end" fontSize="8"
+            fill="var(--text-muted)">{p.toFixed(p>100?0:4)}</text>
+        </g>
+      ))}
+
+      {/* Entry/exit zone shading */}
+      {entryIdx>=0 && exitIdx>entryIdx && (
+        <rect
+          x={toX(entryIdx)} y={PAD.top}
+          width={toX(exitIdx)-toX(entryIdx)} height={chartH}
+          fill="rgba(108,99,255,0.06)"
+        />
+      )}
+
+      {/* Candles */}
+      {candles.map((c,i) => {
+        const o = parseFloat(c.o), cl = parseFloat(c.c)
+        const h = parseFloat(c.h), l  = parseFloat(c.l)
+        const isBull = cl >= o
+        const color  = isBull ? "#2ed573" : "#ff4757"
+        const x      = toX(i)
+        const bodyTop    = toY(Math.max(o, cl))
+        const bodyBottom = toY(Math.min(o, cl))
+        const bodyH      = Math.max(1, bodyBottom - bodyTop)
+        return (
+          <g key={i}>
+            {/* Wick */}
+            <line x1={x} x2={x} y1={toY(h)} y2={toY(l)} stroke={color} strokeWidth="1"/>
+            {/* Body */}
+            <rect x={x - candleW/2} y={bodyTop} width={candleW} height={bodyH}
+              fill={isBull ? color : color} opacity={0.85} rx="0.5"/>
+          </g>
+        )
+      })}
+
+      {/* Entry price line */}
+      {entryPrice > 0 && (
+        <g>
+          <line x1={PAD.left} x2={W-PAD.right} y1={toY(entryPrice)} y2={toY(entryPrice)}
+            stroke="#6c63ff" strokeWidth="1" strokeDasharray="4,2"/>
+          <text x={W-PAD.right+2} y={toY(entryPrice)+3} fontSize="7" fill="#6c63ff">E</text>
+        </g>
+      )}
+      {/* Exit price line */}
+      {exitPrice > 0 && (
+        <g>
+          <line x1={PAD.left} x2={W-PAD.right} y1={toY(exitPrice)} y2={toY(exitPrice)}
+            stroke="#ffa502" strokeWidth="1" strokeDasharray="4,2"/>
+          <text x={W-PAD.right+2} y={toY(exitPrice)+3} fontSize="7" fill="#ffa502">X</text>
+        </g>
+      )}
+
+      {/* Time axis — first and last candle */}
+      {candles.length > 1 && (
+        <>
+          <text x={PAD.left}   y={H-4} fontSize="8" fill="var(--text-muted)">
+            {new Date(candles[0].t).toLocaleDateString("en-US",{month:"2-digit",day:"2-digit"})}
+          </text>
+          <text x={W-PAD.right} y={H-4} fontSize="8" fill="var(--text-muted)" textAnchor="end">
+            {new Date(candles[candles.length-1].t).toLocaleDateString("en-US",{month:"2-digit",day:"2-digit"})}
+          </text>
+        </>
+      )}
+    </svg>
+  )
+}
+
+// ─── Inline Trade Detail Row ──────────────────────────────────────────────────
+function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
+  const [candles, setCandles] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase
+      .from("trade_charts")
+      .select("candles, timeframe")
+      .eq("trade_id", trade.id)
+      .single()
+      .then(({ data }) => {
+        setCandles(data?.candles || [])
+        setLoading(false)
+      })
+      .catch(() => { setCandles([]); setLoading(false) })
+  }, [trade.id])
+
+  const pnlColor = (trade.pnl||0) >= 0 ? "var(--accent-success)" : "var(--accent-danger)"
+
+  return (
+    <tr>
+      <td colSpan={colSpan} style={{ background:"var(--bg-elevated)", borderBottom:"2px solid var(--accent)", padding:0 }}>
+        <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+
+          {/* Chart */}
+          <div className="md:col-span-2">
+            <div className="flex items-center gap-2 mb-2">
+              <BarChart2 size={13} style={{ color:"var(--accent)" }}/>
+              <span className="text-xs font-semibold" style={{ color:"var(--text-primary)" }}>
+                {trade.symbol} · {trade.timeframe} chart
+              </span>
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(108,99,255,0.12)", color:"var(--accent)" }}>
+                — Entry &nbsp;&nbsp; — Exit
+              </span>
+            </div>
+            {loading ? (
+              <div className="h-40 flex items-center justify-center rounded-xl" style={{ background:"var(--bg-card)" }}>
+                <p className="text-xs animate-pulse" style={{ color:"var(--text-muted)" }}>Loading chart…</p>
+              </div>
+            ) : (
+              <div className="rounded-xl p-2" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+                <CandlestickChart
+                  candles={candles}
+                  entryPrice={trade.entry_price}
+                  exitPrice={trade.exit_price}
+                  entryTime={trade.entry_time}
+                  exitTime={trade.exit_time}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Trade stats + actions */}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label:"P&L",       value:`${(trade.pnl||0)>=0?"+":""}$${parseFloat(trade.pnl||0).toFixed(2)}`, color:pnlColor },
+                { label:"Pips",      value:`${trade.pips||"—"}`, color:"var(--text-primary)" },
+                { label:"Entry",     value:trade.entry_price||"—", color:"var(--text-secondary)" },
+                { label:"Exit",      value:trade.exit_price||"—",  color:"var(--text-secondary)" },
+                { label:"Volume",    value:trade.volume||"—",      color:"var(--text-secondary)" },
+                { label:"Quality",   value:`${trade.quality||"—"}/10`, color:"var(--accent)" },
+                { label:"Session",   value:trade.session||"—",    color:"var(--text-secondary)" },
+                { label:"Timeframe", value:trade.timeframe||"—",  color:"var(--text-secondary)" },
+              ].map(s => (
+                <div key={s.label} className="rounded-lg p-2" style={{ background:"var(--bg-card)" }}>
+                  <p className="text-xs font-bold" style={{ color:s.color }}>{s.value}</p>
+                  <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {trade.notes && (
+              <div className="rounded-lg p-2.5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+                <p className="text-xs font-medium mb-1" style={{ color:"var(--text-muted)" }}>Notes</p>
+                <p className="text-xs" style={{ color:"var(--text-secondary)" }}>{trade.notes}</p>
+              </div>
+            )}
+
+            {trade.mt5_ticket && (
+              <p className="text-xs flex items-center gap-1" style={{ color:"var(--text-muted)" }}>
+                <Hash size={10}/> Ticket #{trade.mt5_ticket}
+              </p>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button onClick={()=>onAI(trade)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold"
+                style={{ background:"rgba(0,212,170,0.1)", color:"var(--accent-secondary)", border:"1px solid rgba(0,212,170,0.2)" }}>
+                <Brain size={12}/> AI Review
+              </button>
+              <button onClick={()=>onEdit(trade)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold"
+                style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.2)" }}>
+                <Pencil size={12}/> Edit
+              </button>
+              <button onClick={()=>onDelete(trade)}
+                className="py-2 px-3 rounded-lg text-xs"
+                style={{ background:"rgba(255,71,87,0.08)", color:"var(--accent-danger)", border:"1px solid rgba(255,71,87,0.15)" }}>
+                <Trash2 size={12}/>
+              </button>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 // ─── Table View ───────────────────────────────────────────────────────────────
 function TableView({ trades, onEdit, onDelete, onAI }) {
-  const COLS = ["Symbol","Dir","Entry","Exit","P&L","Pips","Outcome","Session","TF","Quality","Date","Actions"]
+  const [expandedId, setExpandedId] = useState(null)
+  const COLS = ["","Symbol","Dir","Entry","Exit","P&L","Pips","Outcome","Session","TF","Quality","Date","Actions"]
+
+  const toggle = (id) => setExpandedId(prev => prev === id ? null : id)
 
   if (!trades.length) {
     return (
@@ -380,52 +600,79 @@ function TableView({ trades, onEdit, onDelete, onAI }) {
             </tr>
           </thead>
           <tbody>
-            {trades.map(t=>(
-              <tr key={t.id} className="transition-colors" style={{ borderBottom:"1px solid var(--border)" }}
-                onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"}
-                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                <td className="px-3 py-3 font-bold" style={{ color:"var(--text-primary)" }}>{t.symbol}</td>
-                <td className="px-3 py-3">
-                  <span className="px-2 py-0.5 rounded text-xs font-semibold" style={{ background:DIR_STYLE[t.direction]?.bg, color:DIR_STYLE[t.direction]?.color }}>
-                    {t.direction==="BUY"?"▲":"▼"} {t.direction}
-                  </span>
-                </td>
-                <td className="px-3 py-3 font-mono text-xs" style={{ color:"var(--text-secondary)" }}>{t.entry_price||"—"}</td>
-                <td className="px-3 py-3 font-mono text-xs" style={{ color:"var(--text-secondary)" }}>{t.exit_price||"—"}</td>
-                <td className="px-3 py-3 font-bold" style={{ color:(t.pnl||0)>=0?"var(--accent-success)":"var(--accent-danger)" }}>
-                  {t.pnl!==undefined?`${t.pnl>=0?"+":""}$${parseFloat(t.pnl).toFixed(2)}`:"—"}
-                </td>
-                <td className="px-3 py-3 text-xs" style={{ color:"var(--text-secondary)" }}>{t.pips||"—"}</td>
-                <td className="px-3 py-3">
-                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background:OUTCOME_STYLE[t.outcome]?.bg, color:OUTCOME_STYLE[t.outcome]?.color }}>
-                    {t.outcome}
-                  </span>
-                </td>
-                <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:"var(--text-secondary)" }}>{t.session||"—"}</td>
-                <td className="px-3 py-3 text-xs" style={{ color:"var(--text-secondary)" }}>{t.timeframe||"—"}</td>
-                <td className="px-3 py-3 text-xs" style={{ color:"var(--text-secondary)" }}>
-                  <span className="px-1.5 py-0.5 rounded" style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)" }}>
-                    {t.quality||"—"}/10
-                  </span>
-                </td>
-                <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:"var(--text-muted)" }}>
-                  {t.entry_time ? new Date(t.entry_time).toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"numeric"}) : "—"}
-                </td>
-                <td className="px-3 py-3">
-                  <div className="flex items-center gap-1">
-                    <button onClick={()=>onAI(t)} title="AI Feedback" className="p-1.5 rounded-lg hover:opacity-70 transition-opacity" style={{ color:"var(--accent-secondary)" }}>
-                      <Brain size={13}/>
-                    </button>
-                    <button onClick={()=>onEdit(t)} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity" style={{ color:"var(--accent)" }}>
-                      <Pencil size={13}/>
-                    </button>
-                    <button onClick={()=>onDelete(t)} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity" style={{ color:"var(--accent-danger)" }}>
-                      <Trash2 size={13}/>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {trades.map(t => {
+              const isExpanded = expandedId === t.id
+              return (
+                <>
+                  <tr key={t.id}
+                    className="transition-colors cursor-pointer"
+                    style={{ borderBottom: isExpanded ? "none" : "1px solid var(--border)", background: isExpanded ? "var(--bg-elevated)" : "transparent" }}
+                    onClick={() => toggle(t.id)}
+                    onMouseEnter={e=>{ if(!isExpanded) e.currentTarget.style.background="var(--bg-elevated)" }}
+                    onMouseLeave={e=>{ if(!isExpanded) e.currentTarget.style.background="transparent" }}>
+
+                    {/* Expand chevron */}
+                    <td className="px-2 py-3">
+                      <div className="w-5 h-5 flex items-center justify-center rounded" style={{ color:"var(--text-muted)" }}>
+                        {isExpanded ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 font-bold" style={{ color:"var(--text-primary)" }}>{t.symbol}</td>
+                    <td className="px-3 py-3">
+                      <span className="px-2 py-0.5 rounded text-xs font-semibold" style={{ background:DIR_STYLE[t.direction]?.bg, color:DIR_STYLE[t.direction]?.color }}>
+                        {t.direction==="BUY"?"▲":"▼"} {t.direction}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 font-mono text-xs" style={{ color:"var(--text-secondary)" }}>{t.entry_price||"—"}</td>
+                    <td className="px-3 py-3 font-mono text-xs" style={{ color:"var(--text-secondary)" }}>{t.exit_price||"—"}</td>
+                    <td className="px-3 py-3 font-bold" style={{ color:(t.pnl||0)>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+                      {t.pnl!==undefined?`${t.pnl>=0?"+":""}$${parseFloat(t.pnl).toFixed(2)}`:"—"}
+                    </td>
+                    <td className="px-3 py-3 text-xs" style={{ color:"var(--text-secondary)" }}>{t.pips||"—"}</td>
+                    <td className="px-3 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background:OUTCOME_STYLE[t.outcome]?.bg, color:OUTCOME_STYLE[t.outcome]?.color }}>
+                        {t.outcome}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:"var(--text-secondary)" }}>{t.session||"—"}</td>
+                    <td className="px-3 py-3 text-xs" style={{ color:"var(--text-secondary)" }}>{t.timeframe||"—"}</td>
+                    <td className="px-3 py-3 text-xs" style={{ color:"var(--text-secondary)" }}>
+                      <span className="px-1.5 py-0.5 rounded" style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)" }}>
+                        {t.quality||"—"}/10
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:"var(--text-muted)" }}>
+                      {t.entry_time ? new Date(t.entry_time).toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"numeric"}) : "—"}
+                    </td>
+                    <td className="px-3 py-3" onClick={e=>e.stopPropagation()}>
+                      <div className="flex items-center gap-1">
+                        <button onClick={()=>onAI(t)} title="AI Feedback" className="p-1.5 rounded-lg hover:opacity-70 transition-opacity" style={{ color:"var(--accent-secondary)" }}>
+                          <Brain size={13}/>
+                        </button>
+                        <button onClick={()=>onEdit(t)} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity" style={{ color:"var(--accent)" }}>
+                          <Pencil size={13}/>
+                        </button>
+                        <button onClick={()=>onDelete(t)} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity" style={{ color:"var(--accent-danger)" }}>
+                          <Trash2 size={13}/>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* Inline expanded row */}
+                  {isExpanded && (
+                    <TradeDetailRow
+                      key={t.id + "_detail"}
+                      trade={t}
+                      colSpan={COLS.length}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                      onAI={onAI}
+                    />
+                  )}
+                </>
+              )
+            })}
           </tbody>
         </table>
       </div>

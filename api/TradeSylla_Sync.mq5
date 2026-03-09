@@ -24,8 +24,7 @@ input bool   VerboseLogging   = true;  // Print sync details to Experts log
 
 //── Globals ──────────────────────────────────────────────────────────
 datetime g_last_bar_time   = 0;
-bool     g_history_synced  = false;
-ulong    g_synced_tickets[];  // tracks which deal tickets we already sent
+ulong    g_synced_tickets[];  // tracks which deal tickets we already sent in this session
 
 //+------------------------------------------------------------------+
 //| Expert initialization                                            |
@@ -47,12 +46,12 @@ int OnInit()
    // Send a heartbeat so the user sees "EA Connected" in the app
    SendHeartbeat();
 
-   // Sync full history on first attach (if enabled)
-   if(SyncHistory && !g_history_synced)
+   // Always sync full history on every MT5 restart/attach
+   // The server deduplicates by mt5_ticket so re-sending is safe and free
+   if(SyncHistory)
    {
-      Print("TradeSylla: Starting full history sync...");
+      Print("TradeSylla: Starting full history sync (runs on every restart to catch missed trades)...");
       SyncFullHistory();
-      g_history_synced = true;
    }
 
    return INIT_SUCCEEDED;
