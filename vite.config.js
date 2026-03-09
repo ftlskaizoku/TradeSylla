@@ -7,7 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // All files are at root level, not inside src/
-      '@': path.resolve(__dirname, '.'),
+      '@': path.resolve(__dirname, './src'),
     },
   },
 })
