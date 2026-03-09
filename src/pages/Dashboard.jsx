@@ -4,9 +4,9 @@ import { createPageUrl } from "@/utils"
 import {
   TrendingUp, TrendingDown, BarChart3, Brain, Target,
   DollarSign, Activity, ArrowUpRight, ArrowDownRight,
-  Shield, ChevronRight, Plus, X, Calendar
+  Shield, ChevronRight, Plus, X, Calendar, ImagePlus
 } from "lucide-react"
-import { Trade, subscribeToTable } from "@/api/supabaseStore"
+import { Trade, Playbook, subscribeToTable } from "@/api/supabaseStore"
 import { useUser } from "@/lib/UserContext"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/toast"
