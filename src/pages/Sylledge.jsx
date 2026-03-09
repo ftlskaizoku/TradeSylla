@@ -234,44 +234,32 @@ export default function Sylledge() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, loading])
 
+  // ── AI ENGINE — calls /api/ai (Groq backend, switches to Claude when ready) ──
   const callAI = async (userMessage) => {
-    if (!userMessage.trim()) return
-    const tradeSummary = buildTradeSummary(trades)
-    const playbookSummary = playbooks.length
-      ? `\n\nPLAYBOOK STRATEGIES (${playbooks.length}): ${playbooks.map(p => `${p.name} (${p.status})`).join(", ")}`
-      : ""
+    if (!userMessage.trim()) return ""
 
-    // Build live chart + position context from MT5 bridge if available
+    const tradeSummary    = buildTradeSummary(trades)
     const chartContext    = bridgeCtx?.charts    ? buildChartContext(bridgeCtx.charts)       : ""
     const positionContext = bridgeCtx?.positions ? buildPositionContext(bridgeCtx.positions) : ""
     const accountContext  = bridgeCtx?.account
-      ? `\n\nLIVE ACCOUNT (MT5 bridge): Balance=$${bridgeCtx.account.balance} | Equity=$${bridgeCtx.account.equity} | Leverage=1:${bridgeCtx.account.leverage} | Currency=${bridgeCtx.account.currency}`
+      ? `\n\nLIVE ACCOUNT: Balance=$${bridgeCtx.account.balance} | Equity=$${bridgeCtx.account.equity} | Leverage=1:${bridgeCtx.account.leverage}`
       : ""
-    const bridgeNote = bridgeCtx
-      ? "\n\nYou have access to LIVE data from the trader's MT5 terminal including real-time chart candles and open positions."
-      : "\n\nNote: MT5 bridge is offline — analysis is based on trade journal data only."
 
-    const systemPrompt = `You are SYLLEDGE AI, an elite trading coach and performance analyst embedded in TradeSylla — a professional trading journal app. You have deep access to the trader's full performance data, live charts, and open positions.
+    const systemPrompt = `You are SYLLEDGE AI, an elite trading coach embedded in TradeSylla — a professional trading journal. You have full access to the trader's performance data.
 
-${tradeSummary}${playbookSummary}${accountContext}${chartContext}${positionContext}${bridgeNote}
+${tradeSummary}${accountContext}${chartContext}${positionContext}
 
 Your role:
-- Analyze trading data AND live chart structure with precision and depth
-- Reference specific price levels, candle patterns, and chart context when available
-- Give brutally honest, actionable feedback
-- Identify patterns, strengths and weaknesses across journal AND chart data
-- Correlate trade outcomes with market structure (was the trader trading with or against trend?)
-- Suggest concrete improvements with specifics — always reference actual numbers
-- Use trader terminology (sessions, R:R, drawdown, expectancy, structure, liquidity etc.)
-- Format with line breaks for readability
-- When live chart data is available, always mention what the chart is showing
+- Give brutally honest, actionable feedback based on the trader's actual numbers
+- Always reference specific data points (win rate, P&L, symbols, sessions)
+- Use trader terminology (R:R, drawdown, expectancy, structure, sessions)
+- Format responses with line breaks for readability
+- Be direct and encouraging. The trader wants to improve.`
 
-Be direct, insightful and encouraging. The trader wants to improve.`
-
-    const history = messages.slice(-10).map(m => ({ role: m.role, content: m.content }))
+    const history = messages.slice(-8).map(m => ({ role: m.role, content: m.content }))
 
     try {
-      const response = await fetch("/api/ai", {
+      const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -280,14 +268,14 @@ Be direct, insightful and encouraging. The trader wants to improve.`
           max_tokens: 1000,
         })
       })
-      const data = await response.json()
-      if (data.error) return `AI error: ${data.error}`
-      const text = data.content?.map(b => b.text || "").join("") || "Sorry, I couldn't generate a response. Please try again."
-      return text
-    } catch (e) {
+      const data = await res.json()
+      if (data.error) return `⚠️ ${data.error}`
+      return data.content?.[0]?.text || "Sorry, I couldn't generate a response. Please try again."
+    } catch {
       return "Connection error. Please check your internet and try again."
     }
   }
+
 
   const sendMessage = async (text) => {
     const msg = text || input.trim()
