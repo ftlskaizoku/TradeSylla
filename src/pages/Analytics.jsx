@@ -1,11 +1,53 @@
-import { useState, useEffect, useMemo } from "react"
-import { Trade } from "@/api/supabaseStore"
+import { useState, useEffect, useMemo, useCallback } from "react"
+import { Trade, BrokerConnection } from "@/api/supabaseStore"
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   PieChart, Pie, Cell, ScatterChart, Scatter,
   ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend
 } from "recharts"
 import { TrendingUp, TrendingDown, Target, BarChart3, Activity, Zap } from "lucide-react"
+
+// ─── useThemeColors: reads CSS variables as actual computed values ─────────────
+// Recharts SVG can't resolve var(--x) in some browsers/themes — we resolve them in JS
+function useThemeColors() {
+  const [colors, setColors] = useState({})
+  useEffect(() => {
+    const s = getComputedStyle(document.documentElement)
+    const get = (v) => s.getPropertyValue(v).trim()
+    setColors({
+      success:   get("--accent-success")  || "#2ed573",
+      danger:    get("--accent-danger")   || "#ff4757",
+      accent:    get("--accent")          || "#6c63ff",
+      warning:   get("--accent-warning")  || "#ffa502",
+      textMuted: get("--text-muted")      || "#4a4c5e",
+      textSec:   get("--text-secondary")  || "#8b8d9e",
+      textPri:   get("--text-primary")    || "#f0f0f5",
+      bgCard:    get("--bg-card")         || "#16181f",
+      bgElev:    get("--bg-elevated")     || "#1c1e28",
+      border:    get("--border")          || "#1e2030",
+    })
+    // Re-read when theme changes (Settings toggles vars on :root)
+    const observer = new MutationObserver(() => {
+      const s2 = getComputedStyle(document.documentElement)
+      setColors({
+        success:   s2.getPropertyValue("--accent-success").trim()  || "#2ed573",
+        danger:    s2.getPropertyValue("--accent-danger").trim()   || "#ff4757",
+        accent:    s2.getPropertyValue("--accent").trim()          || "#6c63ff",
+        warning:   s2.getPropertyValue("--accent-warning").trim()  || "#ffa502",
+        textMuted: s2.getPropertyValue("--text-muted").trim()      || "#4a4c5e",
+        textSec:   s2.getPropertyValue("--text-secondary").trim()  || "#8b8d9e",
+        textPri:   s2.getPropertyValue("--text-primary").trim()    || "#f0f0f5",
+        bgCard:    s2.getPropertyValue("--bg-card").trim()         || "#16181f",
+        bgElev:    s2.getPropertyValue("--bg-elevated").trim()     || "#1c1e28",
+        border:    s2.getPropertyValue("--border").trim()          || "#1e2030",
+      })
+    })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] })
+    return () => observer.disconnect()
+  }, [])
+  return colors
+}
+
 
 
 // ─── Trade sanitizer ──────────────────────────────────────────────────────────
@@ -42,15 +84,17 @@ const pct  = (n) => n === undefined || n === null ? "—" : `${parseFloat(n).toF
 
 const TABS = ["Overview", "Performance", "Patterns", "Advanced"]
 
-const CHART_TOOLTIP = {
-  contentStyle: {
-    background: "var(--bg-elevated)",
-    border: "1px solid var(--border)",
-    borderRadius: 8,
-    color: "var(--text-primary)",
-    fontSize: 11,
-  },
-  cursor: { stroke: "var(--border)" }
+function makeTooltip(C) {
+  return {
+    contentStyle: {
+      background: C.bgElev || "var(--bg-elevated)",
+      border: `1px solid ${C.border || "var(--border)"}`,
+      borderRadius: 8,
+      color: C.textPri || "var(--text-primary)",
+      fontSize: 11,
+    },
+    cursor: { stroke: C.border || "var(--border)" }
+  }
 }
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
@@ -75,6 +119,7 @@ function Empty({ text = "Not enough data yet. Log more trades to see this chart.
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 function OverviewTab({ trades }) {
+  const C = useThemeColors()
   // Equity curve
   const sortedByDate = [...trades].sort((a,b)=>new Date(a.entry_time)-new Date(b.entry_time))
   let cum = 0
@@ -117,11 +162,11 @@ function OverviewTab({ trades }) {
                     <stop offset="95%" stopColor="#6c63ff" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/>
-                <XAxis dataKey="date" tick={{ fill:"var(--text-muted)", fontSize:10 }} interval="preserveStartEnd"/>
-                <YAxis tick={{ fill:"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
-                <Tooltip {...CHART_TOOLTIP} formatter={v=>[`$${v}`,"Equity"]}/>
-                <Area type="monotone" dataKey="equity" stroke="#6c63ff" strokeWidth={2} fill="url(#eqGrad)"/>
+                <CartesianGrid stroke={C.border||"var(--border)"} strokeDasharray="3 3"/>
+                <XAxis dataKey="date" tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} interval="preserveStartEnd"/>
+                <YAxis tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
+                <Tooltip {...makeTooltip(C)} formatter={v=>[`$${v}`,"Equity"]}/>
+                <Area type="monotone" dataKey="equity" stroke={C.accent||"#6c63ff"} strokeWidth={2} fill="url(#eqGrad)"/>
               </AreaChart>
             </ResponsiveContainer>
           ) : <Empty/>}
@@ -136,7 +181,7 @@ function OverviewTab({ trades }) {
                   <Pie data={donut} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value">
                     {donut.map((d,i)=><Cell key={i} fill={d.color}/>)}
                   </Pie>
-                  <Tooltip {...CHART_TOOLTIP} formatter={(v,n)=>[v+" trades", n]}/>
+                  <Tooltip {...makeTooltip(C)} formatter={(v,n)=>[v+" trades", n]}/>
                 </PieChart>
               </ResponsiveContainer>
               <div className="flex flex-wrap justify-center gap-3 mt-2">
@@ -158,12 +203,12 @@ function OverviewTab({ trades }) {
         {dailyBars.length > 0 ? (
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={dailyBars}>
-              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/>
-              <XAxis dataKey="date" tick={{ fill:"var(--text-muted)", fontSize:10 }} interval="preserveStartEnd"/>
-              <YAxis tick={{ fill:"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
-              <Tooltip {...CHART_TOOLTIP} formatter={v=>[`$${v}`,"P&L"]}/>
+              <CartesianGrid stroke={C.border||"var(--border)"} strokeDasharray="3 3"/>
+              <XAxis dataKey="date" tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} interval="preserveStartEnd"/>
+              <YAxis tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
+              <Tooltip {...makeTooltip(C)} formatter={v=>[`$${v}`,"P&L"]}/>
               <Bar dataKey="pnl" radius={[3,3,0,0]}>
-                {dailyBars.map((d,i)=><Cell key={i} fill={d.pnl>=0?"#2ed573":"#ff4757"}/>)}
+                {dailyBars.map((d,i)=><Cell key={i} fill={d.pnl>=0?(C.success||"#2ed573"):(C.danger||"#ff4757")}/>)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -175,6 +220,7 @@ function OverviewTab({ trades }) {
 
 // ─── Performance Tab ──────────────────────────────────────────────────────────
 function PerformanceTab({ trades }) {
+  const C = useThemeColors()
   // P&L by session
   const sessionMap = {}
   trades.forEach(t=>{
@@ -222,11 +268,11 @@ function PerformanceTab({ trades }) {
           {sessionData.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={sessionData} layout="vertical">
-                <XAxis type="number" tick={{ fill:"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
-                <YAxis dataKey="session" type="category" tick={{ fill:"var(--text-secondary)", fontSize:11 }} width={72}/>
-                <Tooltip {...CHART_TOOLTIP} formatter={v=>[`$${v}`,"P&L"]}/>
+                <XAxis type="number" tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
+                <YAxis dataKey="session" type="category" tick={{ fill:C.textSec||"var(--text-secondary)", fontSize:11 }} width={72}/>
+                <Tooltip {...makeTooltip(C)} formatter={v=>[`$${v}`,"P&L"]}/>
                 <Bar dataKey="pnl" radius={[0,3,3,0]}>
-                  {sessionData.map((d,i)=><Cell key={i} fill={d.pnl>=0?"#2ed573":"#ff4757"}/>)}
+                  {sessionData.map((d,i)=><Cell key={i} fill={d.pnl>=0?(C.success||"#2ed573"):(C.danger||"#ff4757")}/>)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -239,12 +285,12 @@ function PerformanceTab({ trades }) {
           {tfData.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={tfData}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/>
-                <XAxis dataKey="tf" tick={{ fill:"var(--text-muted)", fontSize:10 }}/>
-                <YAxis tick={{ fill:"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
-                <Tooltip {...CHART_TOOLTIP} formatter={v=>[`$${v}`,"P&L"]}/>
+                <CartesianGrid stroke={C.border||"var(--border)"} strokeDasharray="3 3"/>
+                <XAxis dataKey="tf" tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }}/>
+                <YAxis tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
+                <Tooltip {...makeTooltip(C)} formatter={v=>[`$${v}`,"P&L"]}/>
                 <Bar dataKey="pnl" radius={[3,3,0,0]}>
-                  {tfData.map((d,i)=><Cell key={i} fill={d.pnl>=0?"#2ed573":"#ff4757"}/>)}
+                  {tfData.map((d,i)=><Cell key={i} fill={d.pnl>=0?(C.success||"#2ed573"):(C.danger||"#ff4757")}/>)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -301,6 +347,7 @@ function PerformanceTab({ trades }) {
 
 // ─── Patterns Tab ─────────────────────────────────────────────────────────────
 function PatternsTab({ trades }) {
+  const C = useThemeColors()
   // Win rate by day of week
   const dowMap = { 0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat" }
   const byDow = {}
@@ -350,12 +397,12 @@ function PatternsTab({ trades }) {
           {dowData.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={dowData}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/>
-                <XAxis dataKey="day" tick={{ fill:"var(--text-muted)", fontSize:10 }}/>
-                <YAxis tick={{ fill:"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`${v}%`} domain={[0,100]}/>
-                <Tooltip {...CHART_TOOLTIP} formatter={v=>[`${v}%`,"Win Rate"]}/>
+                <CartesianGrid stroke={C.border||"var(--border)"} strokeDasharray="3 3"/>
+                <XAxis dataKey="day" tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }}/>
+                <YAxis tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`${v}%`} domain={[0,100]}/>
+                <Tooltip {...makeTooltip(C)} formatter={v=>[`${v}%`,"Win Rate"]}/>
                 <Bar dataKey="winRate" radius={[3,3,0,0]}>
-                  {dowData.map((d,i)=><Cell key={i} fill={d.winRate>=50?"#2ed573":"#ff4757"}/>)}
+                  {dowData.map((d,i)=><Cell key={i} fill={d.winRate>=50?(C.success||"#2ed573"):(C.danger||"#ff4757")}/>)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -396,11 +443,11 @@ function PatternsTab({ trades }) {
           {qualityScatter.length > 1 ? (
             <ResponsiveContainer width="100%" height={200}>
               <ScatterChart>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/>
-                <XAxis dataKey="quality" name="Quality" type="number" domain={[0,11]} tick={{ fill:"var(--text-muted)", fontSize:10 }} label={{ value:"Quality", position:"insideBottom", offset:-2, fill:"var(--text-muted)", fontSize:10 }}/>
-                <YAxis dataKey="pnl" name="P&L" tick={{ fill:"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
-                <Tooltip {...CHART_TOOLTIP} formatter={(v,n)=>[n==="pnl"?`$${v}`:v, n==="pnl"?"P&L":"Quality"]}/>
-                <Scatter data={qualityScatter} fill="#6c63ff" fillOpacity={0.7}/>
+                <CartesianGrid stroke={C.border||"var(--border)"} strokeDasharray="3 3"/>
+                <XAxis dataKey="quality" name="Quality" type="number" domain={[0,11]} tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} label={{ value:"Quality", position:"insideBottom", offset:-2, fill:C.textMuted||"var(--text-muted)", fontSize:10 }}/>
+                <YAxis dataKey="pnl" name="P&L" tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
+                <Tooltip {...makeTooltip(C)} formatter={(v,n)=>[n==="pnl"?`$${v}`:v, n==="pnl"?"P&L":"Quality"]}/>
+                <Scatter data={qualityScatter} fill={C.accent||"#6c63ff"} fillOpacity={0.7}/>
               </ScatterChart>
             </ResponsiveContainer>
           ) : <Empty/>}
@@ -445,6 +492,7 @@ function PatternsTab({ trades }) {
 
 // ─── Advanced Tab ─────────────────────────────────────────────────────────────
 function AdvancedTab({ trades }) {
+  const C = useThemeColors()
   const sorted = [...trades].sort((a,b)=>new Date(a.entry_time)-new Date(b.entry_time))
 
   // Running drawdown
@@ -530,11 +578,11 @@ function AdvancedTab({ trades }) {
                     <stop offset="95%" stopColor="#ff4757" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/>
-                <XAxis dataKey="date" tick={{ fill:"var(--text-muted)", fontSize:10 }} interval="preserveStartEnd"/>
-                <YAxis tick={{ fill:"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`${v}%`}/>
-                <Tooltip {...CHART_TOOLTIP} formatter={v=>[`${v}%`,"Drawdown"]}/>
-                <Area type="monotone" dataKey="drawdown" stroke="#ff4757" strokeWidth={2} fill="url(#ddGrad)"/>
+                <CartesianGrid stroke={C.border||"var(--border)"} strokeDasharray="3 3"/>
+                <XAxis dataKey="date" tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} interval="preserveStartEnd"/>
+                <YAxis tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`${v}%`}/>
+                <Tooltip {...makeTooltip(C)} formatter={v=>[`${v}%`,"Drawdown"]}/>
+                <Area type="monotone" dataKey="drawdown" stroke={C.danger||"#ff4757"} strokeWidth={2} fill="url(#ddGrad)"/>
               </AreaChart>
             </ResponsiveContainer>
           ) : <Empty/>}
@@ -546,12 +594,12 @@ function AdvancedTab({ trades }) {
           {trades.length>2 ? (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={histMap}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/>
-                <XAxis dataKey="range" tick={{ fill:"var(--text-muted)", fontSize:9 }} tickFormatter={v=>`$${v}`}/>
-                <YAxis tick={{ fill:"var(--text-muted)", fontSize:10 }}/>
-                <Tooltip {...CHART_TOOLTIP} formatter={v=>[v+" trades","Count"]}/>
+                <CartesianGrid stroke={C.border||"var(--border)"} strokeDasharray="3 3"/>
+                <XAxis dataKey="range" tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:9 }} tickFormatter={v=>`$${v}`}/>
+                <YAxis tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }}/>
+                <Tooltip {...makeTooltip(C)} formatter={v=>[v+" trades","Count"]}/>
                 <Bar dataKey="count" radius={[3,3,0,0]}>
-                  {histMap.map((d,i)=><Cell key={i} fill={d.positive?"#2ed573":"#ff4757"}/>)}
+                  {histMap.map((d,i)=><Cell key={i} fill={d.positive?(C.success||"#2ed573"):(C.danger||"#ff4757")}/>)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -565,12 +613,12 @@ function AdvancedTab({ trades }) {
         {monthlyData.length>0 ? (
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={monthlyData}>
-              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/>
-              <XAxis dataKey="month" tick={{ fill:"var(--text-muted)", fontSize:10 }}/>
-              <YAxis tick={{ fill:"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
-              <Tooltip {...CHART_TOOLTIP} formatter={v=>[`$${v}`,"P&L"]}/>
+              <CartesianGrid stroke={C.border||"var(--border)"} strokeDasharray="3 3"/>
+              <XAxis dataKey="month" tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }}/>
+              <YAxis tick={{ fill:C.textMuted||"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
+              <Tooltip {...makeTooltip(C)} formatter={v=>[`$${v}`,"P&L"]}/>
               <Bar dataKey="pnl" radius={[3,3,0,0]}>
-                {monthlyData.map((d,i)=><Cell key={i} fill={d.pnl>=0?"#2ed573":"#ff4757"}/>)}
+                {monthlyData.map((d,i)=><Cell key={i} fill={d.pnl>=0?(C.success||"#2ed573"):(C.danger||"#ff4757")}/>)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -582,14 +630,26 @@ function AdvancedTab({ trades }) {
 
 // ─── Main Analytics Page ──────────────────────────────────────────────────────
 export default function Analytics() {
-  const [allTrades, setAllTrades] = useState([])
+  const [allTrades,  setAllTrades]  = useState([])
+  const [eaAccounts, setEaAccounts] = useState([])
   const [activeTab,  setActiveTab]  = useState("Overview")
   const [filterSym,  setFilterSym]  = useState("ALL")
+  const [filterAcct, setFilterAcct] = useState("ALL")
 
-  useEffect(()=>{ Trade.list().then(d=>setAllTrades((d||[]).map(safeTrade).filter(Boolean))) }, [])
+  useEffect(()=>{
+    Trade.list().then(d=>setAllTrades((d||[]).map(safeTrade).filter(Boolean)))
+    BrokerConnection.list().then(d=>setEaAccounts((d||[]).filter(c=>c.is_mt5_live)))
+  }, [])
 
-  const symbols = ["ALL", ...Array.from(new Set(allTrades.map(t=>t.symbol))).sort()]
-  const trades  = filterSym==="ALL" ? allTrades : allTrades.filter(t=>t.symbol===filterSym)
+  const accounts = ["ALL", ...Array.from(new Set(allTrades.map(t=>t.account_login).filter(Boolean))).sort()]
+  const symbols  = ["ALL", ...Array.from(new Set(allTrades.map(t=>t.symbol))).sort()]
+
+  // Two-level filter: account first, then symbol
+  const byAccount = filterAcct==="ALL" ? allTrades : allTrades.filter(t=>(t.account_login||"MANUAL")===filterAcct)
+  const trades    = filterSym==="ALL"  ? byAccount  : byAccount.filter(t=>t.symbol===filterSym)
+
+  // Active account info for header
+  const activeAcctInfo = filterAcct==="ALL" ? null : eaAccounts.find(a=>a.mt5_login===filterAcct)
 
   // Summary stats
   const wins      = trades.filter(t=>t.outcome==="WIN")
@@ -613,15 +673,58 @@ export default function Analytics() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
-        <div>
-          <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>Analytics</h1>
-          <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>
-            Deep performance analysis across {trades.length} trade{trades.length!==1?"s":""}
-          </p>
+      <div className="flex flex-col gap-3 mb-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>Analytics</h1>
+            <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>
+              Deep performance analysis across {trades.length} trade{trades.length!==1?"s":""}
+              {filterAcct!=="ALL" && activeAcctInfo ? ` · ${activeAcctInfo.broker_name} #${filterAcct}` : ""}
+            </p>
+          </div>
         </div>
+
+        {/* Account filter — shown only if multiple accounts exist */}
+        {accounts.length > 1 && (
+          <div className="flex items-center gap-2 flex-wrap rounded-xl px-3 py-2" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+            <span className="text-xs font-semibold" style={{ color:"var(--text-muted)" }}>ACCOUNT:</span>
+            {accounts.map(a=>{
+              const info = a==="ALL" ? null : eaAccounts.find(acc=>acc.mt5_login===a)
+              return (
+                <button key={a} onClick={()=>{ setFilterAcct(a); setFilterSym("ALL") }}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all"
+                  style={{ background:filterAcct===a?"var(--accent)":"var(--bg-elevated)", color:filterAcct===a?"#fff":"var(--text-secondary)", border:"1px solid", borderColor:filterAcct===a?"var(--accent)":"var(--border)" }}>
+                  {a==="ALL" ? "All Accounts" : (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: info?.type==="live"?"var(--accent-success)":"var(--accent-warning)" }}/>
+                      {info?.broker_name||"MT5"} #{a}
+                    </>
+                  )}
+                </button>
+              )
+            })}
+            {/* Account info strip when one selected */}
+            {activeAcctInfo && (
+              <div className="flex items-center gap-3 ml-2 pl-2 flex-wrap" style={{ borderLeft:"1px solid var(--border)" }}>
+                {[
+                  { l:"Balance", v: activeAcctInfo.balance ? `$${parseFloat(activeAcctInfo.balance).toLocaleString()}` : "—" },
+                  { l:"Equity",  v: activeAcctInfo.equity  ? `$${parseFloat(activeAcctInfo.equity).toLocaleString()}`  : "—" },
+                  { l:"Server",  v: activeAcctInfo.server  || "—" },
+                  { l:"Type",    v: activeAcctInfo.type==="live" ? "🟢 Live" : "🟡 Demo" },
+                ].map(s=>(
+                  <div key={s.l}>
+                    <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.l}</p>
+                    <p className="text-xs font-bold" style={{ color:"var(--text-primary)" }}>{s.v}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Symbol filter */}
         <div className="flex flex-wrap gap-1.5">
+          <span className="text-xs font-semibold self-center" style={{ color:"var(--text-muted)" }}>SYMBOL:</span>
           {symbols.map(s=>(
             <button key={s} onClick={()=>setFilterSym(s)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"

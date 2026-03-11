@@ -252,16 +252,112 @@ function DeleteConfirm({ trade, onCancel, onConfirm }) {
   )
 }
 
+// ─── Calendar Day Detail Popup ───────────────────────────────────────────────
+function DayPopup({ date, trades, onClose }) {
+  const pnl         = trades.reduce((s,t)=>s+(t.pnl||0),0)
+  const commission  = trades.reduce((s,t)=>s+(t.commission||0),0)
+  const swap        = trades.reduce((s,t)=>s+(t.swap||0),0)
+  const gross       = trades.reduce((s,t)=>s+(t.gross_pnl||t.pnl||0),0)
+  const wins        = trades.filter(t=>t.outcome==="WIN")
+  const losses      = trades.filter(t=>t.outcome==="LOSS")
+  const bes         = trades.filter(t=>t.outcome==="BREAKEVEN")
+  const winRate     = trades.length ? (wins.length/trades.length*100).toFixed(0) : 0
+  const formatted   = new Date(date+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"/>
+      <div className="relative w-full max-w-lg rounded-2xl overflow-hidden z-10 max-h-[85vh] flex flex-col"
+        style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}
+        onClick={e=>e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
+          <div>
+            <p className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{formatted}</p>
+            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{trades.length} trade{trades.length!==1?"s":""}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-lg font-bold" style={{ color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+              {pnl>=0?"+":""}${pnl.toFixed(2)}
+            </span>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70" style={{ background:"var(--bg-elevated)", color:"var(--text-muted)" }}>
+              <X size={15}/>
+            </button>
+          </div>
+        </div>
+
+        {/* Day stats */}
+        <div className="grid grid-cols-4 gap-2 px-5 py-3" style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
+          {[
+            { label:"Gross P&L",   value:`${gross>=0?"+":""}$${gross.toFixed(2)}`,       color:gross>=0?"var(--accent-success)":"var(--accent-danger)" },
+            { label:"Commission",  value:`-$${Math.abs(commission).toFixed(2)}`,          color:"var(--accent-danger)" },
+            { label:"Swap",        value:`${swap>=0?"+":""}$${swap.toFixed(2)}`,          color:swap>=0?"var(--accent-success)":"var(--accent-danger)" },
+            { label:"Win Rate",    value:`${winRate}%`,                                   color:parseInt(winRate)>=50?"var(--accent-success)":"var(--accent-danger)" },
+          ].map(s=>(
+            <div key={s.label} className="rounded-lg px-2 py-1.5" style={{ background:"var(--bg-card)" }}>
+              <p className="text-xs font-bold truncate" style={{ color:s.color }}>{s.value}</p>
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Trade list */}
+        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
+          {trades.map((t,i)=>(
+            <div key={t.id||i} className="rounded-xl px-3 py-2.5 flex items-center justify-between gap-3"
+              style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="px-1.5 py-0.5 rounded text-xs font-bold flex-shrink-0"
+                  style={{ background:t.direction==="BUY"?"rgba(46,213,115,0.15)":"rgba(255,71,87,0.15)", color:t.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)" }}>
+                  {t.direction}
+                </span>
+                <span className="text-xs font-semibold truncate" style={{ color:"var(--text-primary)" }}>{t.symbol}</span>
+                {t.timeframe && <span className="text-xs flex-shrink-0" style={{ color:"var(--text-muted)" }}>{t.timeframe}</span>}
+                {t.session && <span className="text-xs flex-shrink-0 hidden sm:inline" style={{ color:"var(--text-muted)" }}>{t.session}</span>}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {t.rr > 0 && <span className="text-xs" style={{ color:"var(--text-muted)" }}>R:R {t.rr.toFixed(1)}</span>}
+                {t.commission !== 0 && t.commission != null && (
+                  <span className="text-xs" style={{ color:"var(--text-muted)" }}>com ${(t.commission||0).toFixed(2)}</span>
+                )}
+                <span className="text-xs font-bold min-w-[60px] text-right"
+                  style={{ color:t.outcome==="WIN"?"var(--accent-success)":t.outcome==="LOSS"?"var(--accent-danger)":"var(--text-muted)" }}>
+                  {(t.pnl||0)>=0?"+":""}${(t.pnl||0).toFixed(2)}
+                </span>
+                <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                  style={{ background:t.outcome==="WIN"?"rgba(46,213,115,0.1)":t.outcome==="LOSS"?"rgba(255,71,87,0.1)":"rgba(108,99,255,0.1)", color:t.outcome==="WIN"?"var(--accent-success)":t.outcome==="LOSS"?"var(--accent-danger)":"var(--accent)" }}>
+                  {t.outcome}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer summary */}
+        <div className="px-5 py-3 flex flex-wrap gap-3" style={{ borderTop:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
+          <span className="text-xs" style={{ color:"var(--text-muted)" }}>{wins.length}W · {losses.length}L · {bes.length}BE</span>
+          {commission !== 0 && <span className="text-xs" style={{ color:"var(--text-muted)" }}>Total fees: ${Math.abs(commission).toFixed(2)}</span>}
+          <span className="text-xs ml-auto font-semibold" style={{ color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>Net P&L: {pnl>=0?"+":""}${pnl.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Calendar View ────────────────────────────────────────────────────────────
 function CalendarView({ trades, onNewTrade }) {
-  const [current, setCurrent] = useState(new Date())
+  const [current,    setCurrent]    = useState(new Date())
+  const [selectedDay,setSelectedDay]= useState(null)
+
   const year  = current.getFullYear()
   const month = current.getMonth()
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"]
   const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
-  const firstDay   = new Date(year, month, 1).getDay()
-  const daysInMonth= new Date(year, month+1, 0).getDate()
+  const firstDay    = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month+1, 0).getDate()
 
+  // Group trades by day
   const byDay = {}
   trades.forEach(t => {
     if (!t.entry_time) return
@@ -270,14 +366,19 @@ function CalendarView({ trades, onNewTrade }) {
     byDay[key].push(t)
   })
 
-  const monthTotal = Object.entries(byDay)
-    .filter(([d]) => d.startsWith(`${year}-${String(month+1).padStart(2,"0")}`))
-    .reduce((s,[,arr])=>s+arr.reduce((a,t)=>a+(t.pnl||0),0),0)
+  // Month totals
+  const monthPrefix = `${year}-${String(month+1).padStart(2,"0")}`
+  const monthTrades = Object.entries(byDay).filter(([d])=>d.startsWith(monthPrefix))
+  const monthPnl    = monthTrades.reduce((s,[,arr])=>s+arr.reduce((a,t)=>a+(t.pnl||0),0),0)
+  const monthWins   = monthTrades.reduce((s,[,arr])=>s+arr.filter(t=>t.outcome==="WIN").length,0)
+  const monthLosses = monthTrades.reduce((s,[,arr])=>s+arr.filter(t=>t.outcome==="LOSS").length,0)
+  const monthTrades_count = monthTrades.reduce((s,[,arr])=>s+arr.length,0)
+  const monthComm   = monthTrades.reduce((s,[,arr])=>s+arr.reduce((a,t)=>a+(t.commission||0),0),0)
 
   return (
     <div>
       {/* Calendar Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-3">
           <button onClick={()=>setCurrent(new Date(year,month-1,1))} className="p-2 rounded-lg hover:opacity-70" style={{ background:"var(--bg-elevated)", color:"var(--text-secondary)" }}>
             <ChevronLeft size={16}/>
@@ -290,9 +391,16 @@ function CalendarView({ trades, onNewTrade }) {
             Today
           </button>
         </div>
-        <span className="text-sm font-semibold" style={{ color: monthTotal>=0?"var(--accent-success)":"var(--accent-danger)" }}>
-          {monthTotal>=0?"+":""} ${monthTotal.toFixed(0)} this month
-        </span>
+        {/* Month summary strip */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-sm font-bold" style={{ color:monthPnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+            {monthPnl>=0?"+":""}${monthPnl.toFixed(2)}
+          </span>
+          <span className="text-xs" style={{ color:"var(--text-muted)" }}>{monthTrades_count} trades</span>
+          <span className="text-xs" style={{ color:"var(--accent-success)" }}>{monthWins}W</span>
+          <span className="text-xs" style={{ color:"var(--accent-danger)" }}>{monthLosses}L</span>
+          {monthComm !== 0 && <span className="text-xs" style={{ color:"var(--text-muted)" }}>fees: ${Math.abs(monthComm).toFixed(2)}</span>}
+        </div>
       </div>
 
       {/* Grid */}
@@ -306,50 +414,83 @@ function CalendarView({ trades, onNewTrade }) {
         {/* Day cells */}
         <div className="grid grid-cols-7">
           {Array.from({ length: firstDay }).map((_,i)=>(
-            <div key={`e${i}`} style={{ borderBottom:"1px solid var(--border)", borderRight:"1px solid var(--border)", minHeight:80 }}/>
+            <div key={`e${i}`} style={{ borderBottom:"1px solid var(--border)", borderRight:"1px solid var(--border)", minHeight:90, background:"var(--bg-primary)", opacity:0.4 }}/>
           ))}
           {Array.from({ length: daysInMonth }).map((_,i)=>{
-            const day = i+1
-            const key = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`
-            const dayTrades = byDay[key] || []
-            const pnl  = dayTrades.reduce((s,t)=>s+(t.pnl||0),0)
-            const wins = dayTrades.filter(t=>t.outcome==="WIN").length
-            const losses= dayTrades.filter(t=>t.outcome==="LOSS").length
-            const hasTrades = dayTrades.length>0
+            const day     = i+1
+            const key     = `${monthPrefix}-${String(day).padStart(2,"0")}`
+            const dayT    = byDay[key] || []
+            const pnl     = dayT.reduce((s,t)=>s+(t.pnl||0),0)
+            const comm    = dayT.reduce((s,t)=>s+(t.commission||0),0)
+            const wins    = dayT.filter(t=>t.outcome==="WIN").length
+            const losses  = dayT.filter(t=>t.outcome==="LOSS").length
+            const hasTrades = dayT.length > 0
             const isToday = key===new Date().toISOString().slice(0,10)
-            const dow = new Date(year,month,day).getDay()
+            const dow     = new Date(year,month,day).getDay()
+            const isWeekend = dow===0 || dow===6
             const isLastInRow = dow===6 || day===daysInMonth
+
             return (
-              <div key={day} className="p-2" style={{
-                borderBottom:"1px solid var(--border)",
-                borderRight: isLastInRow?"none":"1px solid var(--border)",
-                minHeight:80,
-                background: hasTrades?(pnl>=0?"rgba(46,213,115,0.05)":"rgba(255,71,87,0.05)"):"transparent"
-              }}>
-                <div className="text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-1"
-                  style={{ color:isToday?"#fff":"var(--text-secondary)", background:isToday?"var(--accent)":"transparent" }}>
-                  {day}
-                </div>
-                {hasTrades && (
-                  <div>
-                    <div className="text-xs font-bold" style={{ color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
-                      {pnl>=0?"+":""} ${Math.abs(pnl)>=1000?(pnl/1000).toFixed(1)+"k":pnl.toFixed(0)}
-                    </div>
-                    <div className="flex gap-1 mt-0.5 flex-wrap">
-                      {wins>0 && (
-                        <span className="text-xs px-1 rounded" style={{ background:"rgba(46,213,115,0.15)", color:"var(--accent-success)" }}>{wins}W</span>
-                      )}
-                      {losses>0 && (
-                        <span className="text-xs px-1 rounded" style={{ background:"rgba(255,71,87,0.15)", color:"var(--accent-danger)" }}>{losses}L</span>
-                      )}
-                    </div>
+              <div key={day}
+                onClick={()=>hasTrades && setSelectedDay(key)}
+                className={hasTrades?"cursor-pointer":""}
+                style={{
+                  borderBottom:"1px solid var(--border)",
+                  borderRight: isLastInRow?"none":"1px solid var(--border)",
+                  minHeight:90,
+                  background: hasTrades
+                    ? pnl>=0 ? "rgba(46,213,115,0.06)" : "rgba(255,71,87,0.06)"
+                    : isWeekend ? "rgba(0,0,0,0.15)" : "transparent",
+                  transition:"background 0.15s",
+                }}>
+                <div className="p-2">
+                  {/* Day number */}
+                  <div className="text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-1"
+                    style={{ color:isToday?"#fff":isWeekend?"var(--text-muted)":"var(--text-secondary)", background:isToday?"var(--accent)":"transparent", fontWeight:isToday?"700":"500" }}>
+                    {day}
                   </div>
-                )}
+                  {hasTrades && (
+                    <>
+                      {/* P&L */}
+                      <div className="text-xs font-bold" style={{ color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+                        {pnl>=0?"+":""}${Math.abs(pnl)>=1000?(pnl/1000).toFixed(1)+"k":pnl.toFixed(2)}
+                      </div>
+                      {/* W/L pills */}
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {wins>0 && (
+                          <span className="text-xs px-1 rounded font-medium" style={{ background:"rgba(46,213,115,0.18)", color:"var(--accent-success)" }}>{wins}W</span>
+                        )}
+                        {losses>0 && (
+                          <span className="text-xs px-1 rounded font-medium" style={{ background:"rgba(255,71,87,0.18)", color:"var(--accent-danger)" }}>{losses}L</span>
+                        )}
+                      </div>
+                      {/* Commission badge */}
+                      {comm !== 0 && (
+                        <div className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>
+                          fee ${Math.abs(comm).toFixed(2)}
+                        </div>
+                      )}
+                      {/* Trade count if >2 */}
+                      {dayT.length > 2 && (
+                        <div className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{dayT.length} trades</div>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             )
           })}
         </div>
       </div>
+
+      {/* Day detail popup */}
+      {selectedDay && byDay[selectedDay] && (
+        <DayPopup
+          date={selectedDay}
+          trades={byDay[selectedDay]}
+          onClose={()=>setSelectedDay(null)}
+        />
+      )}
     </div>
   )
 }
@@ -1444,7 +1585,6 @@ export default function Journal() {
   const [filterOutcome,  setFilterOutcome]  = useState("ALL")
   const [filterDirection,setFilterDirection]= useState("ALL")
   const [filterSession,  setFilterSession]  = useState("ALL")
-  const [filterAccount,  setFilterAccount]  = useState("ALL")
 
   const loadTrades = async () => {
     try {
@@ -1459,17 +1599,15 @@ export default function Journal() {
     return () => { try { unsub() } catch {} }
   }, [])
 
-  // Unique symbols and accounts from actual data
-  const symbols  = ["ALL", ...Array.from(new Set(trades.map(t=>t.symbol))).sort()]
-  const accounts = ["ALL", ...Array.from(new Set(trades.map(t=>t.account_login).filter(Boolean))).sort()]
+  // Unique symbols from actual data
+  const symbols = ["ALL", ...Array.from(new Set(trades.map(t=>t.symbol))).sort()]
 
   // Filtered trades
   const filtered = trades.filter(t => {
-    if (filterSymbol!=="ALL"    && t.symbol       !== filterSymbol)    return false
-    if (filterOutcome!=="ALL"   && t.outcome      !== filterOutcome)   return false
-    if (filterDirection!=="ALL" && t.direction    !== filterDirection) return false
-    if (filterSession!=="ALL"   && t.session      !== filterSession)   return false
-    if (filterAccount!=="ALL"   && (t.account_login||"MANUAL") !== filterAccount) return false
+    if (filterSymbol!=="ALL"    && t.symbol    !== filterSymbol)    return false
+    if (filterOutcome!=="ALL"   && t.outcome   !== filterOutcome)   return false
+    if (filterDirection!=="ALL" && t.direction !== filterDirection) return false
+    if (filterSession!=="ALL"   && t.session   !== filterSession)   return false
     return true
   })
 
@@ -1574,21 +1712,6 @@ export default function Journal() {
             ))}
           </div>
         </div>
-        {/* Account filter — only shown if multiple accounts exist */}
-        {accounts.length > 2 && (
-          <div>
-            <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Account</p>
-            <div className="flex flex-wrap gap-1.5">
-              {accounts.map(a=>(
-                <button key={a} onClick={()=>setFilterAccount(a)}
-                  className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                  style={{ background:filterAccount===a?"var(--accent)":"var(--bg-elevated)", color:filterAccount===a?"#fff":"var(--text-secondary)", border:"1px solid", borderColor:filterAccount===a?"var(--accent)":"var(--border)" }}>
-                  {a==="ALL" ? "All Accounts" : a==="MANUAL" ? "Manual" : `#${a}`}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Content */}
