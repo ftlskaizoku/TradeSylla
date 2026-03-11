@@ -1,181 +1,173 @@
-// Vercel Edge Function — MT5 EA Trade Receiver v3.0
-// Handles: heartbeat (saves account), trade, history types
-
+// Vercel Serverless — TradeSylla MT5 EA receiver
+// Handles: heartbeat, live trade sync, full history import, force re-sync
 import { createClient } from "@supabase/supabase-js"
 
+const CORS = {
+  "Access-Control-Allow-Origin":  "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Content-Type": "application/json",
+}
+
 export default async function handler(req) {
-  const cors = {
-    "Access-Control-Allow-Origin":  "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Content-Type": "application/json",
-  }
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS })
+  if (req.method !== "POST")   return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: CORS })
 
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors })
-  if (req.method !== "POST")
-    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: cors })
-
-  const supabaseUrl     = process.env.VITE_SUPABASE_URL
-  const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !supabaseService)
-    return new Response(JSON.stringify({ error: "Server not configured" }), { status: 503, headers: cors })
-
-  const supabase = createClient(supabaseUrl, supabaseService)
+  const supabase = createClient(
+    process.env.VITE_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
 
   let body
   try { body = await req.json() }
-  catch { return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400, headers: cors }) }
+  catch { return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400, headers: CORS }) }
 
-  const { token, type } = body
-  if (!token)
-    return new Response(JSON.stringify({ error: "Missing token" }), { status: 401, headers: cors })
+  const { token, type, trades, force } = body
 
-  // Resolve user from token
-  const { data: profile, error: profileErr } = await supabase
+  if (!token) return new Response(JSON.stringify({ error: "Missing token" }), { status: 401, headers: CORS })
+
+  // Resolve user from ea_token
+  const { data: profile } = await supabase
     .from("profiles").select("id").eq("ea_token", token).single()
-
-  if (profileErr || !profile)
-    return new Response(JSON.stringify({ error: "Invalid token. Generate a new one in TradeSylla → Broker Sync → MT5 EA." }), { status: 401, headers: cors })
+  if (!profile) return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: CORS })
 
   const userId = profile.id
 
-  // ── HEARTBEAT — save/update account details ────────────────────────────────
+  // ── HEARTBEAT ─────────────────────────────────────────────────────────────
   if (type === "heartbeat") {
-    const acct = body.account || {}
-    const login = String(acct.login || "")
-
+    const { login, name, broker, server, balance, equity, currency, leverage, is_demo, ea_version } = body
     if (login) {
-      // Upsert broker_connection by mt5_login + user_id
-      const { data: existing } = await supabase
-        .from("broker_connections")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("mt5_login", login)
-        .single()
-
-      const record = {
-        user_id:        userId,
-        mt5_login:      login,
-        broker_name:    acct.broker  || "MT5",
-        account_name:   acct.name    || login,
-        account_number: login,
-        server:         acct.server  || "",
-        type:           acct.is_demo ? "demo" : "live",
-        is_mt5_live:    true,
-        is_demo:        acct.is_demo || false,
-        balance:        parseFloat(acct.balance)  || 0,
-        equity:         parseFloat(acct.equity)   || 0,
-        currency:       acct.currency || "USD",
-        leverage:       parseInt(acct.leverage)   || 0,
-        status:         "connected",
-        last_sync:      new Date().toISOString(),
-        updated_at:     new Date().toISOString(),
-      }
-
-      if (existing?.id) {
-        await supabase.from("broker_connections").update(record).eq("id", existing.id)
-      } else {
-        await supabase.from("broker_connections").insert([{ ...record, created_at: new Date().toISOString() }])
-      }
+      await supabase.from("broker_connections").upsert({
+        user_id:      userId,
+        mt5_login:    String(login),
+        account_name: name    || "",
+        broker_name:  broker  || "MT5",
+        server:       server  || "",
+        balance:      parseFloat(balance)  || 0,
+        equity:       parseFloat(equity)   || 0,
+        currency:     currency || "USD",
+        leverage:     parseInt(leverage)   || 0,
+        is_demo:      is_demo === true || is_demo === "true",
+        is_mt5_live:  true,
+        status:       "connected",
+        last_sync:    new Date().toISOString(),
+        ea_version:   ea_version || "3.0",
+      }, { onConflict: "user_id,mt5_login" })
     }
-
-    return new Response(JSON.stringify({ ok: true, message: "Heartbeat received" }), { status: 200, headers: cors })
+    return new Response(JSON.stringify({ ok: true, type: "heartbeat" }), { status: 200, headers: CORS })
   }
 
-  // ── TRADES / HISTORY — insert trades ──────────────────────────────────────
-  if (type === "trade" || type === "history") {
-    const trades = body.trades || []
-    if (!trades.length)
-      return new Response(JSON.stringify({ ok: true, imported: 0, message: "No trades" }), { status: 200, headers: cors })
+  // ── TRADE SYNC (live or history) ──────────────────────────────────────────
+  if (!Array.isArray(trades) || trades.length === 0) {
+    return new Response(JSON.stringify({ ok: true, imported: 0, message: "No trades" }), { status: 200, headers: CORS })
+  }
 
-    // Get account login from first trade's token context (stored in heartbeat)
-    // We'll attach account_login from the EA's heartbeat connection
-    const { data: connection } = await supabase
-      .from("broker_connections")
-      .select("mt5_login, account_name, server, broker_name")
-      .eq("user_id", userId)
-      .eq("is_mt5_live", true)
-      .order("last_sync", { ascending: false })
-      .limit(1)
-      .single()
+  // Get most recent account login for this user
+  const { data: connection } = await supabase
+    .from("broker_connections")
+    .select("mt5_login")
+    .eq("user_id", userId)
+    .eq("is_mt5_live", true)
+    .order("last_sync", { ascending: false })
+    .limit(1)
+    .single()
+  const accountLogin = connection?.mt5_login || null
 
-    const accountLogin = connection?.mt5_login || null
-
-    // Fetch existing tickets to avoid duplicates
+  // Load existing tickets — skip if force=true (full re-sync wipes dedup)
+  let existingTickets = new Set()
+  if (!force) {
     const { data: existing } = await supabase
-      .from("trades").select("mt5_ticket").eq("user_id", userId).not("mt5_ticket", "is", null)
+      .from("trades").select("mt5_ticket,id,sl,tp")
+      .eq("user_id", userId).not("mt5_ticket", "is", null)
+    existingTickets = new Set((existing || []).map(t => t.mt5_ticket))
+  }
 
-    const existingTickets = new Set((existing || []).map(t => t.mt5_ticket))
+  let imported = 0, skipped = 0, updated = 0
+  const errors   = []   // all errors
+  const symStats = {}   // per-symbol tracking for debugging
 
-    let imported = 0, skipped = 0
-    const errors = []
+  for (const t of trades) {
+    const sym = (t.symbol || "UNKNOWN").toUpperCase()
+    if (!symStats[sym]) symStats[sym] = { sent: 0, imported: 0, skipped: 0, errors: 0 }
+    symStats[sym].sent++
 
-    for (const t of trades) {
-      if (t.mt5_ticket && existingTickets.has(String(t.mt5_ticket))) {
-        // Update existing trade with new fields (SL, TP, RR etc) if missing
-        const { data: existingTrade } = await supabase
-          .from("trades").select("id, sl, tp").eq("mt5_ticket", String(t.mt5_ticket)).eq("user_id", userId).single()
+    const ticket = t.mt5_ticket ? String(t.mt5_ticket) : null
 
-        if (existingTrade && (!existingTrade.sl || existingTrade.sl === 0) && parseFloat(t.sl) > 0) {
+    // Duplicate? — update missing fields if needed, then skip
+    if (ticket && existingTickets.has(ticket)) {
+      if (!force) {
+        // Backfill SL/TP/commission/account on old trades if they're missing
+        const { data: old } = await supabase
+          .from("trades").select("id,sl,tp,commission")
+          .eq("mt5_ticket", ticket).eq("user_id", userId).single()
+        if (old && (!old.sl || old.sl === 0) && parseFloat(t.sl) > 0) {
           await supabase.from("trades").update({
-            sl:            parseFloat(t.sl)          || 0,
-            tp:            parseFloat(t.tp)          || 0,
-            sl_pips:       parseFloat(t.sl_pips)     || 0,
-            tp_pips:       parseFloat(t.tp_pips)     || 0,
-            rr:            parseFloat(t.rr)          || 0,
-            duration_min:  parseInt(t.duration_min)  || 0,
+            sl:           parseFloat(t.sl)         || 0,
+            tp:           parseFloat(t.tp)         || 0,
+            sl_pips:      parseFloat(t.sl_pips)    || 0,
+            tp_pips:      parseFloat(t.tp_pips)    || 0,
+            rr:           parseFloat(t.rr)         || 0,
+            duration_min: parseInt(t.duration_min) || 0,
+            gross_pnl:    parseFloat(t.gross_pnl)  || 0,
+            commission:   parseFloat(t.commission) || 0,
+            swap:         parseFloat(t.swap)       || 0,
             account_login: accountLogin,
-          }).eq("id", existingTrade.id)
+            exit_time:    t.exit_time || null,
+          }).eq("id", old.id)
+          updated++
         }
         skipped++
+        symStats[sym].skipped++
         continue
       }
+    }
 
-      const trade = {
-        user_id:       userId,
-        mt5_ticket:    t.mt5_ticket   ? String(t.mt5_ticket)     : null,
-        account_login: accountLogin,
-        symbol:        t.symbol       ? t.symbol.toUpperCase()   : "UNKNOWN",
-        direction:     t.direction    ? t.direction.toUpperCase(): "BUY",
-        entry_price:   parseFloat(t.entry_price)  || 0,
-        exit_price:    parseFloat(t.exit_price)   || 0,
-        sl:            parseFloat(t.sl)           || 0,
-        tp:            parseFloat(t.tp)           || 0,
-        sl_pips:       parseFloat(t.sl_pips)      || 0,
-        tp_pips:       parseFloat(t.tp_pips)      || 0,
-        rr:            parseFloat(t.rr)           || 0,
-        gross_pnl:     parseFloat(t.gross_pnl)    || 0,
-        commission:    parseFloat(t.commission)   || 0,
-        swap:          parseFloat(t.swap)         || 0,
-        pnl:           parseFloat(t.pnl)          || 0,
-        pips:          parseFloat(t.pips)         || 0,
-        volume:        parseFloat(t.volume)       || 0,
-        duration_min:  parseInt(t.duration_min)   || 0,
-        entry_time:    t.entry_time || new Date().toISOString(),
-        exit_time:     t.exit_time  || null,
-        session:       t.session    || "UNKNOWN",
-        timeframe:     t.timeframe  || null,
-        outcome:       t.pnl > 0.001 ? "WIN" : t.pnl < -0.001 ? "LOSS" : "BREAKEVEN",
-        notes:         t.notes ? `[MT5 EA] ${t.notes}` : "[MT5 EA] Auto-synced",
-        quality:       5,
-      }
+    const trade = {
+      user_id:       userId,
+      mt5_ticket:    ticket,
+      account_login: accountLogin,
+      symbol:        sym,
+      direction:     t.direction ? t.direction.toUpperCase() : "BUY",
+      entry_price:   parseFloat(t.entry_price)  || 0,
+      exit_price:    parseFloat(t.exit_price)   || 0,
+      sl:            parseFloat(t.sl)           || 0,
+      tp:            parseFloat(t.tp)           || 0,
+      sl_pips:       parseFloat(t.sl_pips)      || 0,
+      tp_pips:       parseFloat(t.tp_pips)      || 0,
+      rr:            parseFloat(t.rr)           || 0,
+      gross_pnl:     parseFloat(t.gross_pnl)    || parseFloat(t.pnl) || 0,
+      commission:    parseFloat(t.commission)   || 0,
+      swap:          parseFloat(t.swap)         || 0,
+      pnl:           parseFloat(t.pnl)          || 0,
+      pips:          parseFloat(t.pips)         || 0,
+      volume:        parseFloat(t.volume)       || 0,
+      duration_min:  parseInt(t.duration_min)   || 0,
+      entry_time:    t.entry_time || new Date().toISOString(),
+      exit_time:     t.exit_time  || null,
+      session:       t.session    || "UNKNOWN",
+      timeframe:     t.timeframe  || null,
+      outcome:       parseFloat(t.pnl) > 0.001 ? "WIN" : parseFloat(t.pnl) < -0.001 ? "LOSS" : "BREAKEVEN",
+      notes:         t.notes ? `[MT5 EA] ${t.notes}` : "[MT5 EA] Auto-synced",
+      quality:       5,
+    }
 
+    if (force && ticket) {
+      // Force mode: upsert on mt5_ticket
+      const { error } = await supabase.from("trades")
+        .upsert(trade, { onConflict: "user_id,mt5_ticket" })
+      if (error) { errors.push(`${sym} #${ticket}: ${error.message}`); symStats[sym].errors++ }
+      else { imported++; symStats[sym].imported++; if (ticket) existingTickets.add(ticket) }
+    } else {
       const { error } = await supabase.from("trades").insert([trade])
-      if (error) errors.push(error.message)
-      else { imported++; existingTickets.add(String(t.mt5_ticket)) }
+      if (error) { errors.push(`${sym} #${ticket}: ${error.message}`); symStats[sym].errors++ }
+      else { imported++; symStats[sym].imported++; if (ticket) existingTickets.add(ticket) }
     }
-
-    // Insert candles into trade_charts if provided
-    if (imported > 0) {
-      // (trade_charts stored separately — handled by candles field)
-    }
-
-    return new Response(JSON.stringify({
-      ok: true, imported, skipped,
-      errors: errors.length > 0 ? errors.slice(0,3) : undefined,
-      message: `${imported} trade(s) imported, ${skipped} skipped`,
-    }), { status: 200, headers: cors })
   }
 
-  return new Response(JSON.stringify({ ok: true }), { status: 200, headers: cors })
+  return new Response(JSON.stringify({
+    ok: true, imported, skipped, updated,
+    symbols: symStats,
+    errors:  errors.length > 0 ? errors.slice(0, 10) : undefined,
+    message: `${imported} imported · ${skipped} skipped · ${updated} backfilled`,
+  }), { status: 200, headers: CORS })
 }

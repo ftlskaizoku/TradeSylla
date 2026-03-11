@@ -7,7 +7,9 @@ import {
   Wifi, WifiOff, Plus, Trash2, X, RefreshCw,
   CheckCircle, AlertCircle, Clock, ChevronRight,
   Shield, Info, Terminal, Download, Activity,
-  ChevronDown, Eye, EyeOff, Zap, Globe, Copy, Key, Bot} from "lucide-react"
+  ChevronDown, Eye, EyeOff, Zap, Globe, Copy, Key, Bot,
+  TrendingUp, DollarSign, BarChart3, Server, AlertTriangle
+} from "lucide-react"
 
 const BRIDGE_URL = "http://localhost:5001"
 
@@ -483,6 +485,142 @@ function MetaApiConnectPanel() {
 // ─── Main BrokerSync Page ──────────────────────────────────────────────────────
 
 // ─── EA Setup Panel ───────────────────────────────────────────────────────────
+// ─── EA Connected Accounts Panel ─────────────────────────────────────────────
+function EAAccountsPanel() {
+  const { user } = useUser()
+  const [accounts,   setAccounts]   = useState([])
+  const [tradeCounts,setTradeCounts]= useState({})
+  const [loading,    setLoading]    = useState(true)
+  const [resyncing,  setResyncing]  = useState(null) // login being resynced
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const conns = await BrokerConnection.list()
+      const ea    = (conns || []).filter(c => c.is_mt5_live)
+      setAccounts(ea.sort((a,b)=>new Date(b.last_sync)-new Date(a.last_sync)))
+
+      // Count trades per account_login
+      const trades = await Trade.list()
+      const counts = {}
+      ;(trades||[]).forEach(t => {
+        const k = t.account_login || "__manual__"
+        counts[k] = (counts[k]||0) + 1
+      })
+      setTradeCounts(counts)
+    } catch {}
+    setLoading(false)
+  }
+
+  useEffect(() => { if (user) load() }, [user])
+
+  const fmtTime = (iso) => {
+    if (!iso) return "Never"
+    const d = new Date(iso)
+    const diff = Date.now() - d.getTime()
+    if (diff < 60000)    return "Just now"
+    if (diff < 3600000)  return `${Math.floor(diff/60000)}m ago`
+    if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`
+    return d.toLocaleDateString("en-US",{month:"short",day:"numeric"})
+  }
+
+  if (loading) return (
+    <div className="flex items-center gap-2 py-4" style={{ color:"var(--text-muted)" }}>
+      <RefreshCw size={13} className="animate-spin"/> Loading connected accounts…
+    </div>
+  )
+
+  if (accounts.length === 0) return (
+    <div className="rounded-xl p-4 mb-4 flex items-center gap-3" style={{ background:"rgba(108,99,255,0.06)", border:"1px solid rgba(108,99,255,0.15)" }}>
+      <AlertTriangle size={15} style={{ color:"var(--accent-warning)", flexShrink:0 }}/>
+      <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
+        No EA accounts synced yet. Complete the setup below and attach the EA to a chart — accounts will appear here automatically once the first heartbeat arrives.
+      </p>
+    </div>
+  )
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>
+          Connected EA Accounts <span className="ml-1 px-2 py-0.5 rounded-full text-xs" style={{ background:"rgba(46,213,115,0.12)", color:"var(--accent-success)" }}>{accounts.length} active</span>
+        </h3>
+        <button onClick={load} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs hover:opacity-70" style={{ background:"var(--bg-elevated)", color:"var(--text-muted)", border:"1px solid var(--border)" }}>
+          <RefreshCw size={11}/> Refresh
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {accounts.map(acc => {
+          const isLive    = !acc.is_demo
+          const tradeCount= tradeCounts[acc.mt5_login] || 0
+          const syncedAgo = fmtTime(acc.last_sync)
+          const isRecent  = acc.last_sync && (Date.now() - new Date(acc.last_sync).getTime()) < 120000
+
+          return (
+            <div key={acc.id} className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+              {/* Account header */}
+              <div className="px-5 py-4 flex items-center gap-4" style={{ borderBottom:"1px solid var(--border)", background:"linear-gradient(135deg,rgba(108,99,255,0.05),transparent)" }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white flex-shrink-0"
+                  style={{ background:"linear-gradient(135deg,#1a73e8,#1557b0)", fontSize:11 }}>
+                  MT5
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{acc.account_name || "MT5 Account"}</h4>
+                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                      style={{ background:isLive?"rgba(46,213,115,0.12)":"rgba(108,99,255,0.12)", color:isLive?"var(--accent-success)":"var(--accent)" }}>
+                      {isLive ? "● LIVE" : "● DEMO"}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(0,0,0,0.15)", color:"var(--text-muted)" }}>
+                      EA v{acc.ea_version || "3.x"}
+                    </span>
+                  </div>
+                  <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>
+                    {acc.broker_name} · {acc.server} · #{acc.mt5_login}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className={`w-2 h-2 rounded-full ${isRecent ? "bg-green-400 animate-pulse" : "bg-gray-500"}`}/>
+                  <span className="text-xs" style={{ color: isRecent ? "var(--accent-success)" : "var(--text-muted)" }}>
+                    {syncedAgo}
+                  </span>
+                </div>
+              </div>
+
+              {/* Stats grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x" style={{ borderBottom:"1px solid var(--border)" }}>
+                {[
+                  { icon:DollarSign, label:"Balance",   value:`${acc.currency||"$"} ${(acc.balance||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}` },
+                  { icon:TrendingUp, label:"Equity",    value:`${acc.currency||"$"} ${(acc.equity||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}` },
+                  { icon:BarChart3,  label:"Trades synced", value:tradeCount.toLocaleString() },
+                  { icon:Server,     label:"Leverage",  value:`1:${acc.leverage||"—"}` },
+                ].map((s,i)=>(
+                  <div key={i} className="py-3 px-4 flex items-center gap-2.5">
+                    <s.icon size={13} style={{ color:"var(--accent)", flexShrink:0 }}/>
+                    <div>
+                      <p className="text-xs font-bold" style={{ color:"var(--text-primary)" }}>{s.value}</p>
+                      <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Re-sync instructions */}
+              <div className="px-5 py-3 flex flex-wrap items-center gap-3" style={{ background:"var(--bg-elevated)" }}>
+                <AlertTriangle size={12} style={{ color:"var(--accent-warning)", flexShrink:0 }}/>
+                <p className="text-xs flex-1" style={{ color:"var(--text-muted)" }}>
+                  Missing symbols (UK100, GER40, etc.)? In MT5: set <strong style={{ color:"var(--text-primary)" }}>ForceResync = true</strong> + <strong style={{ color:"var(--text-primary)" }}>SkipCandles = true</strong> in EA settings, then remove &amp; re-attach the EA to the chart. Reset both to false after.
+                </p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function EASetupPanel() {
   const { user } = useUser()
   const [token,       setToken]       = useState("")
@@ -714,7 +852,6 @@ export default function BrokerSync() {
   const [lastSync,     setLastSync]     = useState(null)
   const [syncing,      setSyncing]      = useState(false)
   const [manualConns,  setManualConns]  = useState([])
-  const [eaAccounts,   setEaAccounts]   = useState([])
   const [manualModal,  setManualModal]  = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
 
@@ -722,14 +859,9 @@ export default function BrokerSync() {
 
   useEffect(() => {
     loadManual()
-    loadEaAccounts()
+    // Check if already connected to bridge
     checkExistingConnection()
   }, [])
-
-  const loadEaAccounts = async () => {
-    const data = await BrokerConnection.list()
-    setEaAccounts(data.filter(c => c.is_mt5_live).sort((a,b)=>new Date(b.last_sync||0)-new Date(a.last_sync||0)))
-  }
 
   const checkExistingConnection = async () => {
     try {
@@ -859,57 +991,8 @@ export default function BrokerSync() {
 
       {/* MT5 EA Tab */}
       {tab === "ea" && (
-        <div className="space-y-5">
-          {/* Connected EA Accounts */}
-          {eaAccounts.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold mb-3" style={{ color:"var(--text-muted)" }}>
-                CONNECTED ACCOUNTS ({eaAccounts.length})
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
-                {eaAccounts.map(acc => (
-                  <div key={acc.id} className="rounded-xl p-4" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-white text-xs"
-                          style={{ background: acc.type==="live" ? "linear-gradient(135deg,#2ed573,#00b894)" : "linear-gradient(135deg,#6c63ff,#5a52d5)" }}>
-                          {acc.type==="live" ? "LIVE" : "DEMO"}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{acc.broker_name || "MT5"}</p>
-                          <p className="text-xs" style={{ color:"var(--text-muted)" }}>{acc.server || "—"}</p>
-                        </div>
-                      </div>
-                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                        style={{ background:"rgba(46,213,115,0.1)", color:"var(--accent-success)", border:"1px solid rgba(46,213,115,0.2)" }}>
-                        <Activity size={9} className="animate-pulse"/> Live
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { label:"Account #",  value: acc.mt5_login || acc.account_number || "—" },
-                        { label:"Name",       value: acc.account_name || "—" },
-                        { label:"Balance",    value: acc.balance ? `$${parseFloat(acc.balance).toLocaleString()}` : "—" },
-                        { label:"Equity",     value: acc.equity  ? `$${parseFloat(acc.equity).toLocaleString()}`  : "—" },
-                        { label:"Currency",   value: acc.currency  || "—" },
-                        { label:"Leverage",   value: acc.leverage ? `1:${acc.leverage}` : "—" },
-                      ].map(s => (
-                        <div key={s.label} className="rounded-lg px-2.5 py-2" style={{ background:"var(--bg-elevated)" }}>
-                          <p className="text-xs font-bold" style={{ color:"var(--text-primary)" }}>{s.value}</p>
-                          <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
-                        </div>
-                      ))}
-                    </div>
-                    {acc.last_sync && (
-                      <p className="text-xs mt-2" style={{ color:"var(--text-muted)" }}>
-                        Last sync: {new Date(acc.last_sync).toLocaleString()}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+        <div>
+          <EAAccountsPanel/>
           <EASetupPanel/>
         </div>
       )}
