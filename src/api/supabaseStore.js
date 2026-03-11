@@ -84,7 +84,19 @@ function sbEntity(table) {
         if (!session) return localEntity(table).list(filters)
         let q = supabase.from(table).select('*').eq('user_id', session.user.id).order('created_at', { ascending: false })
         if (filters) Object.entries(filters).forEach(([k, v]) => { if (v) q = q.eq(k, v) })
-        const { data, error } = await q
+        // Paginate to bypass Supabase 1000-row default limit
+        let allData = []
+        let from = 0
+        const PAGE = 1000
+        while (true) {
+          const { data: page, error } = await q.range(from, from + PAGE - 1)
+          if (error) { console.error(table, error); break }
+          if (!page || page.length === 0) break
+          allData = allData.concat(page)
+          if (page.length < PAGE) break
+          from += PAGE
+        }
+        const data = allData
         if (error) { console.error(table, error); return [] }
         return (data || []).map(rehydrateImages)
       } catch(e) { console.error('list error', table, e); return [] }

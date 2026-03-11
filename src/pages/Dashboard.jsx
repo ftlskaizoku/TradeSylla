@@ -16,6 +16,7 @@ import {
   BarChart, Bar, Cell,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from "recharts"
+import HelpOverlay from "@/components/HelpOverlay"
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 // ─── Trade sanitizer — prevents crashes from bad/imported data ───────────────
@@ -726,6 +727,7 @@ export default function Dashboard() {
       </button>
 
       <QuickTradeModal open={tradeModalOpen} onClose={()=>setTradeModalOpen(false)} onSaved={loadTrades}/>
+      <HelpOverlay page="dashboard"/>
     </div>
   )
 }

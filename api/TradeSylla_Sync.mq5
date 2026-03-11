@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "TradeSylla"
 #property link      "https://tradesylla.vercel.app"
-#property version   "3.0"
+#property version   "3.1"
 #property description "Syncs closed trades (with SL/TP) and chart context to TradeSylla."
 
 //── Input parameters ────────────────────────────────────────────────
@@ -16,10 +16,12 @@ input int    CandlesAfter     = 30;     // Candles after trade exit
 input string ChartTimeframe   = "M15";  // Chart timeframe — match your trading TF
 input int    SyncIntervalSec  = 30;     // Heartbeat interval (seconds)
 input bool   VerboseLogging   = true;   // Print details to Experts log
+input bool   ForceResync     = false;  // Re-sync ALL history (ignores duplicates — use once to fix missing symbols)
+input bool   SkipCandles     = false;  // Skip candle fetch — faster re-sync, no chart data
 
 //── Constants ────────────────────────────────────────────────────────
 #define ENDPOINT       "https://tradesylla.vercel.app/api/ea-sync"
-#define EA_VERSION     "3.0"
+#define EA_VERSION     "3.1"
 #define MAX_BATCH_SIZE 25   // reduced from 50 — avoids HTTP timeout on large history
 
 //── Globals ──────────────────────────────────────────────────────────
@@ -302,6 +304,7 @@ void SyncFullHistory()
       MqlDateTime dt; TimeToStruct(entry_t, dt);
       string session = GetSession(dt.hour);
 
+      if(VerboseLogging) Print("TradeSylla: Processing ", symbol, " ticket #", order, " | P&L: ", DoubleToString(total_pnl,2), " | ", outcome);
       string trade_json = BuildTradeJSON(order, symbol, direction, entry_price, price,
                                          sl, tp, profit, commission, swap, total_pnl,
                                          volume, outcome, session,
@@ -313,8 +316,10 @@ void SyncFullHistory()
 
       if(batch_count >= MAX_BATCH_SIZE)
       {
-         string payload = "{\"token\":\"" + UserToken + "\",\"type\":\"history\",\"trades\":[" + trades_batch + "]}";
-         SendToTradeSylla(payload);
+         string force_flag = ForceResync ? ",\"force\":true" : "";
+         string payload = "{\"token\":\"" + UserToken + "\",\"type\":\"history\"" + force_flag + ",\"trades\":[" + trades_batch + "]}";
+         string response = SendToTradeSylla(payload);
+         if(VerboseLogging) Print("TradeSylla batch response: ", response);
          total_sent  += batch_count;
          trades_batch = "";
          batch_count  = 0;
@@ -326,8 +331,10 @@ void SyncFullHistory()
    // Send remaining
    if(batch_count > 0)
    {
-      string payload = "{\"token\":\"" + UserToken + "\",\"type\":\"history\",\"trades\":[" + trades_batch + "]}";
-      SendToTradeSylla(payload);
+      string force_flag = ForceResync ? ",\"force\":true" : "";
+      string payload = "{\"token\":\"" + UserToken + "\",\"type\":\"history\"" + force_flag + ",\"trades\":[" + trades_batch + "]}";
+      string resp = SendToTradeSylla(payload);
+      if(VerboseLogging) Print("TradeSylla final batch: ", StringSubstr(resp,0,200));
       total_sent += batch_count;
    }
 
@@ -360,7 +367,7 @@ void SendHeartbeat()
 //+------------------------------------------------------------------+
 //| HTTP POST                                                        |
 //+------------------------------------------------------------------+
-bool SendToTradeSylla(string json_payload)
+string SendToTradeSylla(string json_payload)
 {
    char post_data[], result_data[];
    string result_headers;
@@ -376,20 +383,22 @@ bool SendToTradeSylla(string json_payload)
       if(err == 4060)
          Print("TradeSylla: WebRequest blocked! Whitelist: ", ENDPOINT, " in MT5 → Tools → Options → Expert Advisors");
       else
-         Print("TradeSylla: WebRequest error: ", err);
-      return false;
+         Print("TradeSylla: WebRequest error code: ", err);
+      return "ERROR";
    }
+
+   string response = CharArrayToString(result_data);
 
    if(res != 200 && res != 201)
    {
-      Print("TradeSylla: HTTP ", res, ": ", CharArrayToString(result_data));
-      return false;
+      Print("TradeSylla: HTTP ", res, " — ", StringSubstr(response, 0, 150));
+      return "HTTP_" + IntegerToString(res);
    }
 
    if(VerboseLogging)
-      Print("TradeSylla OK → ", StringSubstr(CharArrayToString(result_data), 0, 100));
+      Print("TradeSylla OK → ", StringSubstr(response, 0, 200));
 
-   return true;
+   return response;
 }
 
 //+------------------------------------------------------------------+
@@ -397,14 +406,26 @@ bool SendToTradeSylla(string json_payload)
 //+------------------------------------------------------------------+
 string GetCandlesJSON(string symbol, ENUM_TIMEFRAMES tf, datetime entry_time, datetime exit_time)
 {
+   // Skip candles entirely if flag set (faster for ForceResync)
+   if(SkipCandles) return "[]";
+
    int      tf_seconds = PeriodSeconds(tf);
    datetime from_t     = entry_time - (datetime)(CandlesBefore * tf_seconds);
    datetime to_t       = exit_time  + (datetime)(CandlesAfter  * tf_seconds);
 
+   // Ensure the symbol is loaded in market watch before requesting rates
+   // This is critical for index/CFD symbols (UK100, GER40, etc.) not on current chart
+   if(!SymbolInfoInteger(symbol, SYMBOL_SELECT))
+      SymbolSelect(symbol, true);
+
    MqlRates rates[];
    ArraySetAsSeries(rates, false);
    int copied = CopyRates(symbol, tf, from_t, to_t, rates);
-   if(copied <= 0) return "[]";
+   if(copied <= 0)
+   {
+      if(VerboseLogging) Print("TradeSylla: No candles for ", symbol, " — sending trade without chart context");
+      return "[]";
+   }
 
    string json = "[";
    for(int i = 0; i < copied; i++)

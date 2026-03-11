@@ -9,6 +9,7 @@ import {
   TrendingUp, TrendingDown, Target, BarChart3, Activity,
   Calendar, ChevronDown, Clock, Layers, ArrowUpRight, ArrowDownRight
 } from "lucide-react"
+import HelpOverlay from "@/components/HelpOverlay"
 
 // ─── Theme colors hook (resolves CSS vars for recharts SVG) ───────────────────
 function useThemeColors() {
@@ -852,6 +853,7 @@ export default function Analytics() {
       {activeTab==="Performance"&& <PerformanceTab trades={trades}/>}
       {activeTab==="Patterns"   && <PatternsTab    trades={trades}/>}
       {activeTab==="Advanced"   && <AdvancedTab    trades={trades}/>}
+      <HelpOverlay page="analytics"/>
     </div>
   )
 }

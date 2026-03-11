@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react"
-import { BacktestSession } from "@/api/supabaseStore"
+import { BacktestSession, Playbook } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   Plus, Play, Trash2, X, ChevronDown, ChevronUp,
   FlaskConical, TrendingUp, TrendingDown, Target,
   BarChart3, Clock, CheckCircle, XCircle, Circle,
-  Pencil, RefreshCw, Trophy
+  Pencil, RefreshCw, Trophy, BookOpen, ChevronRight
 } from "lucide-react"
 import {
   LineChart, Line, BarChart, Bar, Cell,
@@ -26,6 +26,7 @@ const CHART_TIP = {
 const EMPTY_SESSION = {
   name: "", symbol: "EURUSD", timeframe: "H1", session: "LONDON",
   description: "", start_date: "", end_date: "", initial_balance: "10000",
+  playbook_id: "",
 }
 
 // ─── Empty trade row ──────────────────────────────────────────────────────────
@@ -35,12 +36,14 @@ const EMPTY_TRADE = {
 
 // ─── Session Form Modal ───────────────────────────────────────────────────────
 function SessionModal({ open, onClose, onSaved, editSession }) {
-  const [form, setForm]   = useState(EMPTY_SESSION)
-  const [saving, setSaving]= useState(false)
+  const [form,      setForm]      = useState(EMPTY_SESSION)
+  const [saving,    setSaving]    = useState(false)
+  const [playbooks, setPlaybooks] = useState([])
   const isEdit = !!editSession
 
   useEffect(() => {
     setForm(editSession ? { ...EMPTY_SESSION, ...editSession } : EMPTY_SESSION)
+    Playbook.list().then(data => setPlaybooks((data||[]).filter(p=>p.status==="active")))
   }, [editSession, open])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -49,11 +52,14 @@ function SessionModal({ open, onClose, onSaved, editSession }) {
     if (!form.name.trim()) { toast.error("Session name is required"); return }
     setSaving(true)
     try {
+      const linked = playbooks.find(p=>p.id===form.playbook_id)
       const payload = {
         ...form,
         initial_balance: parseFloat(form.initial_balance) || 10000,
         trades: editSession?.trades || [],
         status: editSession?.status || "active",
+        playbook_id: form.playbook_id || null,
+        playbook_name: linked?.name || null,
       }
       if (isEdit) { await BacktestSession.update(editSession.id, payload); toast.success("Session updated!") }
       else        { await BacktestSession.create(payload);                 toast.success("Session created!") }
@@ -111,7 +117,33 @@ function SessionModal({ open, onClose, onSaved, editSession }) {
               className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
           </div>
           <div className="col-span-2">
-            <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>Description</label>
+            <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>Link to Playbook Strategy (optional)</label>
+            <select value={form.playbook_id} onChange={e=>{
+              const pb = playbooks.find(p=>p.id===e.target.value)
+              set("playbook_id", e.target.value)
+              if (pb && !form.name) set("name", `Backtest — ${pb.name}`)
+              if (pb && pb.pairs?.[0] && !form.symbol) set("symbol", pb.pairs[0])
+              if (pb && pb.timeframes?.[0]) set("timeframe", pb.timeframes[0])
+              if (pb && pb.sessions?.[0]) set("session", pb.sessions[0])
+              if (pb && !form.description) set("description", pb.description || "")
+            }} className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}>
+              <option value="">— No strategy linked —</option>
+              {playbooks.map(p=><option key={p.id} value={p.id}>{p.name} [{p.category}]</option>)}
+            </select>
+            {form.playbook_id && (() => {
+              const pb = playbooks.find(p=>p.id===form.playbook_id)
+              if (!pb) return null
+              return (
+                <div className="mt-2 p-2.5 rounded-lg text-xs" style={{ background:"rgba(108,99,255,0.08)", border:"1px solid rgba(108,99,255,0.2)", color:"var(--text-muted)" }}>
+                  <p className="font-semibold mb-1" style={{ color:"var(--accent)" }}>{pb.name}</p>
+                  <p>{pb.description || "No description"}</p>
+                  {pb.entry_rules?.length > 0 && <p className="mt-1"><span style={{ color:"var(--text-primary)" }}>Entry rules:</span> {pb.entry_rules.join(" · ")}</p>}
+                </div>
+              )
+            })()}
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>Description / Hypothesis</label>
             <textarea rows={2} value={form.description} onChange={e=>set("description",e.target.value)} placeholder="Strategy being tested, conditions, hypothesis..."
               className="w-full rounded-lg px-3 py-2 text-sm border resize-none" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
           </div>
@@ -465,14 +497,17 @@ function SessionCard({ session, onOpen, onEdit, onDelete }) {
 // ─── Main Backtesting Page ────────────────────────────────────────────────────
 export default function Backtesting() {
   const [sessions,    setSessions]    = useState([])
+  const [playbooks,   setPlaybooks]   = useState([])
   const [activeSession, setActiveSession] = useState(null)
   const [modalOpen,   setModalOpen]   = useState(false)
   const [editSession, setEditSession] = useState(null)
   const [deleteTarget,setDeleteTarget]= useState(null)
+  const [playbookFilter, setPlaybookFilter] = useState("ALL")
 
   const load = async () => {
-    const data = await BacktestSession.list()
+    const [data, pbs] = await Promise.all([BacktestSession.list(), Playbook.list()])
     setSessions(data.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))
+    setPlaybooks((pbs||[]).filter(p=>p.status==="active"))
   }
   useEffect(()=>{ load() }, [])
 
@@ -487,8 +522,10 @@ export default function Backtesting() {
     load()
   }
 
+  const filteredSessions = playbookFilter === "ALL" ? sessions : sessions.filter(s=>s.playbook_id===playbookFilter)
+
   // Summary stats
-  const totalTrades= sessions.reduce((s,sess)=>s+(sess.trades||[]).length, 0)
+  const totalTrades= filteredSessions.reduce((s,sess)=>s+(sess.trades||[]).length, 0)
   const totalPnl   = sessions.reduce((s,sess)=>{
     return s + (sess.trades||[]).reduce((a,t)=>a+(t.pnl||0),0)
   }, 0)
@@ -519,10 +556,19 @@ export default function Backtesting() {
             {sessions.length} session{sessions.length!==1?"s":""} · {totalTrades} trades logged
           </p>
         </div>
-        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white self-start"
-          style={{ background:"linear-gradient(135deg,#6c63ff,#5a52d5)" }}>
-          <Plus size={14}/> New Session
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          {playbooks.slice(0,3).map(pb=>(
+            <button key={pb.id} onClick={()=>{ setEditSession({ playbook_id:pb.id, playbook_name:pb.name, name:`Backtest — ${pb.name}`, symbol:pb.pairs?.[0]||"EURUSD", timeframe:pb.timeframes?.[0]||"H1", session:pb.sessions?.[0]||"LONDON", description:pb.description||"", initial_balance:"10000", start_date:"", end_date:"" }); setModalOpen(true) }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border whitespace-nowrap"
+              style={{ background:"rgba(108,99,255,0.08)", borderColor:"rgba(108,99,255,0.2)", color:"var(--accent)" }}>
+              <BookOpen size={11}/> Test: {pb.name.length>18?pb.name.slice(0,18)+"…":pb.name}
+            </button>
+          ))}
+          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white"
+            style={{ background:"linear-gradient(135deg,#6c63ff,#5a52d5)" }}>
+            <Plus size={14}/> New Session
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -561,7 +607,25 @@ export default function Backtesting() {
       )}
 
       {/* Sessions grid */}
-      {sessions.length === 0 ? (
+      {/* Playbook filter tabs */}
+      {playbooks.length > 0 && (
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+          <button onClick={()=>setPlaybookFilter("ALL")}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap border"
+            style={{ background:playbookFilter==="ALL"?"var(--accent)":"var(--bg-elevated)", color:playbookFilter==="ALL"?"#fff":"var(--text-secondary)", borderColor:playbookFilter==="ALL"?"var(--accent)":"var(--border)" }}>
+            All Strategies
+          </button>
+          {playbooks.map(pb=>(
+            <button key={pb.id} onClick={()=>setPlaybookFilter(pb.id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap border"
+              style={{ background:playbookFilter===pb.id?"var(--accent)":"var(--bg-elevated)", color:playbookFilter===pb.id?"#fff":"var(--text-secondary)", borderColor:playbookFilter===pb.id?"var(--accent)":"var(--border)" }}>
+              <BookOpen size={10}/>{pb.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {filteredSessions.length === 0 ? (
         <div className="rounded-2xl py-20 text-center" style={{ background:"var(--bg-card)", border:"1px dashed var(--border)" }}>
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background:"rgba(108,99,255,0.1)" }}>
             <FlaskConical size={26} style={{ color:"var(--accent)" }}/>
@@ -575,7 +639,7 @@ export default function Backtesting() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {sessions.map(s=>(
+          {filteredSessions.map(s=>(
             <SessionCard key={s.id} session={s} onOpen={sess=>{ setActiveSession(sess); load() }}
               onEdit={handleEdit} onDelete={setDeleteTarget}/>
           ))}

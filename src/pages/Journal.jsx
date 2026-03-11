@@ -252,112 +252,16 @@ function DeleteConfirm({ trade, onCancel, onConfirm }) {
   )
 }
 
-// ─── Calendar Day Detail Popup ───────────────────────────────────────────────
-function DayPopup({ date, trades, onClose }) {
-  const pnl         = trades.reduce((s,t)=>s+(t.pnl||0),0)
-  const commission  = trades.reduce((s,t)=>s+(t.commission||0),0)
-  const swap        = trades.reduce((s,t)=>s+(t.swap||0),0)
-  const gross       = trades.reduce((s,t)=>s+(t.gross_pnl||t.pnl||0),0)
-  const wins        = trades.filter(t=>t.outcome==="WIN")
-  const losses      = trades.filter(t=>t.outcome==="LOSS")
-  const bes         = trades.filter(t=>t.outcome==="BREAKEVEN")
-  const winRate     = trades.length ? (wins.length/trades.length*100).toFixed(0) : 0
-  const formatted   = new Date(date+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"/>
-      <div className="relative w-full max-w-lg rounded-2xl overflow-hidden z-10 max-h-[85vh] flex flex-col"
-        style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}
-        onClick={e=>e.stopPropagation()}>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <div>
-            <p className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{formatted}</p>
-            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{trades.length} trade{trades.length!==1?"s":""}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-lg font-bold" style={{ color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
-              {pnl>=0?"+":""}${pnl.toFixed(2)}
-            </span>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70" style={{ background:"var(--bg-elevated)", color:"var(--text-muted)" }}>
-              <X size={15}/>
-            </button>
-          </div>
-        </div>
-
-        {/* Day stats */}
-        <div className="grid grid-cols-4 gap-2 px-5 py-3" style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
-          {[
-            { label:"Gross P&L",   value:`${gross>=0?"+":""}$${gross.toFixed(2)}`,       color:gross>=0?"var(--accent-success)":"var(--accent-danger)" },
-            { label:"Commission",  value:`-$${Math.abs(commission).toFixed(2)}`,          color:"var(--accent-danger)" },
-            { label:"Swap",        value:`${swap>=0?"+":""}$${swap.toFixed(2)}`,          color:swap>=0?"var(--accent-success)":"var(--accent-danger)" },
-            { label:"Win Rate",    value:`${winRate}%`,                                   color:parseInt(winRate)>=50?"var(--accent-success)":"var(--accent-danger)" },
-          ].map(s=>(
-            <div key={s.label} className="rounded-lg px-2 py-1.5" style={{ background:"var(--bg-card)" }}>
-              <p className="text-xs font-bold truncate" style={{ color:s.color }}>{s.value}</p>
-              <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Trade list */}
-        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
-          {trades.map((t,i)=>(
-            <div key={t.id||i} className="rounded-xl px-3 py-2.5 flex items-center justify-between gap-3"
-              style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="px-1.5 py-0.5 rounded text-xs font-bold flex-shrink-0"
-                  style={{ background:t.direction==="BUY"?"rgba(46,213,115,0.15)":"rgba(255,71,87,0.15)", color:t.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)" }}>
-                  {t.direction}
-                </span>
-                <span className="text-xs font-semibold truncate" style={{ color:"var(--text-primary)" }}>{t.symbol}</span>
-                {t.timeframe && <span className="text-xs flex-shrink-0" style={{ color:"var(--text-muted)" }}>{t.timeframe}</span>}
-                {t.session && <span className="text-xs flex-shrink-0 hidden sm:inline" style={{ color:"var(--text-muted)" }}>{t.session}</span>}
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {t.rr > 0 && <span className="text-xs" style={{ color:"var(--text-muted)" }}>R:R {t.rr.toFixed(1)}</span>}
-                {t.commission !== 0 && t.commission != null && (
-                  <span className="text-xs" style={{ color:"var(--text-muted)" }}>com ${(t.commission||0).toFixed(2)}</span>
-                )}
-                <span className="text-xs font-bold min-w-[60px] text-right"
-                  style={{ color:t.outcome==="WIN"?"var(--accent-success)":t.outcome==="LOSS"?"var(--accent-danger)":"var(--text-muted)" }}>
-                  {(t.pnl||0)>=0?"+":""}${(t.pnl||0).toFixed(2)}
-                </span>
-                <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
-                  style={{ background:t.outcome==="WIN"?"rgba(46,213,115,0.1)":t.outcome==="LOSS"?"rgba(255,71,87,0.1)":"rgba(108,99,255,0.1)", color:t.outcome==="WIN"?"var(--accent-success)":t.outcome==="LOSS"?"var(--accent-danger)":"var(--accent)" }}>
-                  {t.outcome}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Footer summary */}
-        <div className="px-5 py-3 flex flex-wrap gap-3" style={{ borderTop:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
-          <span className="text-xs" style={{ color:"var(--text-muted)" }}>{wins.length}W · {losses.length}L · {bes.length}BE</span>
-          {commission !== 0 && <span className="text-xs" style={{ color:"var(--text-muted)" }}>Total fees: ${Math.abs(commission).toFixed(2)}</span>}
-          <span className="text-xs ml-auto font-semibold" style={{ color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>Net P&L: {pnl>=0?"+":""}${pnl.toFixed(2)}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Calendar View ────────────────────────────────────────────────────────────
 function CalendarView({ trades, onNewTrade }) {
-  const [current,    setCurrent]    = useState(new Date())
-  const [selectedDay,setSelectedDay]= useState(null)
-
+  const [current, setCurrent] = useState(new Date())
   const year  = current.getFullYear()
   const month = current.getMonth()
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"]
   const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
-  const firstDay    = new Date(year, month, 1).getDay()
-  const daysInMonth = new Date(year, month+1, 0).getDate()
+  const firstDay   = new Date(year, month, 1).getDay()
+  const daysInMonth= new Date(year, month+1, 0).getDate()
 
-  // Group trades by day
   const byDay = {}
   trades.forEach(t => {
     if (!t.entry_time) return
@@ -366,19 +270,14 @@ function CalendarView({ trades, onNewTrade }) {
     byDay[key].push(t)
   })
 
-  // Month totals
-  const monthPrefix = `${year}-${String(month+1).padStart(2,"0")}`
-  const monthTrades = Object.entries(byDay).filter(([d])=>d.startsWith(monthPrefix))
-  const monthPnl    = monthTrades.reduce((s,[,arr])=>s+arr.reduce((a,t)=>a+(t.pnl||0),0),0)
-  const monthWins   = monthTrades.reduce((s,[,arr])=>s+arr.filter(t=>t.outcome==="WIN").length,0)
-  const monthLosses = monthTrades.reduce((s,[,arr])=>s+arr.filter(t=>t.outcome==="LOSS").length,0)
-  const monthTrades_count = monthTrades.reduce((s,[,arr])=>s+arr.length,0)
-  const monthComm   = monthTrades.reduce((s,[,arr])=>s+arr.reduce((a,t)=>a+(t.commission||0),0),0)
+  const monthTotal = Object.entries(byDay)
+    .filter(([d]) => d.startsWith(`${year}-${String(month+1).padStart(2,"0")}`))
+    .reduce((s,[,arr])=>s+arr.reduce((a,t)=>a+(t.pnl||0),0),0)
 
   return (
     <div>
       {/* Calendar Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
           <button onClick={()=>setCurrent(new Date(year,month-1,1))} className="p-2 rounded-lg hover:opacity-70" style={{ background:"var(--bg-elevated)", color:"var(--text-secondary)" }}>
             <ChevronLeft size={16}/>
@@ -391,16 +290,9 @@ function CalendarView({ trades, onNewTrade }) {
             Today
           </button>
         </div>
-        {/* Month summary strip */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-sm font-bold" style={{ color:monthPnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
-            {monthPnl>=0?"+":""}${monthPnl.toFixed(2)}
-          </span>
-          <span className="text-xs" style={{ color:"var(--text-muted)" }}>{monthTrades_count} trades</span>
-          <span className="text-xs" style={{ color:"var(--accent-success)" }}>{monthWins}W</span>
-          <span className="text-xs" style={{ color:"var(--accent-danger)" }}>{monthLosses}L</span>
-          {monthComm !== 0 && <span className="text-xs" style={{ color:"var(--text-muted)" }}>fees: ${Math.abs(monthComm).toFixed(2)}</span>}
-        </div>
+        <span className="text-sm font-semibold" style={{ color: monthTotal>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+          {monthTotal>=0?"+":""} ${monthTotal.toFixed(0)} this month
+        </span>
       </div>
 
       {/* Grid */}
@@ -414,89 +306,139 @@ function CalendarView({ trades, onNewTrade }) {
         {/* Day cells */}
         <div className="grid grid-cols-7">
           {Array.from({ length: firstDay }).map((_,i)=>(
-            <div key={`e${i}`} style={{ borderBottom:"1px solid var(--border)", borderRight:"1px solid var(--border)", minHeight:90, background:"var(--bg-primary)", opacity:0.4 }}/>
+            <div key={`e${i}`} style={{ borderBottom:"1px solid var(--border)", borderRight:"1px solid var(--border)", minHeight:80 }}/>
           ))}
           {Array.from({ length: daysInMonth }).map((_,i)=>{
-            const day     = i+1
-            const key     = `${monthPrefix}-${String(day).padStart(2,"0")}`
-            const dayT    = byDay[key] || []
-            const pnl     = dayT.reduce((s,t)=>s+(t.pnl||0),0)
-            const comm    = dayT.reduce((s,t)=>s+(t.commission||0),0)
-            const wins    = dayT.filter(t=>t.outcome==="WIN").length
-            const losses  = dayT.filter(t=>t.outcome==="LOSS").length
-            const hasTrades = dayT.length > 0
+            const day = i+1
+            const key = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`
+            const dayTrades = byDay[key] || []
+            const pnl  = dayTrades.reduce((s,t)=>s+(t.pnl||0),0)
+            const wins = dayTrades.filter(t=>t.outcome==="WIN").length
+            const losses= dayTrades.filter(t=>t.outcome==="LOSS").length
+            const hasTrades = dayTrades.length>0
             const isToday = key===new Date().toISOString().slice(0,10)
-            const dow     = new Date(year,month,day).getDay()
-            const isWeekend = dow===0 || dow===6
+            const dow = new Date(year,month,day).getDay()
             const isLastInRow = dow===6 || day===daysInMonth
-
             return (
-              <div key={day}
-                onClick={()=>hasTrades && setSelectedDay(key)}
-                className={hasTrades?"cursor-pointer":""}
-                style={{
-                  borderBottom:"1px solid var(--border)",
-                  borderRight: isLastInRow?"none":"1px solid var(--border)",
-                  minHeight:90,
-                  background: hasTrades
-                    ? pnl>=0 ? "rgba(46,213,115,0.06)" : "rgba(255,71,87,0.06)"
-                    : isWeekend ? "rgba(0,0,0,0.15)" : "transparent",
-                  transition:"background 0.15s",
-                }}>
-                <div className="p-2">
-                  {/* Day number */}
-                  <div className="text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-1"
-                    style={{ color:isToday?"#fff":isWeekend?"var(--text-muted)":"var(--text-secondary)", background:isToday?"var(--accent)":"transparent", fontWeight:isToday?"700":"500" }}>
-                    {day}
-                  </div>
-                  {hasTrades && (
-                    <>
-                      {/* P&L */}
-                      <div className="text-xs font-bold" style={{ color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
-                        {pnl>=0?"+":""}${Math.abs(pnl)>=1000?(pnl/1000).toFixed(1)+"k":pnl.toFixed(2)}
-                      </div>
-                      {/* W/L pills */}
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        {wins>0 && (
-                          <span className="text-xs px-1 rounded font-medium" style={{ background:"rgba(46,213,115,0.18)", color:"var(--accent-success)" }}>{wins}W</span>
-                        )}
-                        {losses>0 && (
-                          <span className="text-xs px-1 rounded font-medium" style={{ background:"rgba(255,71,87,0.18)", color:"var(--accent-danger)" }}>{losses}L</span>
-                        )}
-                      </div>
-                      {/* Commission badge */}
-                      {comm !== 0 && (
-                        <div className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>
-                          fee ${Math.abs(comm).toFixed(2)}
-                        </div>
-                      )}
-                      {/* Trade count if >2 */}
-                      {dayT.length > 2 && (
-                        <div className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{dayT.length} trades</div>
-                      )}
-                    </>
-                  )}
+              <div key={day} className="p-2" style={{
+                borderBottom:"1px solid var(--border)",
+                borderRight: isLastInRow?"none":"1px solid var(--border)",
+                minHeight:80,
+                background: hasTrades?(pnl>=0?"rgba(46,213,115,0.05)":"rgba(255,71,87,0.05)"):"transparent"
+              }}>
+                <div className="text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-1"
+                  style={{ color:isToday?"#fff":"var(--text-secondary)", background:isToday?"var(--accent)":"transparent" }}>
+                  {day}
                 </div>
+                {hasTrades && (
+                  <div>
+                    <div className="text-xs font-bold" style={{ color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+                      {pnl>=0?"+":""} ${Math.abs(pnl)>=1000?(pnl/1000).toFixed(1)+"k":pnl.toFixed(0)}
+                    </div>
+                    <div className="flex gap-1 mt-0.5 flex-wrap">
+                      {wins>0 && (
+                        <span className="text-xs px-1 rounded" style={{ background:"rgba(46,213,115,0.15)", color:"var(--accent-success)" }}>{wins}W</span>
+                      )}
+                      {losses>0 && (
+                        <span className="text-xs px-1 rounded" style={{ background:"rgba(255,71,87,0.15)", color:"var(--accent-danger)" }}>{losses}L</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
       </div>
-
-      {/* Day detail popup */}
-      {selectedDay && byDay[selectedDay] && (
-        <DayPopup
-          date={selectedDay}
-          trades={byDay[selectedDay]}
-          onClose={()=>setSelectedDay(null)}
-        />
-      )}
     </div>
   )
 }
 
 // ─── Mini Candlestick Chart (SVG) ────────────────────────────────────────────
-function CandlestickChart({ candles, entryPrice, exitPrice, entryTime, exitTime }) {
+// ─── Quality Score Editor ──────────────────────────────────────────────────────
+// Quality is a self-assessed score 1–10 based on how well the trade matched
+// your playbook rules: entry clarity, level quality, risk definition, and
+// emotional discipline. EA imports default to 5 (neutral) — edit it here.
+const QUALITY_CRITERIA = [
+  { min:9, label:"S-Tier",  desc:"Textbook setup — every rule met, high conviction", color:"#2ed573" },
+  { min:7, label:"A-Tier",  desc:"Strong setup — most rules met, clear SL/TP",       color:"#00d4aa" },
+  { min:5, label:"B-Tier",  desc:"Decent setup — some hesitation or compromise",      color:"#ffa502" },
+  { min:3, label:"C-Tier",  desc:"Weak setup — rules bent, emotional bias present",  color:"#ff6b35" },
+  { min:1, label:"D-Tier",  desc:"Revenge/FOMO trade — should not have been taken",  color:"#ff4757" },
+]
+
+function QualityEditor({ trade, onUpdate }) {
+  const [q,       setQ]       = useState(trade.quality || 5)
+  const [editing, setEditing] = useState(false)
+  const [saving,  setSaving]  = useState(false)
+  const [tooltip, setTooltip] = useState(false)
+
+  const tier = QUALITY_CRITERIA.find(c => q >= c.min) || QUALITY_CRITERIA[4]
+
+  const save = async (val) => {
+    setSaving(true)
+    try {
+      await Trade.update(trade.id, { quality: val })
+      if (onUpdate) onUpdate({ ...trade, quality: val })
+    } catch {}
+    setSaving(false)
+    setEditing(false)
+  }
+
+  return (
+    <div className="rounded-lg p-2 col-span-2 relative" style={{ background:"var(--bg-card)", border:`1px solid ${tier.color}30` }}>
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-1.5">
+          <p className="text-xs font-bold" style={{ color: tier.color }}>{q}/10 · {tier.label}</p>
+          <button onMouseEnter={()=>setTooltip(true)} onMouseLeave={()=>setTooltip(false)}
+            className="w-4 h-4 rounded-full text-xs flex items-center justify-center hover:opacity-70"
+            style={{ background:"var(--bg-elevated)", color:"var(--text-muted)" }}>?</button>
+        </div>
+        <button onClick={()=>setEditing(e=>!e)} className="text-xs px-1.5 py-0.5 rounded hover:opacity-70"
+          style={{ background:"var(--bg-elevated)", color:"var(--text-muted)" }}>
+          {editing ? "close" : "edit"}
+        </button>
+      </div>
+      <p className="text-xs" style={{ color:"var(--text-muted)" }}>Setup Quality</p>
+
+      {tooltip && (
+        <div className="absolute left-0 bottom-full mb-2 z-50 rounded-xl p-3 w-64 shadow-xl"
+          style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+          <p className="text-xs font-bold mb-2" style={{ color:"var(--text-primary)" }}>Quality Score Guide</p>
+          {QUALITY_CRITERIA.slice().reverse().map(c => (
+            <div key={c.min} className="flex items-start gap-2 mb-1">
+              <span className="text-xs font-bold w-12 flex-shrink-0" style={{ color:c.color }}>{c.label}</span>
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>{c.desc}</p>
+            </div>
+          ))}
+          <p className="text-xs mt-2" style={{ color:"var(--text-muted)", borderTop:"1px solid var(--border)", paddingTop:6 }}>
+            EA imports default to 5. Update based on how well the trade matched your Playbook rules.
+          </p>
+        </div>
+      )}
+
+      {editing && (
+        <div className="mt-2">
+          <input type="range" min="1" max="10" step="1" value={q}
+            onChange={e=>setQ(parseInt(e.target.value))}
+            className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+            style={{ accentColor: tier.color }}/>
+          <div className="flex justify-between text-xs mt-1" style={{ color:"var(--text-muted)" }}>
+            <span>1</span><span>5</span><span>10</span>
+          </div>
+          <p className="text-xs mt-1" style={{ color: tier.color }}>{tier.desc}</p>
+          <button onClick={()=>save(q)} disabled={saving}
+            className="mt-2 w-full py-1 rounded-lg text-xs font-semibold text-white disabled:opacity-40"
+            style={{ background: tier.color }}>
+            {saving ? "Saving…" : `Save ${q}/10`}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CandlestickChart({ candles, entryPrice, exitPrice, entryTime, exitTime, sl, tp }) {
   if (!candles || candles.length === 0) return (
     <div className="flex items-center justify-center h-40 rounded-xl" style={{ background:"var(--bg-elevated)" }}>
       <p className="text-xs" style={{ color:"var(--text-muted)" }}>No chart data available for this trade</p>
@@ -509,8 +451,8 @@ function CandlestickChart({ candles, entryPrice, exitPrice, entryTime, exitTime 
 
   const highs  = candles.map(c => parseFloat(c.h))
   const lows   = candles.map(c => parseFloat(c.l))
-  const minP   = Math.min(...lows,  entryPrice || Infinity, exitPrice || Infinity)
-  const maxP   = Math.max(...highs, entryPrice || 0,        exitPrice || 0)
+  const minP   = Math.min(...lows,  entryPrice || Infinity, exitPrice || Infinity, sl > 0 ? sl : Infinity)
+  const maxP   = Math.max(...highs, entryPrice || 0,        exitPrice || 0, tp > 0 ? tp : 0)
   const range  = maxP - minP || 0.0001
 
   const toY = p => PAD.top + chartH - ((p - minP) / range) * chartH
@@ -585,6 +527,25 @@ function CandlestickChart({ candles, entryPrice, exitPrice, entryTime, exitTime 
         </g>
       )}
 
+      {/* SL line */}
+      {sl > 0 && (
+        <g>
+          <line x1={PAD.left} x2={W-PAD.right} y1={toY(sl)} y2={toY(sl)}
+            stroke="#ff4757" strokeWidth="1.2" strokeDasharray="5,3"/>
+          <rect x={W-PAD.right+2} y={toY(sl)-6} width={18} height={11} fill="#ff475720" rx="2"/>
+          <text x={W-PAD.right+11} y={toY(sl)+3} textAnchor="middle" fontSize="7" fill="#ff4757" fontWeight="600">SL</text>
+        </g>
+      )}
+      {/* TP line */}
+      {tp > 0 && (
+        <g>
+          <line x1={PAD.left} x2={W-PAD.right} y1={toY(tp)} y2={toY(tp)}
+            stroke="#2ed573" strokeWidth="1.2" strokeDasharray="5,3"/>
+          <rect x={W-PAD.right+2} y={toY(tp)-6} width={18} height={11} fill="#2ed57320" rx="2"/>
+          <text x={W-PAD.right+11} y={toY(tp)+3} textAnchor="middle" fontSize="7" fill="#2ed573" fontWeight="600">TP</text>
+        </g>
+      )}
+
       {/* Time axis — first and last candle */}
       {candles.length > 1 && (
         <>
@@ -632,9 +593,12 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
               <span className="text-xs font-semibold" style={{ color:"var(--text-primary)" }}>
                 {trade.symbol} · {trade.timeframe} chart
               </span>
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(108,99,255,0.12)", color:"var(--accent)" }}>
-                — Entry &nbsp;&nbsp; — Exit
-              </span>
+              <div className="flex items-center gap-2">
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(108,99,255,0.12)", color:"var(--accent)" }}>— Entry</span>
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(255,165,2,0.12)", color:"var(--accent-warning)" }}>— Exit</span>
+              {trade.sl > 0 && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(255,71,87,0.12)", color:"var(--accent-danger)" }}>— SL</span>}
+              {trade.tp > 0 && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(46,213,115,0.12)", color:"var(--accent-success)" }}>— TP</span>}
+            </div>
             </div>
             {loading ? (
               <div className="h-40 flex items-center justify-center rounded-xl" style={{ background:"var(--bg-card)" }}>
@@ -648,6 +612,8 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
                   exitPrice={trade.exit_price}
                   entryTime={trade.entry_time}
                   exitTime={trade.exit_time}
+                  sl={trade.sl || 0}
+                  tp={trade.tp || 0}
                 />
               </div>
             )}
@@ -662,15 +628,17 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
                 { label:"Entry",     value:trade.entry_price||"—", color:"var(--text-secondary)" },
                 { label:"Exit",      value:trade.exit_price||"—",  color:"var(--text-secondary)" },
                 { label:"Volume",    value:trade.volume||"—",      color:"var(--text-secondary)" },
-                { label:"Quality",   value:`${trade.quality||"—"}/10`, color:"var(--accent)" },
                 { label:"Session",   value:trade.session||"—",    color:"var(--text-secondary)" },
                 { label:"Timeframe", value:trade.timeframe||"—",  color:"var(--text-secondary)" },
-              ].map(s => (
-                <div key={s.label} className="rounded-lg p-2" style={{ background:"var(--bg-card)" }}>
-                  <p className="text-xs font-bold" style={{ color:s.color }}>{s.value}</p>
-                  <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
+                { label:"R:R",       value:trade.rr > 0 ? `${parseFloat(trade.rr).toFixed(2)}:1` : "—", color:"var(--accent)" },
+              ].map(st => (
+                <div key={st.label} className="rounded-lg p-2" style={{ background:"var(--bg-card)" }}>
+                  <p className="text-xs font-bold" style={{ color:st.color }}>{st.value}</p>
+                  <p className="text-xs" style={{ color:"var(--text-muted)" }}>{st.label}</p>
                 </div>
               ))}
+              {/* Quality — inline editable */}
+              <QualityEditor trade={trade} onUpdate={onEdit}/>
             </div>
 
             {trade.notes && (
