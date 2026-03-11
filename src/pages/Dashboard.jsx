@@ -4,9 +4,10 @@ import { createPageUrl } from "@/utils"
 import {
   TrendingUp, TrendingDown, BarChart3, Brain, Target,
   DollarSign, Activity, ArrowUpRight, ArrowDownRight,
-  Shield, ChevronRight, Plus, X, Calendar, ImagePlus
+  Shield, ChevronRight, Plus, X, Calendar, ImagePlus,
+  Wallet, Server, ChevronDown, Users
 } from "lucide-react"
-import { Trade, Playbook, subscribeToTable } from "@/api/supabaseStore"
+import { Trade, Playbook, BrokerConnection, subscribeToTable } from "@/api/supabaseStore"
 import { useUser } from "@/lib/UserContext"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/toast"
@@ -390,21 +391,41 @@ function ActivityFeed({ trades }) {
 // ─── Main Dashboard ──────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user } = useUser()
-  const [trades, setTrades] = useState([])
+  const [allTrades,      setAllTrades]      = useState([])
+  const [eaAccounts,     setEaAccounts]     = useState([])
+  const [selectedAccount,setSelectedAccount]= useState("ALL")
   const [tradeModalOpen, setTradeModalOpen] = useState(false)
 
   const loadTrades = async () => {
     try {
       const data = await Trade.list()
       const safe = (data || []).map(safeTrade).filter(Boolean)
-      setTrades(safe.sort((a,b)=>new Date(b.entry_time)-new Date(a.entry_time)))
+      setAllTrades(safe.sort((a,b)=>new Date(b.entry_time)-new Date(a.entry_time)))
     } catch(e) { console.error("Dashboard loadTrades:", e) }
   }
+
+  const loadAccounts = async () => {
+    try {
+      const data = await BrokerConnection.list()
+      setEaAccounts((data||[]).filter(c=>c.is_mt5_live).sort((a,b)=>new Date(b.last_sync||0)-new Date(a.last_sync||0)))
+    } catch {}
+  }
+
   useEffect(() => {
     loadTrades()
+    loadAccounts()
     const unsub = subscribeToTable('trades', loadTrades)
     return () => { try { unsub() } catch {} }
   }, [])
+
+  // Filter trades by selected account
+  const trades = selectedAccount === "ALL"
+    ? allTrades
+    : allTrades.filter(t => (t.account_login || "MANUAL") === selectedAccount)
+
+  // Active account HUD data
+  const activeAccount = selectedAccount === "ALL" ? null
+    : eaAccounts.find(a => a.mt5_login === selectedAccount) || null
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const wins   = trades.filter(t=>t.outcome==="WIN")
@@ -449,6 +470,70 @@ export default function Dashboard() {
 
   return (
     <div>
+
+      {/* ── Account HUD ── shown when EA accounts exist */}
+      {eaAccounts.length > 0 && (
+        <div className="mb-5 rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+          {/* Account selector strip */}
+          <div className="flex items-center gap-2 px-4 py-2 overflow-x-auto" style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
+            <Users size={13} style={{ color:"var(--text-muted)", flexShrink:0 }}/>
+            <span className="text-xs font-semibold mr-1" style={{ color:"var(--text-muted)", flexShrink:0 }}>VIEW:</span>
+            <button
+              onClick={()=>setSelectedAccount("ALL")}
+              className="px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap flex-shrink-0 transition-all"
+              style={{ background:selectedAccount==="ALL"?"var(--accent)":"transparent", color:selectedAccount==="ALL"?"#fff":"var(--text-secondary)", border:"1px solid", borderColor:selectedAccount==="ALL"?"var(--accent)":"var(--border)" }}>
+              All Accounts
+            </button>
+            {eaAccounts.map(acc => (
+              <button key={acc.id}
+                onClick={()=>setSelectedAccount(acc.mt5_login||acc.account_number||acc.id)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap flex-shrink-0 transition-all"
+                style={{ background:selectedAccount===(acc.mt5_login||acc.account_number||acc.id)?"var(--accent)":"transparent", color:selectedAccount===(acc.mt5_login||acc.account_number||acc.id)?"#fff":"var(--text-secondary)", border:"1px solid", borderColor:selectedAccount===(acc.mt5_login||acc.account_number||acc.id)?"var(--accent)":"var(--border)" }}>
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: acc.type==="live"?"var(--accent-success)":"var(--accent-warning)" }}/>
+                {acc.broker_name || "MT5"} #{acc.mt5_login || acc.account_number}
+              </button>
+            ))}
+          </div>
+
+          {/* Active account details */}
+          {activeAccount ? (
+            <div className="px-4 py-3 flex flex-wrap gap-4 items-center">
+              <div>
+                <p className="text-xs" style={{ color:"var(--text-muted)" }}>Account</p>
+                <p className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{activeAccount.account_name || activeAccount.broker_name}</p>
+              </div>
+              <div className="w-px h-8 self-center" style={{ background:"var(--border)" }}/>
+              <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Login</p><p className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>#{activeAccount.mt5_login||"—"}</p></div>
+              <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Broker</p><p className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{activeAccount.broker_name||"—"}</p></div>
+              <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Server</p><p className="text-sm font-bold truncate max-w-[140px]" style={{ color:"var(--text-primary)" }}>{activeAccount.server||"—"}</p></div>
+              <div className="w-px h-8 self-center" style={{ background:"var(--border)" }}/>
+              <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Balance</p><p className="text-sm font-bold" style={{ color:"var(--accent-success)" }}>{activeAccount.balance ? `$${parseFloat(activeAccount.balance).toLocaleString()}` : "—"}</p></div>
+              <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Equity</p><p className="text-sm font-bold" style={{ color:"var(--accent)" }}>{activeAccount.equity ? `$${parseFloat(activeAccount.equity).toLocaleString()}` : "—"}</p></div>
+              <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Leverage</p><p className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{activeAccount.leverage ? `1:${activeAccount.leverage}` : "—"}</p></div>
+              <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Currency</p><p className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{activeAccount.currency||"—"}</p></div>
+              <div className="ml-auto flex-shrink-0">
+                <span className="px-2.5 py-1 rounded-full text-xs font-bold" style={{ background: activeAccount.type==="live"?"rgba(46,213,115,0.15)":"rgba(255,165,0,0.15)", color: activeAccount.type==="live"?"var(--accent-success)":"var(--accent-warning)" }}>
+                  {activeAccount.type==="live" ? "🟢 LIVE" : "🟡 DEMO"}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="px-4 py-3 flex flex-wrap gap-6 items-center">
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>Showing combined stats across {eaAccounts.length} account{eaAccounts.length!==1?"s":""} · Select an account above to filter</p>
+              <div className="flex flex-wrap gap-4">
+                {eaAccounts.map(acc=>(
+                  <div key={acc.id} className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full" style={{ background: acc.type==="live"?"var(--accent-success)":"var(--accent-warning)" }}/>
+                    <span className="text-xs font-semibold" style={{ color:"var(--text-primary)" }}>{acc.broker_name} #{acc.mt5_login}</span>
+                    {acc.balance ? <span className="text-xs" style={{ color:"var(--text-muted)" }}>${parseFloat(acc.balance).toLocaleString()}</span> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
