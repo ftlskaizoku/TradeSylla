@@ -1444,6 +1444,7 @@ export default function Journal() {
   const [filterOutcome,  setFilterOutcome]  = useState("ALL")
   const [filterDirection,setFilterDirection]= useState("ALL")
   const [filterSession,  setFilterSession]  = useState("ALL")
+  const [filterAccount,  setFilterAccount]  = useState("ALL")
 
   const loadTrades = async () => {
     try {
@@ -1458,15 +1459,17 @@ export default function Journal() {
     return () => { try { unsub() } catch {} }
   }, [])
 
-  // Unique symbols from actual data
-  const symbols = ["ALL", ...Array.from(new Set(trades.map(t=>t.symbol))).sort()]
+  // Unique symbols and accounts from actual data
+  const symbols  = ["ALL", ...Array.from(new Set(trades.map(t=>t.symbol))).sort()]
+  const accounts = ["ALL", ...Array.from(new Set(trades.map(t=>t.account_login).filter(Boolean))).sort()]
 
   // Filtered trades
   const filtered = trades.filter(t => {
-    if (filterSymbol!=="ALL"    && t.symbol    !== filterSymbol)    return false
-    if (filterOutcome!=="ALL"   && t.outcome   !== filterOutcome)   return false
-    if (filterDirection!=="ALL" && t.direction !== filterDirection) return false
-    if (filterSession!=="ALL"   && t.session   !== filterSession)   return false
+    if (filterSymbol!=="ALL"    && t.symbol       !== filterSymbol)    return false
+    if (filterOutcome!=="ALL"   && t.outcome      !== filterOutcome)   return false
+    if (filterDirection!=="ALL" && t.direction    !== filterDirection) return false
+    if (filterSession!=="ALL"   && t.session      !== filterSession)   return false
+    if (filterAccount!=="ALL"   && (t.account_login||"MANUAL") !== filterAccount) return false
     return true
   })
 
@@ -1571,6 +1574,21 @@ export default function Journal() {
             ))}
           </div>
         </div>
+        {/* Account filter — only shown if multiple accounts exist */}
+        {accounts.length > 2 && (
+          <div>
+            <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Account</p>
+            <div className="flex flex-wrap gap-1.5">
+              {accounts.map(a=>(
+                <button key={a} onClick={()=>setFilterAccount(a)}
+                  className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                  style={{ background:filterAccount===a?"var(--accent)":"var(--bg-elevated)", color:filterAccount===a?"#fff":"var(--text-secondary)", border:"1px solid", borderColor:filterAccount===a?"var(--accent)":"var(--border)" }}>
+                  {a==="ALL" ? "All Accounts" : a==="MANUAL" ? "Manual" : `#${a}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Content */}
