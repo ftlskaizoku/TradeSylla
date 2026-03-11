@@ -42,7 +42,7 @@ function buildTradeSummary(trades) {
   const recentTrades = [...trades]
     .sort((a,b)=>new Date(b.entry_time)-new Date(a.entry_time))
     .slice(0, 15)
-    .map(t => `  ${t.direction} ${t.symbol} | ${t.outcome} | P&L:$${(t.pnl||0).toFixed(2)} | Session:${t.session||"?"} | TF:${t.timeframe||"?"} | Quality:${t.quality||"?"}/10 | Notes:${t.notes||"none"}`)
+    .map(t => `  ${t.direction} ${t.symbol} | ${t.outcome} | P&L:$${(t.pnl||0).toFixed(2)} | Entry:${t.entry_price||"?"} Exit:${t.exit_price||"?"} | SL:${t.sl||"?"} TP:${t.tp||"?"} | R:R:${t.rr||"?"} | SLpips:${t.sl_pips||"?"} TPpips:${t.tp_pips||"?"} | Session:${t.session||"?"} | TF:${t.timeframe||"?"} | Quality:${t.quality||"?"}/10 | Duration:${t.duration_min||"?"}min | Notes:${t.notes||"none"}`)
     .join("\n")
 
   const sessionSummary = Object.entries(bySess)
