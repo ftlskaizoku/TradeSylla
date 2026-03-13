@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "TradeSylla"
 #property link      "https://tradesylla.vercel.app"
-#property version   "3.1"
+#property version   "3.2"
 #property description "Syncs closed trades (with SL/TP) and chart context to TradeSylla."
 
 //── Input parameters ────────────────────────────────────────────────
@@ -17,11 +17,11 @@ input string ChartTimeframe   = "M15";  // Chart timeframe — match your tradin
 input int    SyncIntervalSec  = 30;     // Heartbeat interval (seconds)
 input bool   VerboseLogging   = true;   // Print details to Experts log
 input bool   ForceResync     = false;  // Re-sync ALL history (ignores duplicates — use once to fix missing symbols)
-input bool   SkipCandles     = false;  // Skip candle fetch — faster re-sync, no chart data
+input bool   SkipCandles     = true;   // Skip candle fetch for history (recommended). Set false only after all trades imported to backfill chart data
 
 //── Constants ────────────────────────────────────────────────────────
 #define ENDPOINT       "https://tradesylla.vercel.app/api/ea-sync"
-#define EA_VERSION     "3.1"
+#define EA_VERSION     "3.2"
 #define MAX_BATCH_SIZE 25   // reduced from 50 — avoids HTTP timeout on large history
 
 //── Globals ──────────────────────────────────────────────────────────
