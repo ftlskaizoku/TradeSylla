@@ -1,11 +1,15 @@
--- ═══════════════════════════════════════════════════════════════
--- Enable real-time sync on all TradeSylla tables
--- Run in: Supabase → SQL Editor → New query
--- ═══════════════════════════════════════════════════════════════
+-- Enable Supabase Realtime on ALL TradeSylla tables
+-- Safe to run multiple times — ADD TABLE is idempotent if already added
 
--- Enable real-time replication for all tables
-alter publication supabase_realtime add table trades;
-alter publication supabase_realtime add table playbooks;
-alter publication supabase_realtime add table backtest_sessions;
-alter publication supabase_realtime add table broker_connections;
-alter publication supabase_realtime add table sylledge_insights;
+ALTER PUBLICATION supabase_realtime ADD TABLE trades;
+ALTER PUBLICATION supabase_realtime ADD TABLE playbooks;
+ALTER PUBLICATION supabase_realtime ADD TABLE backtest_sessions;
+ALTER PUBLICATION supabase_realtime ADD TABLE broker_connections;
+ALTER PUBLICATION supabase_realtime ADD TABLE sylledge_insights;
+ALTER PUBLICATION supabase_realtime ADD TABLE sylledge_memory;
+
+-- Verify which tables are enabled
+SELECT schemaname, tablename
+FROM pg_publication_tables
+WHERE pubname = 'supabase_realtime'
+ORDER BY tablename;
