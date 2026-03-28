@@ -1,630 +1,559 @@
-// src/pages/Sylledge.jsx  — SYLLEDGE AI v3.0
-// ✅ File generation from chat (HTML/CSV/JSON download)
-// ✅ File upload (PDF, image, CSV — SYLLEDGE reads them)
-// ✅ Market Data EA command system (SYLLEDGE requests candles on demand)
-// ✅ Backtesting memory: compares user trades vs backtested strategies
-// ✅ Deep strategy analysis: best session, entry time, SL, RR, winrate prediction
-// ✅ Playbook integration in every analysis
-// ✅ Advanced HTML report generation with interactive charts
-
 import { useState, useEffect, useRef } from "react"
-import { useUser }  from "@/lib/UserContext"
+import { Trade, Playbook, BacktestSession, SylledgeInsight } from "@/api/supabaseStore"
 import { supabase } from "@/lib/supabase"
+import { useUser } from "@/lib/UserContext"
+import { toast } from "@/components/ui/toast"
 import {
-  Send, Bot, User, Sparkles, TrendingUp, BarChart2,
-  FileText, Download, Upload, Brain, Zap,
-  AlertCircle, CheckCircle, Clock, Target, Shield,
-  BookOpen, Activity, Database, RefreshCw, X,
-  MessageSquare, LineChart, Paperclip, File,
-  FileSpreadsheet
+  Brain, Sparkles, Send, RefreshCw, TrendingUp, TrendingDown,
+  Target, BarChart3, Shield, Zap, Clock, X,
+  AlertTriangle, CheckCircle, Lightbulb, MessageSquare, Activity,
+  LineChart, BookOpen, FlaskConical
 } from "lucide-react"
 
-const MODEL    = "claude-sonnet-4-20250514"
-const MAX_MSGS = 40
+// ─── Memory key ───────────────────────────────────────────────────────────────
+const MEMORY_KEY = (uid) => `sylledge_memory_${uid}`
+const MAX_MEMORY  = 40  // max messages kept in memory
 
-const TABS = [
-  { id:"chat",     label:"Chat",     Icon:MessageSquare },
-  { id:"insights", label:"Insights", Icon:Brain },
-  { id:"charts",   label:"Charts",   Icon:LineChart },
-]
+// ─── Context builders ─────────────────────────────────────────────────────────
+function buildTradeSummary(trades) {
+  if (!trades.length) return "No trades logged yet."
+  const wins    = trades.filter(t => t.outcome === "WIN")
+  const losses  = trades.filter(t => t.outcome === "LOSS")
+  const netPnl  = trades.reduce((s, t) => s + (t.pnl || 0), 0)
+  const winRate = (wins.length / trades.length * 100).toFixed(1)
+  const avgWin  = wins.length   ? wins.reduce((s,t)=>s+(t.pnl||0),0)/wins.length   : 0
+  const avgLoss = losses.length ? Math.abs(losses.reduce((s,t)=>s+(t.pnl||0),0)/losses.length) : 0
+  const pf      = avgLoss > 0 ? (avgWin / avgLoss).toFixed(2) : "N/A"
 
-const QUICK_PROMPTS = [
-  { label:"Best session for me",  icon:Clock,     prompt:"Based on my trade history, which trading session gives me the best results? Give a detailed breakdown with win rates, avg P&L, and specific hours." },
-  { label:"Best entry times",     icon:Target,    prompt:"Analyze my entry times (entry_time field) across all sessions. When exactly should I enter? Build an entry time heatmap from my data." },
-  { label:"SL improvement",       icon:Shield,    prompt:"Analyze my stop loss placements. Where should I have placed them based on market structure? Build an advanced SL strategy for my setups." },
-  { label:"RR audit",             icon:TrendingUp,prompt:"Audit my risk/reward. Compare my actual RR vs market-offered RR. How do I improve my TP system? Give concrete rules." },
-  { label:"Strategy vs Backtest", icon:Activity,  prompt:"Compare my live trading results vs my backtested strategies. Find the gap. What am I doing differently live vs backtest?" },
-  { label:"Playbook deep dive",   icon:BookOpen,  prompt:"Examine my playbook strategies. Which ones perform best live? Which need refinement? Give specific rule improvements." },
-  { label:"Win rate prediction",  icon:BarChart2, prompt:"Based on my patterns and data, predict my win rate for the next 20 trades if I follow my current setup strictly. Show your reasoning." },
-  { label:"Generate report",      icon:FileText,  prompt:"Generate a comprehensive performance report as a downloadable HTML file with charts, statistics, session analysis, and AI recommendations." },
-]
+  const bySess = {}
+  trades.forEach(t => {
+    const s = t.session || "UNKNOWN"
+    if (!bySess[s]) bySess[s] = { pnl:0, n:0, wins:0 }
+    bySess[s].pnl += t.pnl||0; bySess[s].n++
+    if (t.outcome==="WIN") bySess[s].wins++
+  })
+  const bySym = {}
+  trades.forEach(t => {
+    const s = t.symbol || "UNKNOWN"
+    if (!bySym[s]) bySym[s] = { pnl:0, n:0 }
+    bySym[s].pnl += t.pnl||0; bySym[s].n++
+  })
 
-function fmtTime(iso){ return new Date(iso).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}) }
-function fmtBytes(n){ if(n<1024)return n+" B"; if(n<1048576)return(n/1024).toFixed(1)+" KB"; return(n/1048576).toFixed(1)+" MB" }
+  const recentTrades = [...trades]
+    .sort((a,b)=>new Date(b.entry_time)-new Date(a.entry_time))
+    .slice(0, 15)
+    .map(t => `  ${t.direction} ${t.symbol} | ${t.outcome} | P&L:$${(t.pnl||0).toFixed(2)} | Entry:${t.entry_price||"?"} Exit:${t.exit_price||"?"} | SL:${t.sl||"?"} TP:${t.tp||"?"} | R:R:${t.rr||"?"} | SLpips:${t.sl_pips||"?"} TPpips:${t.tp_pips||"?"} | Session:${t.session||"?"} | TF:${t.timeframe||"?"} | Quality:${t.quality||"?"}/10 | Duration:${t.duration_min||"?"}min | Notes:${t.notes||"none"}`)
+    .join("\n")
 
-function FileIcon({type}){
-  if(type?.startsWith("image/"))         return <Sparkles size={12}/>
-  if(type==="application/pdf")           return <FileText size={12}/>
-  if(type?.includes("csv"))              return <FileSpreadsheet size={12}/>
-  return <File size={12}/>
+  const sessionSummary = Object.entries(bySess)
+    .sort((a,b)=>b[1].pnl-a[1].pnl)
+    .map(([s,d])=>`${s}: ${d.n} trades | $${d.pnl.toFixed(2)} P&L | ${(d.wins/d.n*100).toFixed(0)}% WR`)
+    .join(" | ")
+
+  const symbolSummary = Object.entries(bySym)
+    .sort((a,b)=>b[1].pnl-a[1].pnl)
+    .slice(0,6)
+    .map(([s,d])=>`${s}: ${d.n} trades | $${d.pnl.toFixed(2)}`)
+    .join(" | ")
+
+  return `=== TRADE JOURNAL (${trades.length} total trades) ===
+Net P&L: $${netPnl.toFixed(2)} | Win Rate: ${winRate}% | W:${wins.length} L:${losses.length}
+Avg Win: $${avgWin.toFixed(2)} | Avg Loss: $${avgLoss.toFixed(2)} | Profit Factor: ${pf}
+Sessions: ${sessionSummary}
+Symbols: ${symbolSummary}
+Last 15 trades:
+${recentTrades}`
 }
 
-// ════════════════════════════════════════════════════════════════════
-export default function Sylledge() {
-  const { user } = useUser()
+function buildPlaybookContext(playbooks) {
+  if (!playbooks.length) return ""
+  const lines = playbooks.map(p => {
+    const entry = (p.entry_rules||[]).filter(Boolean).join("; ")
+    const exit  = (p.exit_rules||[]).filter(Boolean).join("; ")
+    const risk  = (p.risk_rules||[]).filter(Boolean).join("; ")
+    return `  • ${p.name} [${p.status||"active"}] | Category: ${p.category||"?"} | Pairs: ${p.custom_pairs||"any"}
+    Entry: ${entry||"not defined"} | Exit: ${exit||"not defined"} | Risk: ${risk||"not defined"}
+    Stats: WR:${p.win_rate||"?"}% | PF:${p.profit_factor||"?"} | Avg R:R:${p.avg_rr||"?"}`
+  }).join("\n")
+  return `\n=== PLAYBOOK STRATEGIES (${playbooks.length}) ===\n${lines}`
+}
 
-  const [tab,        setTab]        = useState("chat")
-  const [messages,   setMessages]   = useState([])
-  const [input,      setInput]      = useState("")
-  const [loading,    setLoading]    = useState(false)
-  const [apiKey,     setApiKey]     = useState("")
-  const [memory,     setMemory]     = useState("")
-  const [trades,     setTrades]     = useState([])
-  const [playbooks,  setPlaybooks]  = useState([])
-  const [backtests,  setBacktests]  = useState([])
-  const [selPlaybook,setSelPlaybook]= useState("")
-  const [attachments,setAttachments]= useState([])
-  const [insights,   setInsights]   = useState([])
-  const [chartData,  setChartData]  = useState([])
-  const [eaStatus,   setEaStatus]   = useState("idle")
+function buildBacktestContext(sessions) {
+  if (!sessions.length) return ""
+  const lines = sessions.slice(0,5).map(s => {
+    const trades = s.trades || []
+    const wins   = trades.filter(t=>t.outcome==="WIN").length
+    const pnl    = trades.reduce((a,t)=>a+(t.pnl||0),0)
+    return `  • "${s.name}" | ${s.symbol} ${s.timeframe} ${s.session} | ${trades.length} trades | $${pnl.toFixed(2)} P&L | ${trades.length?((wins/trades.length)*100).toFixed(0):0}% WR`
+  }).join("\n")
+  return `\n=== BACKTESTING RESULTS (${sessions.length} sessions) ===\n${lines}`
+}
 
-  const bottomRef = useRef(null)
-  const fileRef   = useRef(null)
-
-  useEffect(() => {
-    setApiKey(localStorage.getItem("ts_anthropic_key")||"")
-    loadAll()
-    loadMemory()
-  }, [user?.id])
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({behavior:"smooth"}) }, [messages,loading])
-
-  async function loadAll() {
-    if(!user?.id) return
-    const [{ data:t },{ data:p },{ data:b }] = await Promise.all([
-      supabase.from("trades").select("*").eq("user_id",user.id).order("exit_time",{ascending:false}).limit(500),
-      supabase.from("playbooks").select("*").eq("user_id",user.id),
-      supabase.from("backtest_sessions").select("*").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20),
-    ])
-    if(t){ setTrades(t); buildInsights(t,b||[]) }
-    if(p) setPlaybooks(p)
-    if(b) setBacktests(b)
+function buildBridgeContext(bridgeCtx) {
+  if (!bridgeCtx) return ""
+  let ctx = ""
+  if (bridgeCtx.account) {
+    ctx += `\n=== LIVE MT5 ACCOUNT ===\nBalance: $${bridgeCtx.account.balance} | Equity: $${bridgeCtx.account.equity} | Leverage: 1:${bridgeCtx.account.leverage}`
   }
-
-  async function loadMemory() {
-    if(!user?.id) return
-    try {
-      const { data } = await supabase.from("sylledge_memory").select("content").eq("user_id",user.id).single()
-      if(data?.content) setMemory(data.content)
-    } catch { const l=localStorage.getItem("sylledge_memory"); if(l) setMemory(l) }
+  if (bridgeCtx.positions?.length) {
+    ctx += `\nOpen positions: ${bridgeCtx.positions.map(p=>`${p.direction} ${p.symbol} | ${p.volume}L | Entry:${p.entry_price} | P&L:${p.profit>=0?"+":""}$${p.profit?.toFixed(2)}`).join(" | ")}`
   }
+  return ctx
+}
 
-  async function saveMemory(content) {
-    setMemory(content)
-    localStorage.setItem("sylledge_memory",content)
-    if(!user?.id) return
-    await supabase.from("sylledge_memory").upsert({user_id:user.id,content,updated_at:new Date().toISOString()},{onConflict:"user_id"})
-  }
+// ─── Quick Prompts ────────────────────────────────────────────────────────────
+const QUICK_PROMPTS = [
+  { icon: TrendingUp,   label: "Best session",     color: "#2ed573", prompt: "Which trading session is my most profitable and why? Give me specific actionable advice to maximize it." },
+  { icon: TrendingDown, label: "Biggest weakness", color: "#ff4757", prompt: "What is my biggest trading weakness based on my data? Be direct and specific." },
+  { icon: Target,       label: "Win rate boost",   color: "#6c63ff", prompt: "What are the top 3 concrete changes I can make to improve my win rate? Use my actual data." },
+  { icon: Shield,       label: "Risk review",      color: "#ffa502", prompt: "Analyze my risk management. Am I over-trading or under-risking? What should I change?" },
+  { icon: BarChart3,    label: "Symbol focus",     color: "#00d4aa", prompt: "Which symbol(s) should I focus on and which should I stop trading based on my performance?" },
+  { icon: Lightbulb,    label: "Pattern insight",  color: "#a29bfe", prompt: "What patterns do you notice in my winning trades vs losing trades? What should I replicate?" },
+  { icon: BookOpen,     label: "Playbook review",  color: "#fd79a8", prompt: "Review my playbook strategies against my actual trade results. Are my strategies being executed correctly? What's working and what isn't?" },
+  { icon: FlaskConical, label: "Backtest insight", color: "#74b9ff", prompt: "Analyze my backtesting results. How do they compare to my live trading? What should I focus on testing next?" },
+  { icon: Zap,          label: "Quick wins",       color: "#55efc4", prompt: "Give me 3 quick actionable wins I can implement in my next trading session." },
+  { icon: Clock,        label: "Timing analysis",  color: "#fdcb6e", prompt: "Analyze my trade timing — am I trading at the right times? When should I be more selective?" },
+]
 
-  function buildInsights(t,b) {
-    if(!t.length) return
-    const wins  = t.filter(x=>x.outcome==="WIN")
-    const losses= t.filter(x=>x.outcome==="LOSS")
-    const wr    = (wins.length/t.length*100).toFixed(1)
-    const pnl   = t.reduce((s,x)=>s+(x.total_pnl||0),0)
-    const avgW  = wins.length?wins.reduce((s,x)=>s+(x.total_pnl||0),0)/wins.length:0
-    const avgL  = losses.length?losses.reduce((s,x)=>s+(x.total_pnl||0),0)/losses.length:0
-
-    const sess = {}
-    t.forEach(x=>{ if(!x.session)return; if(!sess[x.session])sess[x.session]={w:0,n:0,p:0}; sess[x.session].n++; sess[x.session].p+=(x.total_pnl||0); if(x.outcome==="WIN")sess[x.session].w++ })
-    const bestS = Object.entries(sess).sort((a,b)=>(b[1].w/b[1].n)-(a[1].w/a[1].n))[0]
-
-    const tf = {}
-    t.forEach(x=>{ if(!x.timeframe)return; if(!tf[x.timeframe])tf[x.timeframe]={w:0,n:0}; tf[x.timeframe].n++; if(x.outcome==="WIN")tf[x.timeframe].w++ })
-    const bestTF = Object.entries(tf).sort((a,b)=>(b[1].w/b[1].n)-(a[1].w/a[1].n))[0]
-
-    setInsights([
-      { label:"Win Rate",    value:wr+"%",           color:parseFloat(wr)>50?"var(--accent-success)":"var(--accent-danger)" },
-      { label:"Total P&L",  value:"$"+pnl.toFixed(2),color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" },
-      { label:"Avg Win",    value:"$"+avgW.toFixed(2),color:"var(--accent-success)" },
-      { label:"Avg Loss",   value:"$"+avgL.toFixed(2),color:"var(--accent-danger)" },
-      { label:"Best Session",value:bestS?.[0]||"N/A", color:"var(--accent)" },
-      { label:"Best TF",    value:bestTF?.[0]||"N/A", color:"var(--accent-secondary)" },
-    ])
-
-    const qd = [1,2,3,4,5,6,7,8,9,10].map(q=>{
-      const g=t.filter(x=>(x.quality||5)===q)
-      return { q, n:g.length, avg:g.length?g.reduce((s,x)=>s+(x.total_pnl||0),0)/g.length:0 }
-    }).filter(x=>x.n>0)
-    setChartData(qd)
-  }
-
-  // ── File attach ────────────────────────────────────────────────────────────
-  async function handleFiles(e) {
-    const files = Array.from(e.target.files)
-    const atts  = []
-    for(const f of files) {
-      if(f.size > 5*1024*1024){ alert(f.name+" too large (max 5MB)"); continue }
-      await new Promise(res => {
-        const r = new FileReader()
-        r.onload = async () => {
-          if(f.type.startsWith("image/")) {
-            atts.push({ name:f.name, type:f.type, size:f.size, b64:r.result.split(",")[1], isImage:true })
-          } else if(f.type==="application/pdf") {
-            atts.push({ name:f.name, type:f.type, size:f.size, b64:r.result.split(",")[1], isPdf:true })
-          } else {
-            atts.push({ name:f.name, type:f.type, size:f.size, text:await f.text(), isText:true })
-          }
-          res()
-        }
-        if(f.type.startsWith("image/")||f.type==="application/pdf") r.readAsDataURL(f)
-        else r.readAsText(f)
-      })
-    }
-    setAttachments(p=>[...p,...atts])
-    fileRef.current.value=""
-  }
-
-  // ── Market data request ────────────────────────────────────────────────────
-  async function reqMarketData(symbol,timeframe,from,to) {
-    if(!user?.id) return null
-    setEaStatus("requesting")
-    try {
-      const { data:cmd } = await supabase.from("sylledge_commands")
-        .insert({ user_id:user.id, type:"fetch_candles", symbol, timeframe, from:from||null, to:to||null, limit:1000, status:"pending" })
-        .select().single()
-      if(!cmd){ setEaStatus("idle"); return null }
-      for(let i=0;i<30;i++){
-        await new Promise(r=>setTimeout(r,1000))
-        const { data:u } = await supabase.from("sylledge_commands").select("status,response").eq("id",cmd.id).single()
-        if(u?.status==="done"){ setEaStatus("received"); setTimeout(()=>setEaStatus("idle"),3000); return u.response }
-        if(u?.status==="error"){ setEaStatus("idle"); return null }
-      }
-    } catch {}
-    setEaStatus("idle")
-    return null
-  }
-
-  // ── System prompt ─────────────────────────────────────────────────────────
-  function buildSystem() {
-    const wins   = trades.filter(x=>x.outcome==="WIN")
-    const losses = trades.filter(x=>x.outcome==="LOSS")
-    const wr     = trades.length?(wins.length/trades.length*100).toFixed(1):"0"
-    const pnl    = trades.reduce((s,x)=>s+(x.total_pnl||0),0).toFixed(2)
-    const avgQ   = trades.length?(trades.reduce((s,x)=>s+(x.quality||5),0)/trades.length).toFixed(1):"5"
-
-    const sess = {}
-    trades.forEach(x=>{ if(!x.session)return; if(!sess[x.session])sess[x.session]={w:0,n:0,p:0}; sess[x.session].n++; sess[x.session].p+=(x.total_pnl||0); if(x.outcome==="WIN")sess[x.session].w++ })
-    const sessStr = Object.entries(sess).map(([s,v])=>`${s}:${v.n}trades,${(v.w/v.n*100).toFixed(0)}%WR,$${v.p.toFixed(2)}`).join(" | ")
-
-    const hourMap = {}
-    trades.forEach(x=>{ if(!x.entry_time)return; const h=new Date(x.entry_time).getUTCHours(); if(!hourMap[h])hourMap[h]={w:0,n:0}; hourMap[h].n++; if(x.outcome==="WIN")hourMap[h].w++ })
-    const bestHours = Object.entries(hourMap).filter(([,v])=>v.n>=3).sort((a,b)=>(b[1].w/b[1].n)-(a[1].w/a[1].n)).slice(0,5).map(([h,v])=>`${h}:00UTC(${(v.w/v.n*100).toFixed(0)}%WR,${v.n}trades)`).join(", ")
-
-    const pb = selPlaybook ? playbooks.find(p=>p.id===selPlaybook) : null
-    const pbTxt = pb ? `\n\nACTIVE PLAYBOOK: "${pb.name}"\n${pb.description||""}\nRules:${JSON.stringify(pb.rules||{})}` : ""
-
-    const btTxt = backtests.length
-      ? "\n\nBACKTESTED STRATEGIES:\n"+backtests.slice(0,5).map(b=>`• ${b.name||"Strategy"}: ${b.total_trades||0}trades,${b.win_rate||0}%WR,$${b.total_pnl||0}`).join("\n")
-      : ""
-
-    const sample = trades.slice(0,20).map(t=>`${t.symbol} ${t.direction} ${t.outcome} $${(t.total_pnl||0).toFixed(2)} Q:${t.quality||5} Sess:${t.session||"?"} TF:${t.timeframe||"?"} In:${t.entry_time?new Date(t.entry_time).toISOString().slice(11,16):""} Out:${t.exit_time?new Date(t.exit_time).toISOString().slice(11,16):""}`).join("\n")
-
-    return `You are SYLLEDGE, an elite professional trading coach and quant analyst embedded in TradeSylla. You have deep knowledge of price action, market structure, risk management, and trading psychology.
-
-TRADER DATA:
-Trades: ${trades.length} | Win Rate: ${wr}% | P&L: $${pnl} | Avg Quality: ${avgQ}/10
-Sessions: ${sessStr||"none yet"}
-Best Entry Hours: ${bestHours||"not enough data"}
-${pbTxt}${btTxt}
-
-RECENT TRADES:
-${sample||"none yet"}
-
-YOUR MEMORY:
-${memory||"no memory yet"}
-
-YOUR CAPABILITIES:
-1. DEEP ANALYSIS of entry times, sessions, SL, TP, RR — use the actual data above
-2. MARKET DATA: request live candles from MT5 EA using <<<REQUEST_MARKET_DATA>>>
-3. BACKTEST COMPARISON: compare live vs backtest results
-4. FILE GENERATION: create downloadable reports, CSVs, interactive HTML charts
-5. FILE READING: read uploaded PDFs, images, CSVs
-6. STRATEGY INTEGRATION: use the active playbook in all recommendations
-7. RISK MANAGEMENT: position sizing, session exposure, max daily loss rules
-
-FILE GENERATION:
-When user wants a file/report:
-• HTML report: <<<HTML_FILE>>><!DOCTYPE html>...</html><<<END_HTML>>>
-• CSV: <<<CSV_FILE>>>header1,header2\nval1,val2<<<END_CSV>>>
-• JSON: <<<JSON_FILE>>>{...}<<<END_JSON>>>
-
-MARKET DATA REQUEST:
-<<<REQUEST_MARKET_DATA>>>{"symbol":"XAUUSD","timeframe":"H1","from":"2025-01-01","to":"2025-03-01"}<<<END_REQUEST>>>
-
-MEMORY UPDATE (end of important conversations):
-<<<MEMORY_UPDATE>>>key finding about this trader<<<END_MEMORY>>>
-
-Be specific, data-driven, and actionable. You have their actual trade data above — use it.`
-  }
-
-  // ── Parse AI response ─────────────────────────────────────────────────────
-  function parseResp(text) {
-    const files=[]; let clean=text; let mdReq=null
-
-    const htmlM=text.match(/<<<HTML_FILE>>>([\s\S]*?)<<<END_HTML>>>/)
-    if(htmlM){ files.push({type:"html",name:"sylledge_report.html",content:htmlM[1].trim()}); clean=clean.replace(htmlM[0],"") }
-
-    const csvM=text.match(/<<<CSV_FILE>>>([\s\S]*?)<<<END_CSV>>>/)
-    if(csvM){ files.push({type:"csv",name:"sylledge_data.csv",content:csvM[1].trim()}); clean=clean.replace(csvM[0],"") }
-
-    const jsonM=text.match(/<<<JSON_FILE>>>([\s\S]*?)<<<END_JSON>>>/)
-    if(jsonM){ files.push({type:"json",name:"sylledge_analysis.json",content:jsonM[1].trim()}); clean=clean.replace(jsonM[0],"") }
-
-    const mdM=text.match(/<<<REQUEST_MARKET_DATA>>>([\s\S]*?)<<<END_REQUEST>>>/)
-    if(mdM){ try{ mdReq=JSON.parse(mdM[1].trim()) }catch{} ; clean=clean.replace(mdM[0],"") }
-
-    const memM=text.match(/<<<MEMORY_UPDATE>>>([\s\S]*?)<<<END_MEMORY>>>/)
-    if(memM){ saveMemory(((memory?memory+"\n\n":"")+memM[1].trim()).slice(-4000)); clean=clean.replace(memM[0],"") }
-
-    return { clean:clean.trim(), files, mdReq }
-  }
-
-  // ── Download ───────────────────────────────────────────────────────────────
-  function download(f) {
-    const mime={html:"text/html",csv:"text/csv",json:"application/json"}
-    const blob=new Blob([f.content],{type:mime[f.type]||"text/plain"})
-    const url=URL.createObjectURL(blob)
-    const a=document.createElement("a"); a.href=url; a.download=f.name; a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  // ── Build API messages ─────────────────────────────────────────────────────
-  function buildContent(text, atts) {
-    if(!atts.length) return text
-    const parts=[]
-    atts.forEach(a=>{
-      if(a.isImage) parts.push({type:"image",source:{type:"base64",media_type:a.type,data:a.b64}})
-      else if(a.isPdf) parts.push({type:"document",source:{type:"base64",media_type:"application/pdf",data:a.b64}})
-      else parts.push({type:"text",text:`[File: ${a.name}]\n${a.text}`})
-    })
-    parts.push({type:"text",text})
-    return parts
-  }
-
-  // ── Send ───────────────────────────────────────────────────────────────────
-  async function send(override) {
-    const text=(override||input).trim()
-    if(!text&&!attachments.length) return
-    if(!apiKey){ alert("Add Anthropic API key in Settings → API Keys"); return }
-
-    const atts=[...attachments]
-    const userMsg={ id:Date.now(), role:"user", content:text,
-      attachments:atts.map(a=>({name:a.name,type:a.type,size:a.size})),
-      time:new Date().toISOString() }
-    setMessages(p=>[...p,userMsg])
-    setInput(""); setAttachments([]); setLoading(true)
-
-    try {
-      const history=messages.slice(-MAX_MSGS).map(m=>({
-        role:m.role, content:m._rawContent||m.content||""
-      }))
-      history.push({role:"user",content:buildContent(text,atts)})
-
-      const res=await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",
-        headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01"},
-        body:JSON.stringify({ model:MODEL, max_tokens:4096, system:buildSystem(), messages:history })
-      })
-      const data=await res.json()
-      const raw=data.content?.map(c=>c.text||"").join("")||"No response"
-      const { clean, files, mdReq } = parseResp(raw)
-
-      if(mdReq) {
-        // Show partial response then fetch market data
-        const partialId=Date.now()+1
-        setMessages(p=>[...p,{id:partialId,role:"assistant",content:clean+"\n\n⏳ Fetching market data from your MT5 EA…",files:[],time:new Date().toISOString()}])
-
-        const mdData=await reqMarketData(mdReq.symbol,mdReq.timeframe,mdReq.from,mdReq.to)
-
-        const followRes=await fetch("https://api.anthropic.com/v1/messages",{
-          method:"POST",
-          headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01"},
-          body:JSON.stringify({
-            model:MODEL, max_tokens:4096, system:buildSystem(),
-            messages:[
-              ...history,
-              {role:"assistant",content:raw},
-              {role:"user",content:mdData
-                ? `Market data received from MT5 EA:\n${JSON.stringify(mdData,null,2)}\n\nNow complete your full analysis using this data.`
-                : "The MT5 EA is offline or not responding. Complete your analysis using only the available trade history data."}
-            ]
-          })
-        })
-        const fd=await followRes.json()
-        const fr=fd.content?.map(c=>c.text||"").join("")||""
-        const { clean:fc, files:ff } = parseResp(fr)
-        setMessages(p=>p.map(m=>m.id===partialId?{...m,content:fc,files:[...files,...ff]}:m))
-      } else {
-        setMessages(p=>[...p,{id:Date.now()+1,role:"assistant",content:clean,files,_rawContent:raw,time:new Date().toISOString()}])
-      }
-    } catch(err) {
-      setMessages(p=>[...p,{id:Date.now()+1,role:"assistant",content:"Error: "+err.message,files:[],time:new Date().toISOString()}])
-    }
-    setLoading(false)
-  }
-
-  const noKey = !apiKey
-
+// ─── Typing dots ──────────────────────────────────────────────────────────────
+function TypingDots() {
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] max-w-5xl mx-auto">
+    <div className="flex items-center gap-1 px-4 py-3">
+      {[0,1,2].map(i=>(
+        <div key={i} className="w-2 h-2 rounded-full animate-bounce" style={{ background:"var(--accent)", animationDelay:`${i*0.15}s` }}/>
+      ))}
+    </div>
+  )
+}
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))"}}>
-            <Bot size={20} className="text-white"/>
+// ─── Message Bubble ───────────────────────────────────────────────────────────
+function MessageBubble({ msg }) {
+  const isUser = msg.role === "user"
+  return (
+    <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
+      <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+        style={{ background: isUser ? "rgba(108,99,255,0.2)" : "linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
+        {isUser ? <MessageSquare size={14} style={{ color:"var(--accent)" }}/> : <Brain size={14} className="text-white"/>}
+      </div>
+      <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${isUser?"rounded-tr-sm":"rounded-tl-sm"}`}
+        style={{ background: isUser?"rgba(108,99,255,0.15)":"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color:"var(--text-primary)" }}>{msg.content}</p>
+        {msg.timestamp && (
+          <p className="text-xs mt-1.5" style={{ color:"var(--text-muted)" }}>
+            {new Date(msg.timestamp).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Insight Card ─────────────────────────────────────────────────────────────
+function InsightCard({ insight, onDelete }) {
+  const icons  = { strength:CheckCircle, weakness:AlertTriangle, opportunity:Lightbulb, general:Brain }
+  const colors = { strength:"var(--accent-success)", weakness:"var(--accent-danger)", opportunity:"var(--accent-warning)", general:"var(--accent)" }
+  const Icon  = icons[insight.type]  || icons.general
+  const color = colors[insight.type] || colors.general
+  return (
+    <div className="rounded-xl p-4" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background:`${color}20` }}>
+            <Icon size={14} style={{ color }}/>
           </div>
-          <div>
-            <h1 className="text-xl font-bold" style={{color:"var(--text-primary)"}}>SYLLEDGE AI</h1>
-            <p className="text-xs" style={{color:"var(--text-muted)"}}>
-              {trades.length} trades · {playbooks.length} strategies · {backtests.length} backtests
-            </p>
-          </div>
+          <span className="text-xs font-semibold capitalize" style={{ color }}>{insight.type||"insight"}</span>
         </div>
         <div className="flex items-center gap-2">
-          {eaStatus!=="idle"&&(
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
-              style={{background:eaStatus==="received"?"rgba(46,213,115,0.15)":"rgba(108,99,255,0.15)",
-                border:`1px solid ${eaStatus==="received"?"var(--accent-success)":"var(--accent)"}`,
-                color:eaStatus==="received"?"var(--accent-success)":"var(--accent)"}}>
-              {eaStatus==="requesting"?<><RefreshCw size={11} className="animate-spin"/> Requesting EA data…</>:<><CheckCircle size={11}/> Data received!</>}
+          <span className="text-xs" style={{ color:"var(--text-muted)" }}>
+            {insight.created_at ? new Date(insight.created_at).toLocaleDateString() : ""}
+          </span>
+          <button onClick={()=>onDelete(insight.id)} className="p-1 rounded hover:opacity-70" style={{ color:"var(--text-muted)" }}>
+            <X size={12}/>
+          </button>
+        </div>
+      </div>
+      {insight.title && <p className="text-sm font-semibold mb-1" style={{ color:"var(--text-primary)" }}>{insight.title}</p>}
+      <p className="text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>{insight.content}</p>
+    </div>
+  )
+}
+
+// ─── Quick Save Insight ───────────────────────────────────────────────────────
+function QuickSaveInsight({ onSave }) {
+  const [title,   setTitle]   = useState("")
+  const [content, setContent] = useState("")
+  const [type,    setType]    = useState("general")
+  const [saving,  setSaving]  = useState(false)
+  const save = async () => {
+    if (!content.trim()) { toast.error("Content is required"); return }
+    setSaving(true)
+    await onSave(content.trim(), type, title.trim())
+    setTitle(""); setContent(""); setType("general")
+    setSaving(false)
+  }
+  return (
+    <div>
+      <p className="text-xs font-semibold mb-3" style={{ color:"var(--text-muted)" }}>SAVE NEW INSIGHT</p>
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Title (optional)"
+            className="flex-1 h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+          <select value={type} onChange={e=>setType(e.target.value)} className="h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}>
+            <option value="general">General</option>
+            <option value="strength">Strength</option>
+            <option value="weakness">Weakness</option>
+            <option value="opportunity">Opportunity</option>
+          </select>
+        </div>
+        <textarea rows={3} value={content} onChange={e=>setContent(e.target.value)} placeholder="Paste or type your insight…"
+          className="w-full rounded-lg px-3 py-2 text-sm border resize-none" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+        <button onClick={save} disabled={saving||!content.trim()} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-40"
+          style={{ background:"linear-gradient(135deg,#6c63ff,#5a52d5)" }}>
+          <Sparkles size={13}/> {saving?"Saving…":"Save Insight"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Sylledge Page ───────────────────────────────────────────────────────
+export default function Sylledge() {
+  const { user }                      = useUser()
+  const [trades,       setTrades]     = useState([])
+  const [playbooks,    setPlaybooks]  = useState([])
+  const [backtests,    setBacktests]  = useState([])
+  const [insights,     setInsights]   = useState([])
+  const [messages,     setMessages]   = useState([])
+  const [input,        setInput]      = useState("")
+  const [loading,      setLoading]    = useState(false)
+  const [activeTab,    setActiveTab]  = useState("chat")
+  const [bridgeCtx,    setBridgeCtx]  = useState(null)
+  const [bridgeStatus, setBridgeStatus] = useState("idle")
+  const bottomRef = useRef(null)
+  const inputRef  = useRef(null)
+
+  // ── Load all data ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    Trade.list().then(setTrades)
+    Playbook.list().then(setPlaybooks)
+    BacktestSession.list().then(setBacktests)
+    SylledgeInsight.list().then(d =>
+      setInsights(d.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))
+    )
+    fetchBridgeContext()
+  }, [])
+
+  // ── Load memory from localStorage ────────────────────────────────────────
+  useEffect(() => {
+    if (!user?.id) return
+    try {
+      const saved = localStorage.getItem(MEMORY_KEY(user.id))
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed.length > 0) {
+          setMessages(parsed)
+          return
+        }
+      }
+    } catch {}
+    // No memory — show welcome message
+    setMessages([{
+      role: "assistant",
+      content: `Hey! I'm SYLLEDGE AI — your personal trading coach powered by Claude.\n\nI have full access to your:\n• Trade journal (${trades.length} trades)\n• Playbook strategies\n• Backtesting results\n• Live MT5 data (when connected)\n\nI remember our full conversation history. Ask me anything about your performance, or use one of the quick prompts below. 🎯`,
+      timestamp: new Date().toISOString()
+    }])
+  }, [user?.id])
+
+  // ── Save memory on every message change ──────────────────────────────────
+  useEffect(() => {
+    if (!user?.id || messages.length === 0) return
+    try {
+      // Keep last MAX_MEMORY messages
+      const toSave = messages.slice(-MAX_MEMORY)
+      localStorage.setItem(MEMORY_KEY(user.id), JSON.stringify(toSave))
+    } catch {}
+  }, [messages, user?.id])
+
+  // ── Auto-scroll ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior:"smooth" })
+  }, [messages, loading])
+
+  // ── MT5 Bridge ────────────────────────────────────────────────────────────
+  const fetchBridgeContext = async () => {
+    setBridgeStatus("fetching")
+    try {
+      const res = await fetch("http://localhost:5001/api/context?timeframe=H1&bars=50", {
+        signal: AbortSignal.timeout(3000)
+      })
+      if (!res.ok) throw new Error()
+      setBridgeCtx(await res.json())
+      setBridgeStatus("connected")
+    } catch {
+      setBridgeStatus("offline")
+      setBridgeCtx(null)
+    }
+  }
+
+  // ── Call Claude ───────────────────────────────────────────────────────────
+  const callAI = async (userMessage) => {
+    if (!userMessage.trim()) return ""
+
+    const systemPrompt = `You are SYLLEDGE AI, an elite trading coach and performance analyst embedded in TradeSylla — a professional trading journal app. You have deep, persistent access to the trader's full data across their journal, playbook strategies, and backtesting results.
+
+${buildTradeSummary(trades)}
+${buildPlaybookContext(playbooks)}
+${buildBacktestContext(backtests)}
+${buildBridgeContext(bridgeCtx)}
+
+Your role:
+- Analyze trading performance with precision — always cite actual numbers from the data above
+- Cross-reference journal results with playbook strategies: are the rules being followed?
+- Compare live trading with backtesting results: is the edge translating to real trades?
+- Give brutally honest, actionable feedback
+- Use trader terminology (R:R, drawdown, expectancy, session, structure, liquidity)
+- Format with line breaks for readability
+- Remember: you have full conversation history — reference previous discussions when relevant
+- When the trader asks about a strategy by name, look it up in their playbook above
+
+Be direct, specific, and encouraging. The trader wants to improve.`
+
+    // Send full conversation history for memory — Claude sees everything
+    const history = messages
+      .filter(m => m.role === "user" || m.role === "assistant")
+      .slice(-20)  // last 20 messages = full context window memory
+      .map(m => ({ role: m.role, content: m.content }))
+
+    try {
+      const res = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system:     systemPrompt,
+          messages:   [...history, { role:"user", content:userMessage }],
+          max_tokens: 1200,
+        })
+      })
+      const data = await res.json()
+      if (data.error) return `⚠️ ${data.error}`
+      return data.content?.[0]?.text || "Sorry, I couldn't generate a response. Please try again."
+    } catch {
+      return "Connection error. Please check your internet and try again."
+    }
+  }
+
+  // ── Send message ──────────────────────────────────────────────────────────
+  const sendMessage = async (text) => {
+    const msg = text || input.trim()
+    if (!msg || loading) return
+    setInput("")
+    setMessages(prev => [...prev, { role:"user", content:msg, timestamp:new Date().toISOString() }])
+    setLoading(true)
+    const reply = await callAI(msg)
+    setMessages(prev => [...prev, { role:"assistant", content:reply, timestamp:new Date().toISOString() }])
+    setLoading(false)
+    inputRef.current?.focus()
+  }
+
+  const clearMemory = () => {
+    if (!user?.id) return
+    localStorage.removeItem(MEMORY_KEY(user.id))
+    setMessages([{
+      role: "assistant",
+      content: "Memory cleared! Fresh start. What would you like to analyze? 🎯",
+      timestamp: new Date().toISOString()
+    }])
+  }
+
+  const handleKey = (e) => {
+    if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() }
+  }
+
+  const saveInsight = async (content, type="general", title="") => {
+    try {
+      const saved = await SylledgeInsight.create({ content, type, title })
+      setInsights(prev => [saved, ...prev])
+      toast.success("Insight saved!")
+    } catch { toast.error("Failed to save insight") }
+  }
+
+  const deleteInsight = async (id) => {
+    await SylledgeInsight.delete(id)
+    setInsights(prev => prev.filter(i=>i.id!==id))
+    toast.success("Insight removed")
+  }
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  const wins    = trades.filter(t=>t.outcome==="WIN")
+  const losses  = trades.filter(t=>t.outcome==="LOSS")
+  const netPnl  = trades.reduce((s,t)=>s+(t.pnl||0),0)
+  const winRate = trades.length ? (wins.length/trades.length*100).toFixed(1) : "0.0"
+
+  return (
+    <div className="flex flex-col h-full" style={{ maxHeight:"calc(100vh - 80px)" }}>
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
+            <Brain size={22} className="text-white"/>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>SYLLEDGE AI</h1>
+            <p className="text-xs" style={{ color:"var(--text-muted)" }}>
+              {trades.length} trades · {playbooks.length} strategies · {backtests.length} backtests analyzed
+            </p>
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              {/* Bridge status */}
+              {bridgeStatus==="connected" ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                  style={{ background:"rgba(46,213,115,0.1)", color:"var(--accent-success)", border:"1px solid rgba(46,213,115,0.2)" }}>
+                  <Activity size={9} className="animate-pulse"/> MT5 live
+                </span>
+              ) : bridgeStatus==="offline" ? (
+                <button onClick={fetchBridgeContext}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs hover:opacity-80"
+                  style={{ background:"var(--bg-elevated)", color:"var(--text-muted)", border:"1px solid var(--border)" }}>
+                  <LineChart size={9}/> Connect MT5
+                </button>
+              ) : null}
+              {/* Memory indicator */}
+              {messages.length > 1 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
+                  style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.2)" }}>
+                  <Brain size={9}/> {messages.length} msg memory
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex rounded-xl overflow-hidden" style={{ border:"1px solid var(--border)" }}>
+          {["chat","insights"].map(t=>(
+            <button key={t} onClick={()=>setActiveTab(t)}
+              className="px-5 py-2 text-sm font-medium capitalize transition-all"
+              style={{ background:activeTab===t?"var(--accent)":"var(--bg-elevated)", color:activeTab===t?"#fff":"var(--text-secondary)" }}>
+              {t==="chat" ? "💬 Chat" : `💡 Saved (${insights.length})`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── CHAT TAB ───────────────────────────────────────────────────────── */}
+      {activeTab==="chat" && (
+        <div className="flex flex-col gap-4 flex-1 min-h-0">
+
+          {/* Stats strip */}
+          {trades.length > 0 && (
+            <div className="flex flex-wrap gap-3 rounded-xl px-4 py-3 flex-shrink-0" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+              {[
+                { label:"Trades",        value:trades.length,                            color:"var(--accent)" },
+                { label:"Net P&L",       value:`${netPnl>=0?"+":""}$${netPnl.toFixed(0)}`, color:netPnl>=0?"var(--accent-success)":"var(--accent-danger)" },
+                { label:"Win Rate",      value:`${winRate}%`,                            color:parseFloat(winRate)>=50?"var(--accent-success)":"var(--accent-danger)" },
+                { label:"W / L",         value:`${wins.length} / ${losses.length}`,      color:"var(--text-secondary)" },
+                { label:"Strategies",    value:playbooks.length,                         color:"var(--accent-secondary)" },
+                { label:"Backtests",     value:backtests.length,                         color:"#74b9ff" },
+              ].map(s=>(
+                <div key={s.label} className="flex items-center gap-2">
+                  <span className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}:</span>
+                  <span className="text-xs font-bold" style={{ color:s.color }}>{s.value}</span>
+                </div>
+              ))}
             </div>
           )}
-          {playbooks.length>0&&(
-            <select value={selPlaybook} onChange={e=>setSelPlaybook(e.target.value)}
-              className="text-xs px-2 py-1.5 rounded-lg border"
-              style={{background:"var(--bg-elevated)",borderColor:"var(--border)",color:"var(--text-secondary)"}}>
-              <option value="">No playbook</option>
-              {playbooks.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          )}
-        </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl mb-4 flex-shrink-0 w-fit"
-        style={{background:"var(--bg-elevated)"}}>
-        {TABS.map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
-            style={{background:tab===t.id?"var(--accent)":"transparent",color:tab===t.id?"#fff":"var(--text-muted)"}}>
-            <t.Icon size={13}/>{t.label}
-          </button>
-        ))}
-      </div>
-
-      {noKey&&(
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl mb-4 flex-shrink-0"
-          style={{background:"rgba(255,165,2,0.08)",border:"1px solid rgba(255,165,2,0.3)"}}>
-          <AlertCircle size={16} style={{color:"var(--accent-warning)"}}/>
-          <p className="text-sm" style={{color:"var(--text-secondary)"}}>
-            Add your Anthropic API key in <strong style={{color:"var(--text-primary)"}}>Settings → API Keys</strong> to activate SYLLEDGE.
-          </p>
-        </div>
-      )}
-
-      {/* ── CHAT TAB ─────────────────────────────────────────────────────── */}
-      {tab==="chat"&&(
-        <div className="flex flex-col flex-1 min-h-0">
-          {/* Quick prompts */}
-          <div className="flex gap-2 overflow-x-auto pb-2 flex-shrink-0 mb-3">
-            {QUICK_PROMPTS.map(qp=>(
-              <button key={qp.label} onClick={()=>send(qp.prompt)} disabled={loading||noKey}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex-shrink-0 border hover:opacity-80"
-                style={{background:"var(--bg-elevated)",borderColor:"var(--border)",color:"var(--text-secondary)",opacity:(loading||noKey)?0.5:1}}>
-                <qp.icon size={12} style={{color:"var(--accent)"}}/>{qp.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto space-y-4 pr-1 min-h-0">
-            {messages.length===0&&(
-              <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
-                  style={{background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))"}}>
-                  <Sparkles size={28} className="text-white"/>
-                </div>
-                <h3 className="text-lg font-bold mb-2" style={{color:"var(--text-primary)"}}>SYLLEDGE is ready</h3>
-                <p className="text-sm max-w-md" style={{color:"var(--text-muted)"}}>
-                  Ask about your sessions, entry times, SL strategy, or request a full HTML report. Upload PDFs, CSVs, or screenshots to analyze.
-                </p>
-              </div>
-            )}
-
-            {messages.map(msg=>(
-              <div key={msg.id} className={`flex gap-3 ${msg.role==="user"?"flex-row-reverse":""}`}>
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{background:msg.role==="assistant"?"linear-gradient(135deg,var(--accent),var(--accent-secondary))":"var(--bg-elevated)"}}>
-                  {msg.role==="assistant"?<Bot size={15} className="text-white"/>:<User size={15} style={{color:"var(--text-muted)"}}/>}
-                </div>
-                <div className={`max-w-[80%] space-y-2 flex flex-col ${msg.role==="user"?"items-end":""}`}>
-                  {msg.attachments?.length>0&&(
-                    <div className="flex flex-wrap gap-1.5">
-                      {msg.attachments.map((a,i)=>(
-                        <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
-                          style={{background:"var(--bg-elevated)",border:"1px solid var(--border)",color:"var(--text-muted)"}}>
-                          <FileIcon type={a.type}/><span className="max-w-20 truncate">{a.name}</span>
-                          <span>{fmtBytes(a.size)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="px-4 py-3 rounded-2xl"
-                    style={{
-                      background:msg.role==="assistant"?"var(--bg-card)":"var(--accent)",
-                      border:msg.role==="assistant"?"1px solid var(--border)":"none",
-                      color:msg.role==="assistant"?"var(--text-primary)":"#fff",
-                      borderRadius:msg.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",
-                    }}>
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                  </div>
-                  {msg.files?.map((f,i)=>(
-                    <button key={i} onClick={()=>download(f)}
-                      className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border hover:opacity-80"
-                      style={{background:"rgba(46,213,115,0.1)",borderColor:"var(--accent-success)",color:"var(--accent-success)"}}>
-                      <Download size={14}/> Download {f.name} <span className="text-xs opacity-60 uppercase">.{f.type}</span>
-                    </button>
-                  ))}
-                  <p className="text-xs px-1" style={{color:"var(--text-muted)"}}>{fmtTime(msg.time)}</p>
-                </div>
-              </div>
-            ))}
-
-            {loading&&(
+          {/* Chat window */}
+          <div className="flex-1 overflow-y-auto rounded-2xl p-4 space-y-4 min-h-0" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+            {messages.map((msg,i)=><MessageBubble key={i} msg={msg}/>)}
+            {loading && (
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))"}}>
-                  <Bot size={15} className="text-white"/>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
+                  <Brain size={14} className="text-white"/>
                 </div>
-                <div className="px-4 py-3 rounded-2xl flex items-center gap-2"
-                  style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-                  {[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full animate-bounce" style={{background:"var(--accent)",animationDelay:`${i*0.15}s`}}/>)}
+                <div className="rounded-2xl rounded-tl-sm" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+                  <TypingDots/>
                 </div>
               </div>
             )}
             <div ref={bottomRef}/>
           </div>
 
-          {/* Input */}
-          <div className="mt-3 flex-shrink-0">
-            {attachments.length>0&&(
-              <div className="flex flex-wrap gap-2 mb-2">
-                {attachments.map((a,i)=>(
-                  <div key={i} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs"
-                    style={{background:"var(--bg-elevated)",border:"1px solid var(--accent)",color:"var(--text-secondary)"}}>
-                    <FileIcon type={a.type}/><span className="max-w-24 truncate">{a.name}</span>
-                    <button onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==i))} className="hover:opacity-70 ml-1"><X size={11}/></button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2 items-end">
-              <div className="flex-1 relative rounded-2xl overflow-hidden"
-                style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-                <textarea value={input} onChange={e=>setInput(e.target.value)}
-                  onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}}}
-                  placeholder="Ask SYLLEDGE… (Shift+Enter for new line)"
-                  rows={1} disabled={loading||noKey}
-                  className="w-full px-4 py-3 pr-10 text-sm resize-none bg-transparent outline-none"
-                  style={{color:"var(--text-primary)",maxHeight:120}}/>
-                <button onClick={()=>fileRef.current?.click()}
-                  className="absolute right-3 bottom-3 hover:opacity-70"
-                  style={{color:"var(--text-muted)"}}>
-                  <Paperclip size={16}/>
+          {/* Quick prompts */}
+          <div className="flex-shrink-0">
+            <p className="text-xs mb-2" style={{ color:"var(--text-muted)" }}>Quick analysis:</p>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {QUICK_PROMPTS.map((p,i)=>(
+                <button key={i} onClick={()=>sendMessage(p.prompt)} disabled={loading}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap flex-shrink-0 border transition-all hover:opacity-80 disabled:opacity-40"
+                  style={{ background:`${p.color}15`, borderColor:`${p.color}30`, color:p.color }}>
+                  <p.icon size={12}/> {p.label}
                 </button>
-                <input ref={fileRef} type="file" multiple
-                  accept=".pdf,.csv,.json,.txt,.png,.jpg,.jpeg,.webp"
-                  className="hidden" onChange={handleFiles}/>
-              </div>
-              <button onClick={()=>send()} disabled={loading||noKey||(!input.trim()&&!attachments.length)}
-                className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  background:(loading||noKey||(!input.trim()&&!attachments.length))?"var(--bg-elevated)":"linear-gradient(135deg,var(--accent),var(--accent-secondary))",
-                  opacity:(loading||noKey||(!input.trim()&&!attachments.length))?0.5:1,
-                }}>
-                <Send size={16} className="text-white"/>
+              ))}
+            </div>
+          </div>
+
+          {/* Input row */}
+          <div className="flex gap-2 flex-shrink-0">
+            <button onClick={clearMemory} title="Clear memory & start fresh"
+              className="p-2.5 rounded-xl border flex-shrink-0 hover:opacity-70 transition-opacity"
+              style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-muted)" }}>
+              <RefreshCw size={15}/>
+            </button>
+            <div className="flex-1 flex rounded-xl overflow-hidden" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={e=>setInput(e.target.value)}
+                onKeyDown={handleKey}
+                placeholder="Ask about your performance, strategies, backtests…"
+                rows={1}
+                className="flex-1 px-4 py-2.5 text-sm resize-none bg-transparent border-0 outline-none"
+                style={{ color:"var(--text-primary)", minHeight:44, maxHeight:120 }}
+              />
+              <button onClick={()=>sendMessage()} disabled={loading||!input.trim()}
+                className="px-4 m-1.5 rounded-lg text-white flex items-center gap-1.5 text-sm font-medium disabled:opacity-40"
+                style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)", flexShrink:0 }}>
+                <Send size={14}/>
+                <span className="hidden sm:inline">Send</span>
               </button>
             </div>
           </div>
+          <p className="text-center text-xs flex-shrink-0" style={{ color:"var(--text-muted)" }}>
+            Press <kbd className="px-1 py-0.5 rounded text-xs" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>Enter</kbd> to send ·{" "}
+            <kbd className="px-1 py-0.5 rounded text-xs" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>Shift+Enter</kbd> for new line ·{" "}
+            🔄 clears memory
+          </p>
         </div>
       )}
 
       {/* ── INSIGHTS TAB ─────────────────────────────────────────────────── */}
-      {tab==="insights"&&(
-        <div className="flex-1 overflow-y-auto space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {insights.map(ins=>(
-              <div key={ins.label} className="rounded-xl p-4"
-                style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-                <p className="text-xs mb-1" style={{color:"var(--text-muted)"}}>{ins.label}</p>
-                <p className="text-xl font-bold" style={{color:ins.color}}>{ins.value}</p>
-              </div>
-            ))}
+      {activeTab==="insights" && (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="rounded-xl p-4 mb-4 flex items-center gap-3" style={{ background:"rgba(108,99,255,0.08)", border:"1px solid rgba(108,99,255,0.2)" }}>
+            <Sparkles size={18} style={{ color:"var(--accent)", flexShrink:0 }}/>
+            <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
+              Save important AI insights for future reference. Go to the{" "}
+              <button onClick={()=>setActiveTab("chat")} className="font-semibold underline" style={{ color:"var(--accent)" }}>Chat tab</button>{" "}
+              and copy key takeaways below.
+            </p>
           </div>
-          {chartData.length>0&&(
-            <div className="rounded-2xl overflow-hidden" style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-              <div className="px-4 py-3" style={{borderBottom:"1px solid var(--border)"}}>
-                <h3 className="font-semibold text-sm" style={{color:"var(--text-primary)"}}>Quality Score → Avg P&L</h3>
-              </div>
-              {chartData.map(r=>(
-                <div key={r.q} className="flex items-center gap-4 px-4 py-2.5 border-b" style={{borderColor:"var(--border)"}}>
-                  <span className="w-12 text-sm font-bold" style={{color:"var(--accent)"}}>{r.q}/10</span>
-                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{background:"var(--bg-elevated)"}}>
-                    <div className="h-full rounded-full" style={{width:`${Math.min(100,Math.abs(r.avg)/3)}%`,background:r.avg>=0?"var(--accent-success)":"var(--accent-danger)"}}/>
-                  </div>
-                  <span className="text-sm font-semibold w-20 text-right" style={{color:r.avg>=0?"var(--accent-success)":"var(--accent-danger)"}}>
-                    ${r.avg.toFixed(2)}
-                  </span>
-                  <span className="text-xs w-14 text-right" style={{color:"var(--text-muted)"}}>{r.n} trades</span>
-                </div>
+          <div className="rounded-xl p-4 mb-4" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+            <QuickSaveInsight onSave={saveInsight}/>
+          </div>
+          {insights.length===0 ? (
+            <div className="rounded-2xl py-16 text-center" style={{ background:"var(--bg-card)", border:"1px dashed var(--border)" }}>
+              <Lightbulb size={32} className="mx-auto mb-3" style={{ color:"var(--text-muted)" }}/>
+              <p className="font-semibold mb-1" style={{ color:"var(--text-primary)" }}>No saved insights yet</p>
+              <p className="text-sm" style={{ color:"var(--text-muted)" }}>Chat with SYLLEDGE AI and save your key takeaways here.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {insights.map(insight=>(
+                <InsightCard key={insight.id} insight={insight} onDelete={deleteInsight}/>
               ))}
             </div>
           )}
-          {backtests.length>0&&(
-            <div className="rounded-2xl overflow-hidden" style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-              <div className="px-4 py-3" style={{borderBottom:"1px solid var(--border)"}}>
-                <h3 className="font-semibold text-sm" style={{color:"var(--text-primary)"}}>Backtested vs Live</h3>
-              </div>
-              {backtests.slice(0,5).map(b=>(
-                <div key={b.id} className="px-4 py-3 flex justify-between border-b" style={{borderColor:"var(--border)"}}>
-                  <div><p className="text-sm font-medium" style={{color:"var(--text-primary)"}}>{b.name||"Strategy"}</p>
-                    <p className="text-xs" style={{color:"var(--text-muted)"}}>{b.total_trades||0} trades backtested</p></div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold" style={{color:(b.win_rate||0)>50?"var(--accent-success)":"var(--accent-danger)"}}>{b.win_rate||0}% WR</p>
-                    <p className="text-xs" style={{color:(b.total_pnl||0)>=0?"var(--accent-success)":"var(--accent-danger)"}}>${ (b.total_pnl||0).toFixed(2)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {insights.length===0&&<div className="text-center py-12"><Database size={32} className="mx-auto mb-3" style={{color:"var(--text-muted)"}}/><p style={{color:"var(--text-muted)"}}>Sync your MT5 EA to see insights.</p></div>}
-        </div>
-      )}
-
-      {/* ── CHARTS TAB ───────────────────────────────────────────────────── */}
-      {tab==="charts"&&(
-        <div className="flex-1 overflow-y-auto space-y-4">
-          <div className="rounded-2xl p-4" style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-            <h3 className="font-semibold mb-1" style={{color:"var(--text-primary)"}}>Trade Performance by Symbol</h3>
-            <p className="text-xs mb-4" style={{color:"var(--text-muted)"}}>Showing latest {Math.min(15,trades.length)} trades</p>
-            <div className="space-y-2">
-              {trades.slice(0,15).map(t=>{
-                const p=t.total_pnl||0
-                return (
-                  <div key={t.id} className="flex items-center gap-3 py-2 border-b" style={{borderColor:"var(--border)"}}>
-                    <span className="text-xs font-bold w-14" style={{color:"var(--text-muted)"}}>{t.symbol}</span>
-                    <span className="text-xs w-8" style={{color:t.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)"}}>{t.direction}</span>
-                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{background:"var(--bg-elevated)"}}>
-                      <div className="h-full rounded-full" style={{width:`${Math.min(100,Math.abs(p)/5)}%`,background:p>=0?"var(--accent-success)":"var(--accent-danger)"}}/>
-                    </div>
-                    <span className="text-xs font-bold w-20 text-right" style={{color:p>=0?"var(--accent-success)":"var(--accent-danger)"}}>{p>=0?"+":""}{p.toFixed(2)}</span>
-                    <span className="text-xs w-10 text-right" style={{color:"var(--text-muted)"}}>{t.quality||5}/10</span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-          <div className="text-center py-4">
-            <button onClick={()=>{ setTab("chat"); setTimeout(()=>send("Generate a full interactive HTML performance report with: session heatmap, entry time analysis, quality vs P&L chart, win/loss breakdown, SL analysis, and AI recommendations. Make it professional with inline CSS and Chart.js charts."),100) }}
-              disabled={noKey}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
-              style={{background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))",opacity:noKey?0.5:1}}>
-              <Sparkles size={14}/>Generate Full HTML Report
-            </button>
-          </div>
         </div>
       )}
     </div>
