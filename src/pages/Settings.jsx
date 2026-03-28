@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react"
 import { useUser } from "@/lib/UserContext"
+import { supabase } from "@/lib/supabase"
 import { Trade, Playbook, BacktestSession, BrokerConnection, SylledgeInsight } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
   User, Key, Palette, Download, Upload, Trash2, Shield,
   ChevronRight, Database, Save, AlertTriangle, CheckCircle,
   Eye, EyeOff, Info, Moon, Sun, Zap, LogOut, Camera, Edit3,
-  Bell, BellOff, BellRing, Megaphone, TrendingUp, TrendingDown, Trophy, Clock
+  Bell, BellOff, BellRing, Megaphone, TrendingUp, TrendingDown, Trophy, Clock,
+  Copy, RefreshCw, Bot
 } from "lucide-react"
 
 // ─── Theme definitions ────────────────────────────────────────────────────────

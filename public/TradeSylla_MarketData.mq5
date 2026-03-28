@@ -1,320 +1,198 @@
 //+------------------------------------------------------------------+
-//|                                    TradeSylla_MarketData.mq5   |
-//|              SYLLEDGE Market Data Feed — ADMIN ONLY             |
-//|            Fetches ALL broker pairs: D1, H4, M15, M1            |
+//| TradeSylla_MarketData.mq5   v2.0                                 |
+//| Full OHLCV for ALL broker symbols/timeframes                     |
+//| SYLLEDGE command system: EA fetches exactly what AI requests     |
 //+------------------------------------------------------------------+
 #property copyright "TradeSylla"
-#property link      "https://tradesylla.vercel.app"
-#property version   "1.0"
-#property description "SYLLEDGE market data feed. Admin-only EA. Sends OHLCV candles for all broker pairs across D1, H4, M15, M1 to the SYLLEDGE engine."
+#property version   "2.00"
 
-//── Inputs ────────────────────────────────────────────────────────────────────
-input string AdminToken      = "";     // Admin token (required — from TradeSylla admin panel)
-input int    CandlesPerTF    = 500;    // Candles per timeframe per symbol (max 1000)
-input int    SyncIntervalMin = 60;     // How often to resync in minutes (default 1 hour)
-input bool   SyncOnStartup   = true;   // Full sync on EA attach
-input bool   VerboseLogging  = false;  // Log every symbol (noisy — keep false normally)
-input string CustomSymbols   = "";     // Optional: comma-separated override list (empty = all broker symbols)
+input string AdminToken      = "";
+input string ServerURL       = "https://tradesylla.vercel.app";
+input bool   FullHistorySync = true;
+input int    PollInterval    = 10;
+input int    LiveInterval    = 60;
 
-//── Constants ─────────────────────────────────────────────────────────────────
-#define ENDPOINT_MARKET  "https://tradesylla.vercel.app/api/sylledge-market"
-#define EA_VERSION       "1.0"
-#define MAX_SYMBOLS      200   // safety cap
-#define BATCH_SYMBOLS    5     // symbols per HTTP batch (keep payload size manageable)
+ENUM_TIMEFRAMES TFS[]    = { PERIOD_M1, PERIOD_M5, PERIOD_M15, PERIOD_H1, PERIOD_H4, PERIOD_D1 };
+string          TFNAMES[]= { "M1","M5","M15","H1","H4","D1" };
 
-//── Timeframes to fetch ───────────────────────────────────────────────────────
-ENUM_TIMEFRAMES g_timeframes[4] = { PERIOD_D1, PERIOD_H4, PERIOD_M15, PERIOD_M1 };
-string          g_tf_names[4]   = { "D1", "H4", "M15", "M1" };
+datetime g_lastLive = 0;
+datetime g_lastPoll = 0;
 
-//── Globals ───────────────────────────────────────────────────────────────────
-datetime g_last_sync = 0;
-string   g_symbols[];
-int      g_symbol_count = 0;
-
-//+------------------------------------------------------------------+
-//| Init                                                             |
-//+------------------------------------------------------------------+
-int OnInit()
-{
-   if(StringLen(AdminToken) < 10)
-   {
-      Alert("TradeSylla MarketData: AdminToken not set. This EA is for admins only.");
-      return INIT_FAILED;
-   }
-
-   // Load symbol list
-   LoadSymbols();
-
-   EventSetTimer(60); // tick every minute, check if sync needed
-
-   Print("TradeSylla MarketData EA v", EA_VERSION, " initialized.");
-   Print("Symbols to sync: ", g_symbol_count,
-         " | TFs: D1, H4, M15, M1 | Candles per TF: ", CandlesPerTF,
-         " | Sync interval: ", SyncIntervalMin, " min");
-
-   if(SyncOnStartup)
-   {
-      Print("TradeSylla MarketData: Starting initial full sync...");
-      SyncAllSymbols();
-   }
-
+int OnInit() {
+   if(AdminToken=="") { Alert("TradeSylla MarketData: Set AdminToken"); return INIT_FAILED; }
+   Print("TradeSylla MarketData v2.0 started");
+   if(FullHistorySync) SyncAllHistory();
+   EventSetTimer(PollInterval);
    return INIT_SUCCEEDED;
 }
-
-void OnDeinit(const int reason) { EventKillTimer(); }
-
-void OnTimer()
-{
-   // Check if sync interval has elapsed
-   int elapsed_min = (int)(TimeCurrent() - g_last_sync) / 60;
-   if(elapsed_min >= SyncIntervalMin)
-   {
-      Print("TradeSylla MarketData: Scheduled sync starting (", elapsed_min, "min since last)...");
-      SyncAllSymbols();
-   }
+void OnDeinit(const int r) { EventKillTimer(); }
+void OnTimer() {
+   datetime now=TimeCurrent();
+   if(now-g_lastPoll>=PollInterval) { g_lastPoll=now; PollCommands(); }
+   if(now-g_lastLive>=LiveInterval) { g_lastLive=now; PushLive(); }
 }
 
-//+------------------------------------------------------------------+
-//| Load symbol list from broker or custom input                     |
-//+------------------------------------------------------------------+
-void LoadSymbols()
-{
-   ArrayResize(g_symbols, 0);
-   g_symbol_count = 0;
-
-   if(StringLen(CustomSymbols) > 5)
-   {
-      // Parse comma-separated custom list
-      string parts[];
-      int n = StringSplit(CustomSymbols, ',', parts);
-      for(int i = 0; i < n && g_symbol_count < MAX_SYMBOLS; i++)
-      {
-         string sym = parts[i];
-         StringTrimLeft(sym); StringTrimRight(sym);
-         if(StringLen(sym) > 0)
-         {
-            ArrayResize(g_symbols, g_symbol_count + 1);
-            g_symbols[g_symbol_count] = sym;
-            g_symbol_count++;
-         }
-      }
-      Print("TradeSylla MarketData: Custom symbol list — ", g_symbol_count, " symbols");
-      return;
-   }
-
-   // Get ALL symbols available from broker
-   int total = SymbolsTotal(false); // false = all symbols, not just market watch
-   Print("TradeSylla MarketData: Broker has ", total, " total symbols available");
-
-   for(int i = 0; i < total && g_symbol_count < MAX_SYMBOLS; i++)
-   {
-      string sym = SymbolName(i, false);
-      if(StringLen(sym) < 2) continue;
-
-      // Add to market watch so we can fetch data
-      SymbolSelect(sym, true);
-
-      ArrayResize(g_symbols, g_symbol_count + 1);
-      g_symbols[g_symbol_count] = sym;
-      g_symbol_count++;
-
-      if(VerboseLogging) Print("  Added: ", sym);
-   }
-
-   Print("TradeSylla MarketData: Loaded ", g_symbol_count, " symbols");
+string ISO(datetime t) {
+   MqlDateTime d; TimeToStruct(t,d);
+   return StringFormat("%04d-%02d-%02dT%02d:%02d:%02d",d.year,d.mon,d.day,d.hour,d.min,d.sec);
 }
 
-//+------------------------------------------------------------------+
-//| Sync all symbols — batched to avoid timeouts                     |
-//+------------------------------------------------------------------+
-void SyncAllSymbols()
-{
-   if(g_symbol_count == 0) { Print("TradeSylla MarketData: No symbols to sync"); return; }
-
-   int total_batches = (int)MathCeil((double)g_symbol_count / BATCH_SYMBOLS);
-   int sent = 0;
-
-   Print("TradeSylla MarketData: Syncing ", g_symbol_count, " symbols in ",
-         total_batches, " batches...");
-
-   for(int batch = 0; batch < total_batches; batch++)
-   {
-      int start = batch * BATCH_SYMBOLS;
-      int end   = MathMin(start + BATCH_SYMBOLS, g_symbol_count);
-
-      string batch_data = BuildBatchJSON(start, end);
-      if(StringLen(batch_data) < 10) continue;
-
-      string payload = "{\"admin_token\":\"" + AdminToken + "\""
-                     + ",\"type\":\"market_data\""
-                     + ",\"ea_version\":\"" + EA_VERSION + "\""
-                     + ",\"data\":" + batch_data + "}";
-
-      string resp = SendToTradeSylla(payload, ENDPOINT_MARKET);
-      sent += (end - start);
-
-      if(VerboseLogging)
-         Print("TradeSylla MarketData: Batch ", batch + 1, "/", total_batches,
-               " sent (symbols ", start, "-", end, ") → ", StringSubstr(resp, 0, 80));
-
-      // Pause between batches to avoid overwhelming the server
-      Sleep(1000);
-   }
-
-   g_last_sync = TimeCurrent();
-   Print("TradeSylla MarketData: Sync complete — ", sent, " symbols synced at ",
-         TimeToString(g_last_sync, TIME_DATE | TIME_MINUTES));
+string POST(string path, string body) {
+   string hdr="Content-Type: application/json\r\nAuthorization: Bearer "+AdminToken;
+   char post[]; StringToCharArray(body,post,0,StringLen(body));
+   char res[]; string rh;
+   int c=WebRequest("POST",ServerURL+path,hdr,15000,post,res,rh);
+   if(c==-1){Print("MarketData POST error ",GetLastError()," ",path); return "";}
+   return CharArrayToString(res);
+}
+string HTTGET(string path) {
+   string hdr="Authorization: Bearer "+AdminToken;
+   char empty[1]; char res[]; string rh;
+   int c=WebRequest("GET",ServerURL+path,hdr,10000,empty,res,rh);
+   if(c==-1){Print("MarketData GET error ",GetLastError()); return "";}
+   return CharArrayToString(res);
 }
 
-//+------------------------------------------------------------------+
-//| Build JSON for a batch of symbols                                |
-//+------------------------------------------------------------------+
-string BuildBatchJSON(int start, int end)
-{
-   string json = "[";
-   bool first_sym = true;
-
-   for(int si = start; si < end; si++)
-   {
-      string sym = g_symbols[si];
-      if(StringLen(sym) == 0) continue;
-
-      // Ensure symbol is in market watch
-      if(!SymbolInfoInteger(sym, SYMBOL_SELECT))
-         SymbolSelect(sym, true);
-
-      string sym_json = BuildSymbolJSON(sym);
-      if(StringLen(sym_json) < 5) continue;
-
-      if(!first_sym) json += ",";
-      json += sym_json;
-      first_sym = false;
+string CandlesJSON(string sym, string tf, MqlRates &r[], int n) {
+   string s="{\"symbol\":\""+sym+"\",\"timeframe\":\""+tf+"\",\"candles\":[";
+   for(int i=0;i<n;i++){
+      s+=StringFormat("{\"t\":\"%s\",\"o\":%.5f,\"h\":%.5f,\"l\":%.5f,\"c\":%.5f,\"v\":%I64u}",
+         ISO(r[i].time),r[i].open,r[i].high,r[i].low,r[i].close,r[i].tick_volume);
+      if(i<n-1)s+=",";
    }
-
-   json += "]";
-   return json;
+   return s+"]}";
 }
 
-//+------------------------------------------------------------------+
-//| Build JSON for a single symbol across all timeframes             |
-//+------------------------------------------------------------------+
-string BuildSymbolJSON(string sym)
-{
-   string j = "{";
-   j += "\"symbol\":\"" + EscapeJSON(sym) + "\"";
-   j += ",\"timeframes\":{";
-
-   bool first_tf = true;
-   for(int ti = 0; ti < 4; ti++)
-   {
-      ENUM_TIMEFRAMES tf = g_timeframes[ti];
-      string tf_name     = g_tf_names[ti];
-
-      string candles_json = GetCandlesJSON(sym, tf, CandlesPerTF);
-      if(StringLen(candles_json) < 3 || candles_json == "[]") continue;
-
-      if(!first_tf) j += ",";
-      j += "\"" + tf_name + "\":" + candles_json;
-      first_tf = false;
+int GetSymbols(string &syms[]) {
+   int total=SymbolsTotal(false),n=0;
+   for(int i=0;i<total;i++){
+      string name=SymbolName(i,false);
+      if(name==""||StringGetCharacter(name,0)=='#') continue;
+      ArrayResize(syms,n+1); syms[n++]=name;
    }
-
-   j += "}";
-
-   // Add current price
-   MqlTick tick;
-   if(SymbolInfoTick(sym, tick))
-   {
-      j += ",\"bid\":"    + DoubleToString(tick.bid, 5);
-      j += ",\"ask\":"    + DoubleToString(tick.ask, 5);
-      j += ",\"spread\":" + DoubleToString((tick.ask - tick.bid) * 10000, 1);
-   }
-
-   j += ",\"synced_at\":\"" + TimeToISO(TimeCurrent()) + "\"";
-   j += "}";
-   return j;
+   return n;
 }
 
-//+------------------------------------------------------------------+
-//| Fetch OHLCV candles for a symbol/timeframe                       |
-//+------------------------------------------------------------------+
-string GetCandlesJSON(string symbol, ENUM_TIMEFRAMES tf, int count)
-{
+void SyncAllHistory() {
+   string syms[]; int ns=GetSymbols(syms);
+   Print("MarketData: Syncing ",ns," symbols x ",ArraySize(TFS)," TFs...");
+   for(int s=0;s<ns;s++)
+      for(int t=0;t<ArraySize(TFS);t++)
+         SyncSymbol(syms[s],TFS[t],TFNAMES[t]);
+   Print("MarketData: History sync complete");
+}
+
+void SyncSymbol(string sym, ENUM_TIMEFRAMES tf, string tfName) {
    MqlRates rates[];
-   ArraySetAsSeries(rates, true);
-   int copied = CopyRates(symbol, tf, 0, count, rates);
-   if(copied <= 0)
-   {
-      if(VerboseLogging)
-         Print("TradeSylla MarketData: No candles for ", symbol, " ", EnumToString(tf));
-      return "[]";
+   int loaded=CopyRates(sym,tf,D'2015.01.01',TimeCurrent(),rates);
+   if(loaded<=0) return;
+   for(int start=0;start<loaded;start+=500){
+      int n=MathMin(500,loaded-start);
+      MqlRates batch[]; ArrayResize(batch,n); ArrayCopy(batch,rates,0,start,n);
+      POST("/api/sylledge-market",CandlesJSON(sym,tfName,batch,n));
+      Sleep(30);
    }
+}
 
-   // Reverse to chronological order
-   ArraySetAsSeries(rates, false);
+void PushLive() {
+   string syms[]; int ns=GetSymbols(syms);
+   for(int s=0;s<ns;s++)
+      for(int t=0;t<ArraySize(TFS);t++){
+         MqlRates r[2];
+         if(CopyRates(syms[s],TFS[t],0,2,r)<2) continue;
+         MqlRates bar[1]; bar[0]=r[1];
+         POST("/api/sylledge-market",CandlesJSON(syms[s],TFNAMES[t],bar,1));
+      }
+}
 
-   string json = "[";
-   for(int i = 0; i < copied; i++)
-   {
-      if(i > 0) json += ",";
-      json += "{";
-      json += "\"t\":\"" + TimeToISO(rates[i].time) + "\"";
-      json += ",\"o\":"  + DoubleToString(rates[i].open,  5);
-      json += ",\"h\":"  + DoubleToString(rates[i].high,  5);
-      json += ",\"l\":"  + DoubleToString(rates[i].low,   5);
-      json += ",\"c\":"  + DoubleToString(rates[i].close, 5);
-      json += ",\"v\":"  + IntegerToString(rates[i].tick_volume);
-      json += "}";
+//+------------------------------------------------------------------+
+// SYLLEDGE COMMAND SYSTEM
+// Polls /api/sylledge-commands/pending — executes exactly what SYLLEDGE requests
+//+------------------------------------------------------------------+
+void PollCommands() {
+   string resp=HTTGET("/api/sylledge-commands/pending");
+   if(resp==""||resp=="[]"||resp=="null") return;
+   int pos=0;
+   while(pos<StringLen(resp)){
+      int s=StringFind(resp,"{",pos); if(s==-1) break;
+      int e=FindClosingBrace(resp,s); if(e==-1) break;
+      ExecCommand(StringSubstr(resp,s,e-s+1));
+      pos=e+1;
    }
-   json += "]";
-   return json;
 }
 
-//+------------------------------------------------------------------+
-//| HTTP POST                                                        |
-//+------------------------------------------------------------------+
-string SendToTradeSylla(string json_payload, string endpoint)
-{
-   char   post_data[], result_data[];
-   string result_headers;
-   string headers = "Content-Type: application/json\r\nX-EA-Version: " + EA_VERSION + "\r\n";
-
-   StringToCharArray(json_payload, post_data, 0, StringLen(json_payload));
-
-   int res = WebRequest("POST", endpoint, headers, 30000, post_data, result_data, result_headers);
-
-   if(res == -1)
-   {
-      int err = GetLastError();
-      if(err == 4060)
-         Print("TradeSylla MarketData: WebRequest blocked! Add to whitelist: ", endpoint,
-               " in MT5 → Tools → Options → Expert Advisors");
-      else
-         Print("TradeSylla MarketData: WebRequest error: ", err);
-      return "ERROR";
+int FindClosingBrace(string s, int start) {
+   int depth=0;
+   for(int i=start;i<StringLen(s);i++){
+      ushort c=StringGetCharacter(s,i);
+      if(c=='{') depth++;
+      if(c=='}') { depth--; if(depth==0) return i; }
    }
-
-   string response = CharArrayToString(result_data);
-   if(res != 200 && res != 201)
-      Print("TradeSylla MarketData: HTTP ", res, " → ", StringSubstr(response, 0, 100));
-
-   return response;
+   return -1;
 }
 
-//+------------------------------------------------------------------+
-//| Helpers                                                          |
-//+------------------------------------------------------------------+
-string TimeToISO(datetime t)
-{
-   MqlDateTime dt;
-   TimeToStruct(t, dt);
-   return StringFormat("%04d-%02d-%02dT%02d:%02d:%02dZ",
-      dt.year, dt.mon, dt.day, dt.hour, dt.min, dt.sec);
+void ExecCommand(string cmd) {
+   string id  =ExtractJSON(cmd,"id");
+   string type=ExtractJSON(cmd,"type");
+   string sym =ExtractJSON(cmd,"symbol");
+   string tf  =ExtractJSON(cmd,"timeframe");
+   string from=ExtractJSON(cmd,"from");
+   string to  =ExtractJSON(cmd,"to");
+   int    lim =(int)StringToInteger(ExtractJSON(cmd,"limit")=="?"?"500":ExtractJSON(cmd,"limit"));
+   if(lim<=0) lim=500;
+   if(id==""||type=="") return;
+   if(type=="fetch_candles")    CmdFetchCandles(id,sym,tf,from,to,lim);
+   else if(type=="fetch_symbols")CmdFetchSymbols(id);
+   else if(type=="overview")    CmdOverview(id,sym,tf==""?"H1":tf);
 }
 
-string EscapeJSON(string s)
-{
-   StringReplace(s, "\\", "\\\\");
-   StringReplace(s, "\"", "\\\"");
-   return s;
+void CmdFetchCandles(string id,string sym,string tfName,string fromS,string toS,int lim) {
+   ENUM_TIMEFRAMES tf=NameTF(tfName);
+   datetime from=fromS!=""?(datetime)StringToTime(fromS):TimeCurrent()-86400*30;
+   datetime to  =toS!=""?(datetime)StringToTime(toS)  :TimeCurrent();
+   MqlRates r[]; int n=CopyRates(sym,tf,from,to,r);
+   if(n<=0){POST("/api/sylledge-commands/ack","{\"command_id\":\""+id+"\",\"status\":\"no_data\"}"); return;}
+   if(n>lim) n=lim;
+   string body="{\"command_id\":\""+id+"\",\"type\":\"candles\",\"symbol\":\""+sym+"\",\"timeframe\":\""+tfName+"\",\"candles\":[";
+   for(int i=0;i<n;i++){
+      body+=StringFormat("{\"t\":\"%s\",\"o\":%.5f,\"h\":%.5f,\"l\":%.5f,\"c\":%.5f,\"v\":%I64u}",
+         ISO(r[i].time),r[i].open,r[i].high,r[i].low,r[i].close,r[i].tick_volume);
+      if(i<n-1)body+=",";
+   }
+   body+="]}";
+   POST("/api/sylledge-commands/response",body);
+   Print("MarketData: Sent ",n," candles to SYLLEDGE cmd ",id);
 }
-//+------------------------------------------------------------------+
+
+void CmdFetchSymbols(string id) {
+   string syms[]; int n=GetSymbols(syms);
+   string body="{\"command_id\":\""+id+"\",\"type\":\"symbols\",\"symbols\":[";
+   for(int i=0;i<n;i++){body+="\""+syms[i]+"\""; if(i<n-1)body+=",";}
+   POST("/api/sylledge-commands/response",body++"]}");
+}
+
+void CmdOverview(string id,string sym,string tfName) {
+   ENUM_TIMEFRAMES tf=NameTF(tfName); MqlRates r[20]; int n=CopyRates(sym,tf,0,20,r);
+   if(n<=0){POST("/api/sylledge-commands/ack","{\"command_id\":\""+id+"\",\"status\":\"no_data\"}"); return;}
+   double hi=0,lo=1e9;
+   for(int i=0;i<n;i++){if(r[i].high>hi)hi=r[i].high; if(r[i].low<lo)lo=r[i].low;}
+   POST("/api/sylledge-commands/response",
+      StringFormat("{\"command_id\":\"%s\",\"type\":\"overview\",\"symbol\":\"%s\","
+                   "\"close\":%.5f,\"high20\":%.5f,\"low20\":%.5f}",
+                   id,sym,r[n-1].close,hi,lo));
+}
+
+ENUM_TIMEFRAMES NameTF(string n){
+   if(n=="M1")return PERIOD_M1; if(n=="M5")return PERIOD_M5;
+   if(n=="M15")return PERIOD_M15; if(n=="H1")return PERIOD_H1;
+   if(n=="H4")return PERIOD_H4;  if(n=="D1")return PERIOD_D1;
+   return PERIOD_H1;
+}
+
+string ExtractJSON(string json,string key){
+   string search="\""+key+"\":\"";
+   int pos=StringFind(json,search); if(pos==-1)return "";
+   int start=pos+StringLen(search);
+   int end=StringFind(json,"\"",start); if(end==-1)return "";
+   return StringSubstr(json,start,end-start);
+}
