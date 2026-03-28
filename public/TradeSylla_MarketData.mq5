@@ -164,11 +164,12 @@ void CmdFetchCandles(string id,string sym,string tfName,string fromS,string toS,
    Print("MarketData: Sent ",n," candles to SYLLEDGE cmd ",id);
 }
 
+// FIX: was body++"]}") — ++ is illegal on strings in MQL5
 void CmdFetchSymbols(string id) {
    string syms[]; int n=GetSymbols(syms);
    string body="{\"command_id\":\""+id+"\",\"type\":\"symbols\",\"symbols\":[";
    for(int i=0;i<n;i++){body+="\""+syms[i]+"\""; if(i<n-1)body+=",";}
-   POST("/api/sylledge-commands/response",body++"]}");
+   POST("/api/sylledge-commands/response",body+"]}");
 }
 
 void CmdOverview(string id,string sym,string tfName) {

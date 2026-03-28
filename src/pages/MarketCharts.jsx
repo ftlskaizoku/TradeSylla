@@ -96,11 +96,16 @@ function drawChart(canvas, candles, theme) {
   }
 }
 
+// Admin email — must match UserContext and Layout
+const ADMIN_EMAIL = "khalifadylla@gmail.com"
+
 export default function MarketCharts() {
   const { user } = useUser()
 
-  const [isAdmin,   setIsAdmin]   = useState(false)
-  const [checking,  setChecking]  = useState(true)
+  // FIX: use email comparison instead of missing is_admin DB column
+  const isAdmin   = user?.email === ADMIN_EMAIL
+  const checking  = !user  // still loading if no user yet
+
   const [symbols,   setSymbols]   = useState([])
   const [selSym,    setSelSym]    = useState("")
   const [selTF,     setSelTF]     = useState("H1")
@@ -123,16 +128,8 @@ export default function MarketCharts() {
   }
 
   useEffect(() => {
-    checkAdmin()
-  }, [user?.id])
-
-  async function checkAdmin() {
-    if(!user?.id) { setChecking(false); return }
-    const { data } = await supabase.from("profiles").select("is_admin").eq("id", user.id).single()
-    setIsAdmin(!!data?.is_admin)
-    setChecking(false)
-    if(data?.is_admin) loadSymbols()
-  }
+    if (isAdmin) loadSymbols()
+  }, [isAdmin])
 
   async function loadSymbols() {
     const { data } = await supabase
@@ -207,13 +204,14 @@ export default function MarketCharts() {
 
   const filteredSyms = symbols.filter(s => s.toLowerCase().includes(search.toLowerCase()))
 
-  // ── Not admin ──────────────────────────────────────────────────────────────
-  if(checking) return (
+  // ── Still loading user ────────────────────────────────────────────────────
+  if(checking && !user) return (
     <div className="flex items-center justify-center h-64">
       <RefreshCw size={20} className="animate-spin" style={{color:"var(--text-muted)"}}/>
     </div>
   )
 
+  // ── Not admin ──────────────────────────────────────────────────────────────
   if(!isAdmin) return (
     <div className="flex flex-col items-center justify-center h-64 text-center">
       <Database size={40} className="mb-4" style={{color:"var(--text-muted)"}}/>
@@ -276,7 +274,11 @@ export default function MarketCharts() {
                     {s}
                   </button>
                 ))}
-                {!filteredSyms.length && <p className="px-4 py-3 text-xs" style={{color:"var(--text-muted)"}}>No symbols loaded yet. Run the Market Data EA first.</p>}
+                {!filteredSyms.length && (
+                  <p className="px-4 py-3 text-xs" style={{color:"var(--text-muted)"}}>
+                    No symbols loaded yet. Run the Market Data EA first.
+                  </p>
+                )}
               </div>
             </div>
           )}
