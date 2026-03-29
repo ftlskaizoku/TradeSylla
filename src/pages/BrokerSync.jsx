@@ -631,8 +631,8 @@ function EASetupPanel() {
   useEffect(() => {
     // Load existing token
     if (user) {
-      supabase.from("profiles").select("ea_token").eq("id", user.id).single()
-        .then(({ data }) => { if (data?.ea_token) setToken(data.ea_token) })
+      supabase.from("profiles").select("user_token").eq("id", user.id).single()
+        .then(({ data }) => { if (data?.user_token) setToken(data.user_token) })
     }
   }, [user])
 
@@ -645,7 +645,7 @@ function EASetupPanel() {
       const newToken = Array.from(array).map(b => b.toString(16).padStart(2,"0")).join("")
       const { error } = await supabase
         .from("profiles")
-        .update({ ea_token: newToken })
+        .update({ user_token: newToken })
         .eq("id", user.id)
       if (error) throw error
       setToken(newToken)
@@ -702,7 +702,7 @@ function EASetupPanel() {
       )
     },
     {
-      n: 3, title: "Generate your User Token",
+      n: 3, title: "Generate your Sync EA Token (same as Settings → API Keys)",
       content: (
         <div className="space-y-3">
           <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
