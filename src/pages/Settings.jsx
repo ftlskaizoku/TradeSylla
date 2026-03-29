@@ -841,7 +841,9 @@ function DataPage({ stats, onStatsRefresh }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// API KEYS PAGE
+// API KEYS PAGE — DUAL TOKEN VERSION
+// user_token  → TradeSylla_Sync EA  (trade journal sync)
+// admin_token → TradeSylla_MarketData EA (SYLLEDGE market data)
 // ═══════════════════════════════════════════════════════════════════
 export function APIKeysPage() {
   const { user } = useUser()
@@ -851,359 +853,271 @@ export function APIKeysPage() {
   const [showKey,  setShowKey]  = useState(false)
   const [keySaved, setKeySaved] = useState(false)
 
-  // ── EA Token ──────────────────────────────────────────────────────────────
-  const [eaToken,      setEaToken]      = useState("")
-  const [loadingToken, setLoadingToken] = useState(true)
-  const [generating,   setGenerating]   = useState(false)
+  // ── Tokens ────────────────────────────────────────────────────────────────
+  const [userToken,    setUserToken]    = useState("")
+  const [adminToken,   setAdminToken]   = useState("")
+  const [loadingTokens,setLoadingTokens]= useState(true)
+  const [genning,      setGenning]      = useState("") // "user" | "admin" | ""
   const [copied,       setCopied]       = useState("")
-  const [showToken,    setShowToken]    = useState(false)
+  const [showUT,       setShowUT]       = useState(false)
+  const [showAT,       setShowAT]       = useState(false)
 
-  // ── Load existing data ────────────────────────────────────────────────────
   useEffect(() => {
-    // Load Anthropic key from localStorage
     const k = localStorage.getItem("ts_anthropic_key") || ""
-    setApiKey(k)
-    if (k) setKeySaved(true)
+    setApiKey(k); if(k) setKeySaved(true)
 
-    // Load EA token from Supabase profiles
-    if (user?.id) {
+    if(user?.id) {
       supabase.from("profiles")
-        .select("ea_token")
-        .eq("id", user.id)
-        .single()
+        .select("user_token, admin_token")
+        .eq("id", user.id).single()
         .then(({ data }) => {
-          if (data?.ea_token) setEaToken(data.ea_token)
-          setLoadingToken(false)
+          if(data?.user_token)  setUserToken(data.user_token)
+          if(data?.admin_token) setAdminToken(data.admin_token)
+          setLoadingTokens(false)
         })
-        .catch(() => setLoadingToken(false))
-    } else {
-      setLoadingToken(false)
-    }
+        .catch(() => setLoadingTokens(false))
+    } else { setLoadingTokens(false) }
   }, [user?.id])
 
-  // ── Save Anthropic key ────────────────────────────────────────────────────
   const saveAnthropicKey = () => {
-    const trimmed = apiKey.trim()
-    if (trimmed && !trimmed.startsWith("sk-ant-")) {
-      toast.error("Invalid key — must start with sk-ant-")
-      return
-    }
-    if (trimmed) {
-      localStorage.setItem("ts_anthropic_key", trimmed)
-      setKeySaved(true)
-      toast.success("API key saved! SYLLEDGE AI is ready.")
-    } else {
-      localStorage.removeItem("ts_anthropic_key")
-      setKeySaved(false)
-      toast.success("API key removed")
-    }
+    const t = apiKey.trim()
+    if(t && !t.startsWith("sk-ant-")) { toast.error("Invalid key — must start with sk-ant-"); return }
+    if(t) { localStorage.setItem("ts_anthropic_key",t); setKeySaved(true); toast.success("API key saved! SYLLEDGE AI is ready.") }
+    else  { localStorage.removeItem("ts_anthropic_key"); setKeySaved(false); toast.success("API key removed") }
   }
 
-  // ── Generate EA Token ─────────────────────────────────────────────────────
-  const generateToken = async () => {
-    if (!user?.id) { toast.error("You must be logged in"); return }
-    setGenerating(true)
+  const mkToken = () => {
+    const a = new Uint8Array(28); crypto.getRandomValues(a)
+    return Array.from(a).map(b=>b.toString(16).padStart(2,"0")).join("")
+  }
+
+  const generateUserToken = async () => {
+    if(!user?.id) return
+    setGenning("user")
     try {
-      // Generate a cryptographically random token
-      const array    = new Uint8Array(28)
-      crypto.getRandomValues(array)
-      const newToken = Array.from(array).map(b => b.toString(16).padStart(2, "0")).join("")
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({ ea_token: newToken })
-        .eq("id", user.id)
-
-      if (error) throw error
-
-      setEaToken(newToken)
-      setShowToken(true)
-      toast.success("New EA token generated!")
-    } catch (e) {
-      toast.error("Failed to generate token: " + e.message)
-    }
-    setGenerating(false)
+      const t = mkToken()
+      const { error } = await supabase.from("profiles").update({ user_token: t }).eq("id", user.id)
+      if(error) throw error
+      setUserToken(t); setShowUT(true); toast.success("Sync EA token generated!")
+    } catch(e) { toast.error(e.message) }
+    setGenning("")
   }
 
-  // ── Copy to clipboard ─────────────────────────────────────────────────────
+  const generateAdminToken = async () => {
+    if(!user?.id) return
+    setGenning("admin")
+    try {
+      const t = mkToken()
+      const { error } = await supabase.from("profiles").update({ admin_token: t }).eq("id", user.id)
+      if(error) throw error
+      setAdminToken(t); setShowAT(true); toast.success("Market Data EA token generated!")
+    } catch(e) { toast.error(e.message) }
+    setGenning("")
+  }
+
   const copy = (text, key) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(key)
-      setTimeout(() => setCopied(""), 2500)
-    })
+    navigator.clipboard.writeText(text).then(() => { setCopied(key); setTimeout(()=>setCopied(""),2500) })
   }
+
+  // ── Token card component ──────────────────────────────────────────────────
+  const TokenCard = ({ title, subtitle, token, show, setShow, onGenerate, onRegen, genKey, field, eaFile, accentColor, infoText }) => (
+    <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+      <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+            style={{ background: accentColor }}>
+            <Bot size={17} className="text-white"/>
+          </div>
+          <div>
+            <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>{title}</h3>
+            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{subtitle}</p>
+          </div>
+        </div>
+      </div>
+      <div className="p-5 space-y-3">
+        <div className="flex items-start gap-2 rounded-xl p-3"
+          style={{ background:"rgba(108,99,255,0.06)", border:"1px solid rgba(108,99,255,0.15)" }}>
+          <Shield size={13} style={{ color:"var(--accent)", flexShrink:0, marginTop:2 }}/>
+          <p className="text-xs" style={{ color:"var(--text-secondary)" }}>{infoText}</p>
+        </div>
+
+        {loadingTokens ? (
+          <div className="flex items-center gap-2 py-2" style={{ color:"var(--text-muted)" }}>
+            <RefreshCw size={13} className="animate-spin"/>
+            <span className="text-sm">Loading…</span>
+          </div>
+        ) : token ? (
+          <div className="space-y-3">
+            {/* Token display */}
+            <div className="rounded-xl overflow-hidden" style={{ border:"1px solid rgba(46,213,115,0.3)", background:"var(--bg-elevated)" }}>
+              <div className="flex items-center justify-between px-3 py-2"
+                style={{ borderBottom:"1px solid var(--border)", background:"rgba(46,213,115,0.06)" }}>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-green-400"/>
+                  <span className="text-xs font-semibold" style={{ color:"var(--accent-success)" }}>Token active</span>
+                </div>
+                <button onClick={()=>setShow(s=>!s)} className="text-xs hover:opacity-70 flex items-center gap-1" style={{ color:"var(--text-muted)" }}>
+                  {show ? <EyeOff size={12}/> : <Eye size={12}/>}{show?"Hide":"Reveal"}
+                </button>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-3">
+                <code className="flex-1 text-xs font-mono truncate" style={{ color:show?"var(--accent-success)":"var(--text-muted)" }}>
+                  {show ? token : token.slice(0,8)+"••••••••••••••••••••••••••••••••••••••••••••••••"}
+                </code>
+                <button onClick={()=>copy(token,genKey+"_token")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0"
+                  style={{
+                    background: copied===genKey+"_token"?"rgba(46,213,115,0.15)":"var(--bg-card)",
+                    color:      copied===genKey+"_token"?"var(--accent-success)":"var(--text-primary)",
+                    border:     `1px solid ${copied===genKey+"_token"?"var(--accent-success)":"var(--border)"}`,
+                  }}>
+                  {copied===genKey+"_token"?<><CheckCircle size={12}/> Copied!</>:<><Copy size={12}/> Copy</>}
+                </button>
+              </div>
+            </div>
+            {/* Where to paste */}
+            <div className="rounded-xl p-3" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+              <p className="text-xs font-semibold mb-2" style={{ color:"var(--text-muted)" }}>PASTE INTO</p>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-medium" style={{ color:"var(--text-primary)" }}>{eaFile}</p>
+                  <p className="text-xs" style={{ color:"var(--text-muted)" }}>Field: <code style={{ color:"var(--accent)" }}>{field}</code></p>
+                </div>
+                <button onClick={()=>copy(token,genKey+"_ea")}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium flex-shrink-0"
+                  style={{
+                    background: copied===genKey+"_ea"?"rgba(46,213,115,0.15)":"var(--bg-card)",
+                    color:      copied===genKey+"_ea"?"var(--accent-success)":"var(--text-secondary)",
+                    border:     `1px solid ${copied===genKey+"_ea"?"var(--accent-success)":"var(--border)"}`,
+                  }}>
+                  {copied===genKey+"_ea"?<CheckCircle size={11}/>:<Copy size={11}/>}
+                  {copied===genKey+"_ea"?"Copied":"Copy"}
+                </button>
+              </div>
+            </div>
+            {/* Regenerate */}
+            <button onClick={onRegen} disabled={genning===genKey}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border"
+              style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)", opacity:genning===genKey?0.6:1 }}>
+              <RefreshCw size={12} className={genning===genKey?"animate-spin":""}/>
+              {genning===genKey?"Generating…":"Regenerate"}
+            </button>
+          </div>
+        ) : (
+          <div className="rounded-xl p-4 text-center" style={{ background:"var(--bg-elevated)", border:"1px dashed var(--border)" }}>
+            <Key size={22} className="mx-auto mb-2" style={{ color:"var(--text-muted)" }}/>
+            <p className="text-sm font-medium mb-1" style={{ color:"var(--text-primary)" }}>No token yet</p>
+            <p className="text-xs mb-3" style={{ color:"var(--text-muted)" }}>Generate to connect this EA</p>
+            <button onClick={onGenerate} disabled={genning===genKey}
+              className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white"
+              style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", opacity:genning===genKey?0.7:1 }}>
+              <Key size={14}/>{genning===genKey?"Generating…":"Generate Token"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 
   return (
     <div className="space-y-6 max-w-xl">
 
-      {/* ── ANTHROPIC API KEY ───────────────────────────────────────────────── */}
-      <div className="rounded-2xl overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
+      {/* ── ANTHROPIC API KEY ────────────────────────────────────────────────── */}
+      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+        <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
+              style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
               <span className="text-white font-bold text-sm">AI</span>
             </div>
             <div>
-              <h3 className="font-semibold" style={{ color: "var(--text-primary)" }}>
-                Anthropic API — SYLLEDGE AI
-              </h3>
-              <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                Powers your personal trading coach
-              </p>
+              <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>Anthropic API — SYLLEDGE AI</h3>
+              <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Powers your personal trading coach</p>
             </div>
           </div>
         </div>
-
         <div className="p-5 space-y-4">
-          <div className="flex items-start gap-2 rounded-xl p-3"
-            style={{ background: "rgba(0,212,170,0.08)", border: "1px solid rgba(0,212,170,0.2)" }}>
-            <Info size={14} style={{ color: "var(--accent-secondary)", flexShrink: 0, marginTop: 2 }} />
-            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              Get a free API key at{" "}
+          <div className="flex items-start gap-2 rounded-xl p-3" style={{ background:"rgba(0,212,170,0.08)", border:"1px solid rgba(0,212,170,0.2)" }}>
+            <Info size={14} style={{ color:"var(--accent-secondary)", flexShrink:0, marginTop:2 }}/>
+            <p className="text-xs" style={{ color:"var(--text-secondary)" }}>
+              Get your key at{" "}
               <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer"
-                className="underline font-semibold" style={{ color: "var(--accent)" }}>
-                console.anthropic.com
-              </a>
-              . Your key is stored <strong style={{ color: "var(--text-primary)" }}>only in your browser</strong>,
-              never transmitted to any server.
+                className="underline font-semibold" style={{ color:"var(--accent)" }}>console.anthropic.com</a>
+              . Stored <strong style={{ color:"var(--text-primary)" }}>only in your browser</strong>.
             </p>
           </div>
-
           <div className="flex gap-2">
             <div className="flex-1 relative">
-              <input
-                type={showKey ? "text" : "password"}
-                value={apiKey}
-                onChange={e => { setApiKey(e.target.value); setKeySaved(false) }}
+              <input type={showKey?"text":"password"} value={apiKey}
+                onChange={e=>{ setApiKey(e.target.value); setKeySaved(false) }}
                 placeholder="sk-ant-api03-..."
                 className="w-full h-10 rounded-xl px-3 pr-10 text-sm border font-mono"
-                style={{
-                  background:   "var(--bg-elevated)",
-                  borderColor:  keySaved ? "var(--accent-success)" : "var(--border)",
-                  color:        "var(--text-primary)",
-                }}
-              />
-              <button onClick={() => setShowKey(s => !s)}
-                className="absolute right-3 top-2.5 hover:opacity-70"
-                style={{ color: "var(--text-muted)" }}>
-                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                style={{ background:"var(--bg-elevated)", borderColor:keySaved?"var(--accent-success)":"var(--border)", color:"var(--text-primary)" }}/>
+              <button onClick={()=>setShowKey(s=>!s)} className="absolute right-3 top-2.5 hover:opacity-70" style={{ color:"var(--text-muted)" }}>
+                {showKey?<EyeOff size={16}/>:<Eye size={16}/>}
               </button>
             </div>
             <button onClick={saveAnthropicKey}
               className="px-4 h-10 rounded-xl text-sm font-semibold flex items-center gap-1.5"
-              style={{
-                background:  keySaved ? "rgba(46,213,115,0.15)" : "linear-gradient(135deg,#6c63ff,#5a52d5)",
-                color:       keySaved ? "var(--accent-success)" : "#fff",
-                border:      keySaved ? "1px solid var(--accent-success)" : "none",
-              }}>
-              {keySaved
-                ? <><CheckCircle size={13} /> Saved</>
-                : <><Save size={13} /> Save</>}
+              style={{ background:keySaved?"rgba(46,213,115,0.15)":"linear-gradient(135deg,#6c63ff,#5a52d5)", color:keySaved?"var(--accent-success)":"#fff", border:keySaved?"1px solid var(--accent-success)":"none" }}>
+              {keySaved?<><CheckCircle size={13}/> Saved</>:<><Save size={13}/> Save</>}
             </button>
           </div>
-
-          {keySaved && (
-            <div className="flex items-center gap-2 p-3 rounded-xl"
-              style={{ background: "rgba(46,213,115,0.08)", border: "1px solid rgba(46,213,115,0.2)" }}>
-              <CheckCircle size={14} style={{ color: "var(--accent-success)" }} />
-              <p className="text-sm font-medium" style={{ color: "var(--accent-success)" }}>
-                SYLLEDGE AI is active and ready
-              </p>
+          {keySaved&&(
+            <div className="flex items-center gap-2 p-3 rounded-xl" style={{ background:"rgba(46,213,115,0.08)", border:"1px solid rgba(46,213,115,0.2)" }}>
+              <CheckCircle size={14} style={{ color:"var(--accent-success)" }}/>
+              <p className="text-sm font-medium" style={{ color:"var(--accent-success)" }}>SYLLEDGE AI is active and ready</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* ── EA TOKEN ────────────────────────────────────────────────────────── */}
-      <div className="rounded-2xl overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg,#1a73e8,#1557b0)" }}>
-              <Bot size={17} className="text-white" />
-            </div>
-            <div>
-              <h3 className="font-semibold" style={{ color: "var(--text-primary)" }}>
-                MT5 EA Token
-              </h3>
-              <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                Used by both the Sync EA and the SYLLEDGE Market Data EA
-              </p>
-            </div>
-          </div>
-        </div>
+      {/* ── TOKEN 1: SYNC EA (user_token) ────────────────────────────────────── */}
+      <TokenCard
+        title="TradeSylla_Sync EA Token"
+        subtitle="Trade journal sync — imports your closed positions"
+        token={userToken} show={showUT} setShow={setShowUT}
+        onGenerate={generateUserToken} onRegen={generateUserToken}
+        genKey="user" field="UserToken" eaFile="TradeSylla_Sync.ex5"
+        accentColor="linear-gradient(135deg,#1a73e8,#0d47a1)"
+        infoText="Paste this token into the UserToken input of TradeSylla_Sync.ex5. It lets the EA write your closed trades to TradeSylla."
+      />
 
-        <div className="p-5 space-y-4">
-          {/* Info box */}
-          <div className="flex items-start gap-2 rounded-xl p-3"
-            style={{ background: "rgba(108,99,255,0.08)", border: "1px solid rgba(108,99,255,0.2)" }}>
-            <Shield size={14} style={{ color: "var(--accent)", flexShrink: 0, marginTop: 2 }} />
-            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              This token authenticates your MT5 EAs with TradeSylla. Paste it into the{" "}
-              <strong style={{ color: "var(--text-primary)" }}>UserToken</strong> field of{" "}
-              <strong style={{ color: "var(--text-primary)" }}>TradeSylla_Sync.ex5</strong> and the{" "}
-              <strong style={{ color: "var(--text-primary)" }}>AdminToken</strong> field of{" "}
-              <strong style={{ color: "var(--text-primary)" }}>TradeSylla_MarketData.ex5</strong>.{" "}
-              Keep it private — anyone with this token can write to your journal.
-            </p>
-          </div>
+      {/* ── TOKEN 2: MARKET DATA EA (admin_token) ────────────────────────────── */}
+      <TokenCard
+        title="SYLLEDGE Market Data EA Token"
+        subtitle="OHLCV feed — powers SYLLEDGE AI market analysis"
+        token={adminToken} show={showAT} setShow={setShowAT}
+        onGenerate={generateAdminToken} onRegen={generateAdminToken}
+        genKey="admin" field="AdminToken" eaFile="TradeSylla_MarketData.ex5"
+        accentColor="linear-gradient(135deg,#00897b,#004d40)"
+        infoText="Paste this token into the AdminToken input of TradeSylla_MarketData.ex5. It gives the EA permission to upload market data for SYLLEDGE AI analysis."
+      />
 
-          {loadingToken ? (
-            <div className="flex items-center gap-2 py-2" style={{ color: "var(--text-muted)" }}>
-              <RefreshCw size={13} className="animate-spin" />
-              <span className="text-sm">Loading token…</span>
-            </div>
-          ) : eaToken ? (
-            <div className="space-y-3">
-              {/* Token display */}
-              <div className="rounded-xl overflow-hidden"
-                style={{ border: "1px solid rgba(46,213,115,0.3)", background: "var(--bg-elevated)" }}>
-                <div className="flex items-center justify-between px-3 py-2"
-                  style={{ borderBottom: "1px solid var(--border)", background: "rgba(46,213,115,0.06)" }}>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 rounded-full bg-green-400" />
-                    <span className="text-xs font-semibold" style={{ color: "var(--accent-success)" }}>
-                      Token active
-                    </span>
-                  </div>
-                  <button onClick={() => setShowToken(s => !s)}
-                    className="text-xs hover:opacity-70 flex items-center gap-1"
-                    style={{ color: "var(--text-muted)" }}>
-                    {showToken ? <EyeOff size={12} /> : <Eye size={12} />}
-                    {showToken ? "Hide" : "Reveal"}
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 px-3 py-3">
-                  <code className="flex-1 text-xs font-mono truncate"
-                    style={{ color: showToken ? "var(--accent-success)" : "var(--text-muted)" }}>
-                    {showToken ? eaToken : eaToken.slice(0, 8) + "••••••••••••••••••••••••••••••••••••••••••••••••"}
-                  </code>
-                  <button
-                    onClick={() => copy(eaToken, "token")}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0 transition-all"
-                    style={{
-                      background:  copied === "token" ? "rgba(46,213,115,0.15)" : "var(--bg-card)",
-                      color:       copied === "token" ? "var(--accent-success)" : "var(--text-primary)",
-                      border:      `1px solid ${copied === "token" ? "var(--accent-success)" : "var(--border)"}`,
-                    }}>
-                    {copied === "token"
-                      ? <><CheckCircle size={12} /> Copied!</>
-                      : <><Copy size={12} /> Copy</>}
-                  </button>
-                </div>
-              </div>
-
-              {/* Usage instructions */}
-              <div className="rounded-xl p-3 space-y-2"
-                style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
-                <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
-                  WHERE TO PASTE THIS TOKEN
-                </p>
-                {[
-                  { ea: "TradeSylla_Sync.ex5",       field: "UserToken",  desc: "Trade journal sync" },
-                  { ea: "TradeSylla_MarketData.ex5",  field: "AdminToken", desc: "SYLLEDGE market data feed" },
-                ].map(item => (
-                  <div key={item.ea} className="flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate" style={{ color: "var(--text-primary)" }}>
-                        {item.ea}
-                      </p>
-                      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                        Field: <code style={{ color: "var(--accent)" }}>{item.field}</code> — {item.desc}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => copy(eaToken, item.ea)}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium flex-shrink-0"
-                      style={{
-                        background: copied === item.ea ? "rgba(46,213,115,0.15)" : "var(--bg-card)",
-                        color:      copied === item.ea ? "var(--accent-success)" : "var(--text-secondary)",
-                        border:     `1px solid ${copied === item.ea ? "var(--accent-success)" : "var(--border)"}`,
-                      }}>
-                      {copied === item.ea ? <CheckCircle size={11} /> : <Copy size={11} />}
-                      {copied === item.ea ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Regenerate */}
-              <div className="flex items-center gap-2">
-                <button onClick={generateToken} disabled={generating}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border"
-                  style={{
-                    background:   "var(--bg-elevated)",
-                    borderColor:  "var(--border)",
-                    color:        "var(--text-secondary)",
-                    opacity:      generating ? 0.6 : 1,
-                  }}>
-                  <RefreshCw size={12} className={generating ? "animate-spin" : ""} />
-                  {generating ? "Generating…" : "Regenerate token"}
-                </button>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  Regenerating will disconnect all EAs until you paste the new token.
-                </p>
-              </div>
-
-              {/* Warning if regenerate */}
-              <div className="flex items-start gap-2 rounded-xl p-3"
-                style={{ background: "rgba(255,165,2,0.06)", border: "1px solid rgba(255,165,2,0.2)" }}>
-                <AlertTriangle size={13} style={{ color: "var(--accent-warning)", flexShrink: 0, marginTop: 1 }} />
-                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                  After pasting the token in MT5, whitelist{" "}
-                  <code style={{ color: "var(--accent)" }}>https://tradesylla.vercel.app</code>{" "}
-                  in MT5 → Tools → Options → Expert Advisors → Allow WebRequest.
-                </p>
-              </div>
-            </div>
-          ) : (
-            /* No token yet */
-            <div className="space-y-3">
-              <div className="rounded-xl p-4 text-center"
-                style={{ background: "var(--bg-elevated)", border: "1px dashed var(--border)" }}>
-                <Key size={24} className="mx-auto mb-2" style={{ color: "var(--text-muted)" }} />
-                <p className="text-sm font-medium mb-1" style={{ color: "var(--text-primary)" }}>
-                  No EA token yet
-                </p>
-                <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
-                  Generate a token to connect your MT5 Expert Advisors
-                </p>
-                <button onClick={generateToken} disabled={generating}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
-                  style={{
-                    background: "linear-gradient(135deg,var(--accent),var(--accent-secondary))",
-                    opacity:    generating ? 0.7 : 1,
-                  }}>
-                  <Key size={14} />
-                  {generating ? "Generating…" : "Generate My Token"}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+      {/* ── MT5 WebRequest reminder ───────────────────────────────────────────── */}
+      <div className="flex items-start gap-2 rounded-xl p-3" style={{ background:"rgba(255,165,2,0.06)", border:"1px solid rgba(255,165,2,0.2)" }}>
+        <AlertTriangle size={13} style={{ color:"var(--accent-warning)", flexShrink:0, marginTop:1 }}/>
+        <p className="text-xs" style={{ color:"var(--text-secondary)" }}>
+          In MT5 → Tools → Options → Expert Advisors → Allow WebRequest, whitelist:{" "}
+          <code style={{ color:"var(--accent)" }}>https://tradesylla-9i88il99d-ftlskaizokus-projects.vercel.app</code>
+          {" "}and{" "}
+          <code style={{ color:"var(--accent)" }}>https://tradesylla.vercel.app</code>
+        </p>
       </div>
 
       {/* ── ABOUT ────────────────────────────────────────────────────────────── */}
-      <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <h3 className="font-semibold mb-3" style={{ color: "var(--text-primary)" }}>About TradeSylla</h3>
+      <div className="rounded-2xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+        <h3 className="font-semibold mb-3" style={{ color:"var(--text-primary)" }}>About TradeSylla</h3>
         <div className="flex items-center gap-4 mb-3">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center"
-            style={{ background: "linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
             <span className="text-white font-bold text-lg">T</span>
           </div>
           <div>
-            <p className="font-bold" style={{ color: "var(--text-primary)" }}>TradeSylla v1.0.0</p>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              Cloud-synced · Multi-device · Supabase backend
-            </p>
+            <p className="font-bold" style={{ color:"var(--text-primary)" }}>TradeSylla v1.0.0</p>
+            <p className="text-xs" style={{ color:"var(--text-muted)" }}>Cloud-synced · Multi-device · Supabase backend</p>
           </div>
         </div>
-        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          Built with React + Vite + Recharts + Tailwind CSS + Radix UI + Supabase
-        </p>
+        <p className="text-xs" style={{ color:"var(--text-muted)" }}>Built with React + Vite + Recharts + Tailwind CSS + Radix UI + Supabase</p>
       </div>
     </div>
   )

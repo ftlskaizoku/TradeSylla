@@ -1,130 +1,82 @@
-// api/sylledge-market.js
-// SYLLEDGE Market Data receiver — admin-only endpoint
-// Stores candle data from all broker pairs for SYLLEDGE AI analysis
+// api/sylledge-market.js  v2.0
+// Auth: POST uses admin_token column, GET uses user JWT
+// Stores OHLCV candles from Market Data EA
 
 import { createClient } from "@supabase/supabase-js"
 
-const CORS = {
-  "Access-Control-Allow-Origin":  "*",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-EA-Version",
-  "Content-Type": "application/json",
-}
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
 
-const ADMIN_EMAIL = "khalifadylla@gmail.com"
+export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin",  "*")
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
+  if (req.method === "OPTIONS") return res.status(200).end()
 
-export default async function handler(req) {
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS })
+  const token = (req.headers.authorization || "").replace("Bearer ", "").trim()
 
-  const supabase = createClient(
-    process.env.VITE_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  )
-
-  // ── GET: Fetch market data for SYLLEDGE (any authenticated user) ──────────
+  // ── GET — any authenticated user (for SYLLEDGE + backtesting) ─────────────
   if (req.method === "GET") {
-    const url    = new URL(req.url)
-    const symbol = url.searchParams.get("symbol")
-    const tf     = url.searchParams.get("tf") || "H4"
-    const limit  = Math.min(parseInt(url.searchParams.get("limit") || "200"), 1000)
+    const { symbol, timeframe, limit = 500, from, to } = req.query
+    if (!symbol || !timeframe) return res.status(400).json({ error: "symbol and timeframe required" })
 
-    if (!symbol)
-      return new Response(JSON.stringify({ error: "symbol required" }), { status: 400, headers: CORS })
+    let q = supabase.from("sylledge_market_data")
+      .select("candle_time,open_price,high_price,low_price,close_price,volume")
+      .eq("symbol", symbol).eq("timeframe", timeframe)
+      .order("candle_time", { ascending: true })
+      .limit(parseInt(limit))
 
-    const { data, error } = await supabase
-      .from("sylledge_market_data")
-      .select("candles, updated_at")
-      .eq("symbol", symbol.toUpperCase())
-      .eq("timeframe", tf.toUpperCase())
+    if (from) q = q.gte("candle_time", from)
+    if (to)   q = q.lte("candle_time", to)
+
+    const { data, error } = await q
+    if (error) return res.status(500).json({ error: error.message })
+    return res.status(200).json(data || [])
+  }
+
+  // ── POST — admin_token required (Market Data EA only) ────────────────────
+  if (req.method === "POST") {
+    if (!token) return res.status(401).json({ error: "Missing token" })
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id, is_admin")
+      .eq("admin_token", token)
       .single()
 
-    if (error || !data)
-      return new Response(JSON.stringify({ symbol, tf, candles: [], available: false }), { status: 200, headers: CORS })
+    if (!profile) return res.status(401).json({ error: "Invalid admin token — regenerate in Settings → API Keys" })
 
-    const candles = Array.isArray(data.candles) ? data.candles.slice(-limit) : []
-    return new Response(JSON.stringify({
-      symbol, tf, candles,
-      count:      candles.length,
-      updated_at: data.updated_at,
-      available:  true,
-    }), { status: 200, headers: CORS })
-  }
+    const body    = typeof req.body === "string" ? JSON.parse(req.body) : req.body
+    const { symbol, timeframe, candles } = body
 
-  // ── POST: Receive data from Market Data EA (admin-only) ───────────────────
-  if (req.method !== "POST")
-    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: CORS })
+    if (!symbol || !timeframe || !candles?.length)
+      return res.status(400).json({ error: "symbol, timeframe, candles required" })
 
-  let body
-  try { body = await req.json() }
-  catch { return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400, headers: CORS }) }
+    // Upsert candles in batches
+    const rows = candles.map(c => ({
+      symbol,
+      timeframe,
+      candle_time: c.t,
+      open_price:  c.o,
+      high_price:  c.h,
+      low_price:   c.l,
+      close_price: c.c,
+      volume:      c.v || 0,
+    }))
 
-  const { admin_token, type, data, ea_version } = body
-
-  if (!admin_token)
-    return new Response(JSON.stringify({ error: "Missing admin_token" }), { status: 401, headers: CORS })
-
-  // Verify admin token — must match the admin profile's ea_token
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, ea_token")
-    .eq("ea_token", admin_token)
-    .single()
-
-  if (!profile)
-    return new Response(JSON.stringify({ error: "Invalid admin token" }), { status: 401, headers: CORS })
-
-  // Verify this user is actually the admin
-  const { data: authUser } = await supabase.auth.admin.getUserById(profile.id)
-  if (!authUser?.user || authUser.user.email !== ADMIN_EMAIL)
-    return new Response(JSON.stringify({ error: "Unauthorized — admin only" }), { status: 403, headers: CORS })
-
-  if (type !== "market_data" || !Array.isArray(data))
-    return new Response(JSON.stringify({ error: "Invalid payload type" }), { status: 400, headers: CORS })
-
-  // ── Process each symbol in the batch ────────────────────────────────────
-  let stored = 0
-  let skipped = 0
-  const errors = []
-
-  for (const entry of data) {
-    const symbol = (entry.symbol || "").toUpperCase()
-    if (!symbol || !entry.timeframes) { skipped++; continue }
-
-    for (const [tf, candles] of Object.entries(entry.timeframes)) {
-      if (!Array.isArray(candles) || candles.length === 0) continue
-
-      const { error } = await supabase
-        .from("sylledge_market_data")
-        .upsert(
-          {
-            symbol,
-            timeframe:  tf.toUpperCase(),
-            candles,
-            bid:        entry.bid    || null,
-            ask:        entry.ask    || null,
-            spread:     entry.spread || null,
-            ea_version: ea_version   || "1.0",
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "symbol,timeframe" }
-        )
-
-      if (error) {
-        errors.push(`${symbol}/${tf}: ${error.message}`)
-      } else {
-        stored++
-      }
+    const BATCH = 500
+    let inserted = 0
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const { error } = await supabase.from("sylledge_market_data")
+        .upsert(rows.slice(i, i + BATCH), { onConflict: "symbol,timeframe,candle_time", ignoreDuplicates: true })
+      if (error) return res.status(500).json({ error: error.message })
+      inserted += Math.min(BATCH, rows.length - i)
     }
+
+    return res.status(200).json({ success: true, inserted })
   }
 
-  return new Response(
-    JSON.stringify({
-      ok:      true,
-      stored,
-      skipped,
-      errors:  errors.slice(0, 10),
-      message: `${stored} symbol/timeframe pairs stored`,
-    }),
-    { status: 200, headers: CORS }
-  )
+  return res.status(405).json({ error: "Method not allowed" })
 }
