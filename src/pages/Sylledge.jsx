@@ -57,7 +57,6 @@ export default function Sylledge() {
   const [messages,   setMessages]   = useState([])
   const [input,      setInput]      = useState("")
   const [loading,    setLoading]    = useState(false)
-  const [apiKey,     setApiKey]     = useState("")
   const [memory,     setMemory]     = useState("")
   const [trades,     setTrades]     = useState([])
   const [playbooks,  setPlaybooks]  = useState([])
@@ -71,8 +70,27 @@ export default function Sylledge() {
   const bottomRef = useRef(null)
   const fileRef   = useRef(null)
 
+  // ── Get Supabase session token for server auth ────────────────────────────
+  async function getSessionToken() {
+    const { data } = await supabase.auth.getSession()
+    return data?.session?.access_token || null
+  }
+
+  // ── Server-side Claude call — no client API key needed ─────────────────
+  async function callClaude(msgs, system) {
+    const token = await getSessionToken()
+    if (!token) throw new Error("Not authenticated — please log in again")
+    const res = await fetch("/api/sylledge-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4096, system, messages: msgs }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || "Server error")
+    return data
+  }
+
   useEffect(() => {
-    setApiKey(localStorage.getItem("ts_anthropic_key")||"")
     loadAll()
     loadMemory()
   }, [user?.id])
@@ -296,7 +314,6 @@ Be specific, data-driven, and actionable. You have their actual trade data above
   async function send(override) {
     const text=(override||input).trim()
     if(!text&&!attachments.length) return
-    if(!apiKey){ alert("Add Anthropic API key in Settings → API Keys"); return }
 
     const atts=[...attachments]
     const userMsg={ id:Date.now(), role:"user", content:text,
@@ -311,37 +328,19 @@ Be specific, data-driven, and actionable. You have their actual trade data above
       }))
       history.push({role:"user",content:buildContent(text,atts)})
 
-      const res=await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",
-        headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01"},
-        body:JSON.stringify({ model:MODEL, max_tokens:4096, system:buildSystem(), messages:history })
-      })
-      const data=await res.json()
+      // Use server-side proxy — no client API key needed
+      const data = await callClaude(history, buildSystem())
       const raw=data.content?.map(c=>c.text||"").join("")||"No response"
       const { clean, files, mdReq } = parseResp(raw)
 
       if(mdReq) {
-        // Show partial response then fetch market data
         const partialId=Date.now()+1
         setMessages(p=>[...p,{id:partialId,role:"assistant",content:clean+"\n\n⏳ Fetching market data from your MT5 EA…",files:[],time:new Date().toISOString()}])
-
         const mdData=await reqMarketData(mdReq.symbol,mdReq.timeframe,mdReq.from,mdReq.to)
-
-        const followRes=await fetch("https://api.anthropic.com/v1/messages",{
-          method:"POST",
-          headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01"},
-          body:JSON.stringify({
-            model:MODEL, max_tokens:4096, system:buildSystem(),
-            messages:[
-              ...history,
-              {role:"assistant",content:raw},
-              {role:"user",content:mdData
-                ? `Market data received from MT5 EA:\n${JSON.stringify(mdData,null,2)}\n\nNow complete your full analysis using this data.`
-                : "The MT5 EA is offline or not responding. Complete your analysis using only the available trade history data."}
-            ]
-          })
-        })
-        const fd=await followRes.json()
+        const followHistory=[...history,{role:"assistant",content:raw},{role:"user",content:mdData
+          ? `Market data received from MT5 EA:\n${JSON.stringify(mdData,null,2)}\n\nNow complete your full analysis using this data.`
+          : "The MT5 EA is offline. Complete your analysis using only the available trade history data."}]
+        const fd = await callClaude(followHistory, buildSystem())
         const fr=fd.content?.map(c=>c.text||"").join("")||""
         const { clean:fc, files:ff } = parseResp(fr)
         setMessages(p=>p.map(m=>m.id===partialId?{...m,content:fc,files:[...files,...ff]}:m))
@@ -354,7 +353,7 @@ Be specific, data-driven, and actionable. You have their actual trade data above
     setLoading(false)
   }
 
-  const noKey = !apiKey
+  const noKey = false  // always ready — API key is server-side
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] max-w-5xl mx-auto">
@@ -405,15 +404,7 @@ Be specific, data-driven, and actionable. You have their actual trade data above
         ))}
       </div>
 
-      {noKey&&(
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl mb-4 flex-shrink-0"
-          style={{background:"rgba(255,165,2,0.08)",border:"1px solid rgba(255,165,2,0.3)"}}>
-          <AlertCircle size={16} style={{color:"var(--accent-warning)"}}/>
-          <p className="text-sm" style={{color:"var(--text-secondary)"}}>
-            Add your Anthropic API key in <strong style={{color:"var(--text-primary)"}}>Settings → API Keys</strong> to activate SYLLEDGE.
-          </p>
-        </div>
-      )}
+
 
       {/* ── CHAT TAB ─────────────────────────────────────────────────────── */}
       {tab==="chat"&&(
@@ -421,9 +412,9 @@ Be specific, data-driven, and actionable. You have their actual trade data above
           {/* Quick prompts */}
           <div className="flex gap-2 overflow-x-auto pb-2 flex-shrink-0 mb-3">
             {QUICK_PROMPTS.map(qp=>(
-              <button key={qp.label} onClick={()=>send(qp.prompt)} disabled={loading||noKey}
+              <button key={qp.label} onClick={()=>send(qp.prompt)} disabled={loading}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex-shrink-0 border hover:opacity-80"
-                style={{background:"var(--bg-elevated)",borderColor:"var(--border)",color:"var(--text-secondary)",opacity:(loading||noKey)?0.5:1}}>
+                style={{background:"var(--bg-elevated)",borderColor:"var(--border)",color:"var(--text-secondary)",opacity:loading?0.5:1}}>
                 <qp.icon size={12} style={{color:"var(--accent)"}}/>{qp.label}
               </button>
             ))}
@@ -517,7 +508,7 @@ Be specific, data-driven, and actionable. You have their actual trade data above
                 <textarea value={input} onChange={e=>setInput(e.target.value)}
                   onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}}}
                   placeholder="Ask SYLLEDGE… (Shift+Enter for new line)"
-                  rows={1} disabled={loading||noKey}
+                  rows={1} disabled={loading}
                   className="w-full px-4 py-3 pr-10 text-sm resize-none bg-transparent outline-none"
                   style={{color:"var(--text-primary)",maxHeight:120}}/>
                 <button onClick={()=>fileRef.current?.click()}
@@ -529,11 +520,11 @@ Be specific, data-driven, and actionable. You have their actual trade data above
                   accept=".pdf,.csv,.json,.txt,.png,.jpg,.jpeg,.webp"
                   className="hidden" onChange={handleFiles}/>
               </div>
-              <button onClick={()=>send()} disabled={loading||noKey||(!input.trim()&&!attachments.length)}
+              <button onClick={()=>send()} disabled={loading||(!input.trim()&&!attachments.length)}
                 className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
                 style={{
-                  background:(loading||noKey||(!input.trim()&&!attachments.length))?"var(--bg-elevated)":"linear-gradient(135deg,var(--accent),var(--accent-secondary))",
-                  opacity:(loading||noKey||(!input.trim()&&!attachments.length))?0.5:1,
+                  background:(loading||(!input.trim()&&!attachments.length))?"var(--bg-elevated)":"linear-gradient(135deg,var(--accent),var(--accent-secondary))",
+                  opacity:(loading||(!input.trim()&&!attachments.length))?0.5:1,
                 }}>
                 <Send size={16} className="text-white"/>
               </button>
@@ -619,9 +610,9 @@ Be specific, data-driven, and actionable. You have their actual trade data above
           </div>
           <div className="text-center py-4">
             <button onClick={()=>{ setTab("chat"); setTimeout(()=>send("Generate a full interactive HTML performance report with: session heatmap, entry time analysis, quality vs P&L chart, win/loss breakdown, SL analysis, and AI recommendations. Make it professional with inline CSS and Chart.js charts."),100) }}
-              disabled={noKey}
+              
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
-              style={{background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))",opacity:noKey?0.5:1}}>
+              style={{background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))",opacity:1}}>
               <Sparkles size={14}/>Generate Full HTML Report
             </button>
           </div>
