@@ -14,81 +14,81 @@ import {
 // ─── Theme definitions ────────────────────────────────────────────────────────
 const THEMES = [
   {
-    id: "dark",
-    name: "Dark",
-    desc: "Classic dark trading interface",
-    preview: ["#0a0b0f","#6c63ff","#2ed573"],
+    id: "void",
+    name: "Void",
+    desc: "Electric violet · sharp & focused",
+    preview: ["#05050d","#6c63ff","#00d4aa","#2ed573"],
     vars: {
-      "--bg-primary":"#0a0b0f","--bg-secondary":"#111218","--bg-card":"#16181f",
-      "--bg-elevated":"#1c1e28","--accent":"#6c63ff","--accent-secondary":"#00d4aa",
-      "--accent-danger":"#ff4757","--accent-warning":"#ffa502","--accent-success":"#2ed573",
-      "--text-primary":"#f0f0f5","--text-secondary":"#8b8d9e","--text-muted":"#4a4c5e",
-      "--border":"#1e2030","--border-light":"#252738",
+      "--bg-primary":"#05050d","--bg-secondary":"#0a0a18","--bg-card":"#0f0f22",
+      "--bg-elevated":"#141430","--accent":"#6c63ff","--accent-rgb":"108,99,255",
+      "--accent-secondary":"#00d4aa","--accent-danger":"#ff4757","--accent-warning":"#ffa502","--accent-success":"#2ed573",
+      "--text-primary":"#f0f0f8","--text-secondary":"#8b8d9e","--text-muted":"#4a4c5e",
+      "--border":"#1a1a30","--border-light":"#222240",
     }
   },
   {
-    id: "midnight",
-    name: "Midnight",
-    desc: "Pure black, maximum contrast",
-    preview: ["#000000","#7c5cbf","#00ffaa"],
+    id: "eclipse",
+    name: "Eclipse",
+    desc: "Warm amber · Bloomberg-grade",
+    preview: ["#0d0c07","#f59e0b","#f97316","#22c55e"],
     vars: {
-      "--bg-primary":"#000000","--bg-secondary":"#0a0a0a","--bg-card":"#0f0f0f",
-      "--bg-elevated":"#141414","--accent":"#7c5cbf","--accent-secondary":"#00ffaa",
-      "--accent-danger":"#ff3355","--accent-warning":"#ffaa00","--accent-success":"#00ff88",
-      "--text-primary":"#ffffff","--text-secondary":"#999999","--text-muted":"#444444",
-      "--border":"#1a1a1a","--border-light":"#222222",
+      "--bg-primary":"#0d0c07","--bg-secondary":"#131108","--bg-card":"#191508",
+      "--bg-elevated":"#1f1b09","--accent":"#f59e0b","--accent-rgb":"245,158,11",
+      "--accent-secondary":"#f97316","--accent-danger":"#ef4444","--accent-warning":"#fbbf24","--accent-success":"#22c55e",
+      "--text-primary":"#fef3c7","--text-secondary":"#a08030","--text-muted":"#554422",
+      "--border":"#2a2208","--border-light":"#332a0a",
     }
   },
   {
-    id: "ocean",
-    name: "Ocean",
-    desc: "Deep blue — calm & focused",
-    preview: ["#060d1a","#3b9eff","#00e5c8"],
+    id: "arctic",
+    name: "Arctic",
+    desc: "Clean light · steel blue",
+    preview: ["#f0f4f8","#2563eb","#06b6d4","#10b981"],
     vars: {
-      "--bg-primary":"#060d1a","--bg-secondary":"#0a1628","--bg-card":"#0d1e35",
-      "--bg-elevated":"#122540","--accent":"#3b9eff","--accent-secondary":"#00e5c8",
-      "--accent-danger":"#ff5577","--accent-warning":"#ffcc44","--accent-success":"#44ffaa",
-      "--text-primary":"#e8f4ff","--text-secondary":"#7fa8cc","--text-muted":"#3a5570",
-      "--border":"#142035","--border-light":"#1c2e48",
+      "--bg-primary":"#f0f4f8","--bg-secondary":"#ffffff","--bg-card":"#ffffff",
+      "--bg-elevated":"#f5f8fc","--accent":"#2563eb","--accent-rgb":"37,99,235",
+      "--accent-secondary":"#06b6d4","--accent-danger":"#ef4444","--accent-warning":"#f59e0b","--accent-success":"#10b981",
+      "--text-primary":"#0f172a","--text-secondary":"#475569","--text-muted":"#94a3b8",
+      "--border":"#e2e8f0","--border-light":"#f1f5f9",
     }
   },
   {
     id: "forest",
     name: "Forest",
-    desc: "Deep green — natural & sharp",
-    preview: ["#060f0a","#2ddb76","#00d4aa"],
+    desc: "Deep green · gold — disciplined",
+    preview: ["#060e08","#22c55e","#eab308","#4ade80"],
     vars: {
-      "--bg-primary":"#060f0a","--bg-secondary":"#0a160d","--bg-card":"#0f1d12",
-      "--bg-elevated":"#142518","--accent":"#2ddb76","--accent-secondary":"#00d4aa",
-      "--accent-danger":"#ff4444","--accent-warning":"#ffbb33","--accent-success":"#44ff99",
-      "--text-primary":"#e8fff2","--text-secondary":"#7fbf95","--text-muted":"#3a5540",
-      "--border":"#142018","--border-light":"#1c2e22",
+      "--bg-primary":"#060e08","--bg-secondary":"#0a1509","--bg-card":"#0d1c0c",
+      "--bg-elevated":"#112510","--accent":"#22c55e","--accent-rgb":"34,197,94",
+      "--accent-secondary":"#eab308","--accent-danger":"#ef4444","--accent-warning":"#f97316","--accent-success":"#4ade80",
+      "--text-primary":"#f0fdf4","--text-secondary":"#6faf78","--text-muted":"#2d5c33",
+      "--border":"#143314","--border-light":"#1c4420",
     }
   },
   {
-    id: "ember",
-    name: "Ember",
-    desc: "Warm dark — intense & bold",
-    preview: ["#0f0a06","#ff6b35","#ffcc00"],
+    id: "noir",
+    name: "Noir",
+    desc: "True black · crimson — intense",
+    preview: ["#000000","#dc2626","#f87171","#22c55e"],
     vars: {
-      "--bg-primary":"#0f0a06","--bg-secondary":"#18100a","--bg-card":"#20160d",
-      "--bg-elevated":"#281c12","--accent":"#ff6b35","--accent-secondary":"#ffcc00",
-      "--accent-danger":"#ff2244","--accent-warning":"#ff9900","--accent-success":"#44dd88",
-      "--text-primary":"#fff5ee","--text-secondary":"#bf9977","--text-muted":"#664433",
-      "--border":"#2a1a0e","--border-light":"#38241a",
+      "--bg-primary":"#000000","--bg-secondary":"#0a0a0a","--bg-card":"#0f0f0f",
+      "--bg-elevated":"#141414","--accent":"#dc2626","--accent-rgb":"220,38,38",
+      "--accent-secondary":"#f87171","--accent-danger":"#dc2626","--accent-warning":"#f59e0b","--accent-success":"#22c55e",
+      "--text-primary":"#fafafa","--text-secondary":"#737373","--text-muted":"#404040",
+      "--border":"#1a1a1a","--border-light":"#222222",
     }
   },
   {
-    id: "light",
-    name: "Light",
-    desc: "Clean light mode",
-    preview: ["#f8f9fc","#6c63ff","#2ed573"],
+    id: "dusk",
+    name: "Dusk",
+    desc: "Slate purple · mint — distinctive",
+    preview: ["#0d0d1a","#8b5cf6","#06d6a0","#f43f5e"],
     vars: {
-      "--bg-primary":"#f0f2f8","--bg-secondary":"#ffffff","--bg-card":"#ffffff",
-      "--bg-elevated":"#f5f6fa","--accent":"#6c63ff","--accent-secondary":"#00b894",
-      "--accent-danger":"#e84393","--accent-warning":"#f39c12","--accent-success":"#00b894",
-      "--text-primary":"#1a1b2e","--text-secondary":"#5a5c6e","--text-muted":"#9a9cae",
-      "--border":"#e2e4f0","--border-light":"#eceef8",
+      "--bg-primary":"#0d0d1a","--bg-secondary":"#11111f","--bg-card":"#14142a",
+      "--bg-elevated":"#18183a","--accent":"#8b5cf6","--accent-rgb":"139,92,246",
+      "--accent-secondary":"#06d6a0","--accent-danger":"#f43f5e","--accent-warning":"#f59e0b","--accent-success":"#06d6a0",
+      "--text-primary":"#ede9fe","--text-secondary":"#7c7a9e","--text-muted":"#3d3b5e",
+      "--border":"#1e1e3a","--border-light":"#262650",
     }
   },
 ]
@@ -105,7 +105,7 @@ function applyTheme(theme, customColors) {
 }
 
 function loadSavedTheme() {
-  const id = localStorage.getItem("ts_theme") || "dark"
+  const id = localStorage.getItem("ts_theme") || "void"
   const theme = THEMES.find(t => t.id === id) || THEMES[0]
   const customColors = JSON.parse(localStorage.getItem("ts_custom_colors") || "{}")
   applyTheme(theme, customColors)
@@ -324,21 +324,24 @@ function AppearancePage() {
             const isActive = activeTheme === theme.id
             return (
               <button key={theme.id} onClick={() => selectTheme(theme)}
-                className="relative rounded-xl p-4 text-left transition-all border-2"
-                style={{ background:"var(--bg-elevated)", borderColor: isActive ? "var(--accent)" : "var(--border)" }}>
-                {/* Color preview swatches */}
-                <div className="flex gap-1 mb-3">
-                  {theme.preview.map((c,i)=>(
-                    <div key={i} className="w-6 h-6 rounded-md" style={{ background:c }}/>
+                className="relative rounded-xl p-4 text-left transition-all"
+                style={{
+                  background:   "var(--bg-elevated)",
+                  border:       `2px solid ${isActive ? "var(--accent)" : "var(--border)"}`,
+                  boxShadow:    isActive ? "0 0 0 3px rgba(var(--accent-rgb),0.15)" : "none",
+                }}>
+                {/* Color preview — 4 swatches */}
+                <div className="flex gap-1.5 mb-3">
+                  {theme.preview.map((c,i) => (
+                    <div key={i} className="flex-1 h-7 rounded-lg" style={{ background: c, border: "1px solid rgba(255,255,255,0.06)" }}/>
                   ))}
-                  {/* Large bg swatch */}
-                  <div className="flex-1 h-6 rounded-md ml-1" style={{ background:theme.preview[0] }}/>
                 </div>
                 <p className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{theme.name}</p>
-                <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{theme.desc}</p>
+                <p className="text-xs mt-0.5 leading-snug" style={{ color:"var(--text-muted)" }}>{theme.desc}</p>
                 {isActive && (
-                  <div className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center" style={{ background:"var(--accent)" }}>
-                    <CheckCircle size={12} className="text-white"/>
+                  <div className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full flex items-center justify-center"
+                    style={{ background:"var(--accent)" }}>
+                    <CheckCircle size={11} className="text-white"/>
                   </div>
                 )}
               </button>
