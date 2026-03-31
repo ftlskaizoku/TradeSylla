@@ -1,13 +1,10 @@
-// api/sylledge-market.js  v2.0
-// Auth: POST uses admin_token column, GET uses user JWT
-// Stores OHLCV candles from Market Data EA
+// api/sylledge-market.js  v2.1
+// FIX: VITE_SUPABASE_URL fallback for Vercel serverless functions
 
 import { createClient } from "@supabase/supabase-js"
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+const SUPA_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin",  "*")
@@ -15,9 +12,14 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
   if (req.method === "OPTIONS") return res.status(200).end()
 
+  if (!SUPA_URL || !SUPA_KEY) {
+    return res.status(500).json({ error: "Server config error — Supabase env vars missing" })
+  }
+
+  const supabase = createClient(SUPA_URL, SUPA_KEY)
   const token = (req.headers.authorization || "").replace("Bearer ", "").trim()
 
-  // ── GET — any authenticated user (for SYLLEDGE + backtesting) ─────────────
+  // ── GET — any authenticated user ─────────────────────────────────────────
   if (req.method === "GET") {
     const { symbol, timeframe, limit = 500, from, to } = req.query
     if (!symbol || !timeframe) return res.status(400).json({ error: "symbol and timeframe required" })
@@ -36,7 +38,7 @@ export default async function handler(req, res) {
     return res.status(200).json(data || [])
   }
 
-  // ── POST — admin_token required (Market Data EA only) ────────────────────
+  // ── POST — admin_token required ───────────────────────────────────────────
   if (req.method === "POST") {
     if (!token) return res.status(401).json({ error: "Missing token" })
 
@@ -48,13 +50,18 @@ export default async function handler(req, res) {
 
     if (!profile) return res.status(401).json({ error: "Invalid admin token — regenerate in Settings → API Keys" })
 
-    const body    = typeof req.body === "string" ? JSON.parse(req.body) : req.body
+    let body
+    try {
+      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body
+    } catch {
+      return res.status(400).json({ error: "Invalid JSON" })
+    }
+
     const { symbol, timeframe, candles } = body
 
     if (!symbol || !timeframe || !candles?.length)
       return res.status(400).json({ error: "symbol, timeframe, candles required" })
 
-    // Upsert candles in batches
     const rows = candles.map(c => ({
       symbol,
       timeframe,

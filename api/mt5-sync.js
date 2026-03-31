@@ -1,5 +1,4 @@
-// Vercel Serverless — TradeSylla MT5 EA receiver
-// Handles: heartbeat, live trade sync, full history import, force re-sync
+// api/mt5-sync.js  v4.3 — FIX: VITE_SUPABASE_URL fallback
 import { createClient } from "@supabase/supabase-js"
 
 const CORS = {
@@ -9,14 +8,18 @@ const CORS = {
   "Content-Type": "application/json",
 }
 
+const SUPA_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+
 export default async function handler(req) {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS })
   if (req.method !== "POST")   return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: CORS })
 
-  const supabase = createClient(
-    process.env.VITE_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  )
+  if (!SUPA_URL || !SUPA_KEY) {
+    return new Response(JSON.stringify({ error: "Server config error — Supabase env vars missing" }), { status: 500, headers: CORS })
+  }
+
+  const supabase = createClient(SUPA_URL, SUPA_KEY)
 
   let body
   try { body = await req.json() }
@@ -26,7 +29,6 @@ export default async function handler(req) {
 
   if (!token) return new Response(JSON.stringify({ error: "Missing token" }), { status: 401, headers: CORS })
 
-  // Resolve user from ea_token
   const { data: profile } = await supabase
     .from("profiles").select("id").eq("ea_token", token).single()
   if (!profile) return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: CORS })
@@ -57,12 +59,11 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ ok: true, type: "heartbeat" }), { status: 200, headers: CORS })
   }
 
-  // ── TRADE SYNC (live or history) ──────────────────────────────────────────
+  // ── TRADE SYNC ────────────────────────────────────────────────────────────
   if (!Array.isArray(trades) || trades.length === 0) {
     return new Response(JSON.stringify({ ok: true, imported: 0, message: "No trades" }), { status: 200, headers: CORS })
   }
 
-  // Get most recent account login for this user
   const { data: connection } = await supabase
     .from("broker_connections")
     .select("mt5_login")
@@ -73,7 +74,6 @@ export default async function handler(req) {
     .single()
   const accountLogin = connection?.mt5_login || null
 
-  // Load existing tickets — skip if force=true (full re-sync wipes dedup)
   let existingTickets = new Set()
   if (!force) {
     const { data: existing } = await supabase
@@ -83,8 +83,8 @@ export default async function handler(req) {
   }
 
   let imported = 0, skipped = 0, updated = 0
-  const errors   = []   // all errors
-  const symStats = {}   // per-symbol tracking for debugging
+  const errors = []
+  const symStats = {}
 
   for (const t of trades) {
     const sym = (t.symbol || "UNKNOWN").toUpperCase()
@@ -93,10 +93,8 @@ export default async function handler(req) {
 
     const ticket = t.mt5_ticket ? String(t.mt5_ticket) : null
 
-    // Duplicate? — update missing fields if needed, then skip
     if (ticket && existingTickets.has(ticket)) {
       if (!force) {
-        // Backfill SL/TP/commission/account on old trades if they're missing
         const { data: old } = await supabase
           .from("trades").select("id,sl,tp,commission")
           .eq("mt5_ticket", ticket).eq("user_id", userId).single()
@@ -116,8 +114,7 @@ export default async function handler(req) {
           }).eq("id", old.id)
           updated++
         }
-        skipped++
-        symStats[sym].skipped++
+        skipped++; symStats[sym].skipped++
         continue
       }
     }
@@ -152,7 +149,6 @@ export default async function handler(req) {
     }
 
     if (force && ticket) {
-      // Force mode: upsert on mt5_ticket
       const { error } = await supabase.from("trades")
         .upsert(trade, { onConflict: "user_id,mt5_ticket" })
       if (error) { errors.push(`${sym} #${ticket}: ${error.message}`); symStats[sym].errors++ }

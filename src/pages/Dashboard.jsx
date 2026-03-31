@@ -1,17 +1,16 @@
-// src/pages/Dashboard.jsx — upgraded with:
-// 1. InfoTooltip on every stat card and chart
-// 2. Gross/Net P&L toggle (includes commissions + swap)
-// 3. Withdrawal-aware equity calculation
-// 4. Full text visibility across all themes
+// src/pages/Dashboard.jsx — v3.0 Visual Upgrade
+// Stat cards: gradient accent bar + icon + trend badge + progress bar
+// Equity curve: time range selector, glowing endpoint
+// Activity feed: cleaner timeline
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Link } from "react-router-dom"
 import { createPageUrl } from "@/utils"
 import {
   TrendingUp, TrendingDown, BarChart3, Brain, Target,
   DollarSign, Activity, ArrowUpRight, ArrowDownRight,
   Shield, ChevronRight, Plus, X, Calendar,
-  Users, ToggleLeft, ToggleRight
+  Users, ToggleLeft, ToggleRight, Zap
 } from "lucide-react"
 import { Trade, Playbook, BrokerConnection, subscribeToTable } from "@/api/supabaseStore"
 import { useUser } from "@/lib/UserContext"
@@ -73,50 +72,86 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString("en-US", { month:"2-digit", day:"2-digit", year:"numeric" })
 }
 
-// ─── Stat Card with tooltip ───────────────────────────────────────────────────
-function StatCard({ label, value, sub, icon: Icon, color, positive, tooltip }) {
+// ─── v3 Stat Card with gradient bar ──────────────────────────────────────────
+function StatCard({ label, value, sub, icon: Icon, color, positive, tooltip, barPct = 0, gradient }) {
+  const gradColors = gradient || (positive !== false
+    ? [color, color === "var(--accent-success)" ? "#00d4aa" : color]
+    : [color, color])
+
   return (
-    <div className="metric-card card-hover flex-1 min-w-0">
-      <div className="flex items-start justify-between mb-3">
-        <div className="p-2 rounded-lg" style={{ background: `${color}25` }}>
+    <div className="metric-card flex-1 min-w-0" style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+      {/* Icon + trend */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{
+          width:32, height:32, borderRadius:9,
+          background:`${color}20`,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          flexShrink:0
+        }}>
           <Icon size={15} style={{ color }} />
         </div>
-        <div className="flex items-center gap-1.5">
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
           {sub !== undefined && positive !== undefined && (
-            <span className="text-xs font-medium flex items-center gap-0.5"
-              style={{ color: positive ? "var(--accent-success)" : "var(--accent-danger)" }}>
-              {positive ? <ArrowUpRight size={12}/> : <ArrowDownRight size={12}/>}
+            <span style={{
+              fontFamily:"var(--font-mono)", fontSize:10,
+              padding:"2px 8px", borderRadius:100,
+              background: positive ? "rgba(46,213,115,0.1)" : "rgba(255,71,87,0.1)",
+              border: `1px solid ${positive ? "rgba(46,213,115,0.2)" : "rgba(255,71,87,0.2)"}`,
+              color: positive ? "var(--accent-success)" : "var(--accent-danger)",
+              display:"flex", alignItems:"center", gap:3
+            }}>
+              {positive ? <ArrowUpRight size={10}/> : <ArrowDownRight size={10}/>}
               {sub}
             </span>
           )}
           {tooltip && <InfoTooltip content={tooltip} position="top" />}
         </div>
       </div>
-      <p className="text-xl font-bold mb-0.5 truncate" style={{ color: "var(--text-primary)" }}>{value}</p>
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>{label}</p>
-    </div>
-  )
-}
 
-// ─── Chart Card with tooltip ──────────────────────────────────────────────────
-function ChartCard({ title, tooltip, children }) {
-  return (
-    <div className="rounded-xl p-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>{title}</h2>
-        {tooltip && <InfoTooltip content={tooltip} position="left" />}
+      {/* Value */}
+      <div style={{
+        fontFamily:"var(--font-display)", fontSize:24, fontWeight:800,
+        letterSpacing:"-0.03em", lineHeight:1, color:"var(--text-primary)"
+      }}>{value}</div>
+
+      {/* Label */}
+      <div style={{
+        fontFamily:"var(--font-mono)", fontSize:10,
+        color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:"0.12em"
+      }}>{label}</div>
+
+      {/* Gradient progress bar */}
+      <div style={{
+        height:3, borderRadius:100,
+        background:"rgba(255,255,255,0.05)",
+        overflow:"hidden", marginTop:2
+      }}>
+        <div style={{
+          height:"100%", borderRadius:100,
+          width: `${Math.min(100, Math.max(5, barPct || 50))}%`,
+          background: `linear-gradient(90deg, ${gradColors[0]}, ${gradColors[1]})`,
+          transition:"width 1s cubic-bezier(0.4,0,0.2,1)",
+          position:"relative"
+        }}>
+          {/* Glow dot at end */}
+          <div style={{
+            position:"absolute", right:0, top:"50%",
+            transform:"translateY(-50%)",
+            width:6, height:6, borderRadius:"50%",
+            background:gradColors[1], opacity:0.8,
+            filter:"blur(2px)"
+          }}/>
+        </div>
       </div>
-      {children}
     </div>
   )
 }
 
-// ─── P&L Mode Toggle ─────────────────────────────────────────────────────────
+// ─── P&L Mode Toggle ──────────────────────────────────────────────────────────
 function PnlToggle({ mode, onChange }) {
   return (
     <div className="flex items-center gap-2">
       <InfoTooltip content={TOOLTIPS.commissionToggle} position="bottom" />
-      <span className="text-xs" style={{ color: "var(--text-muted)" }}>Show:</span>
       <button onClick={() => onChange(mode === "net" ? "gross" : "net")}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
         style={{
@@ -127,19 +162,17 @@ function PnlToggle({ mode, onChange }) {
         {mode === "net" ? <ToggleRight size={13}/> : <ToggleLeft size={13}/>}
         {mode === "net" ? "Net P&L" : "Gross P&L"}
       </button>
-      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+      <span className="text-xs" style={{ color:"var(--text-muted)" }}>
         {mode === "net" ? "(after fees)" : "(before fees)"}
       </span>
     </div>
   )
 }
 
-// ─── Withdrawal Toggle ────────────────────────────────────────────────────────
 function WithdrawalToggle({ enabled, onChange }) {
   return (
     <div className="flex items-center gap-2">
       <InfoTooltip content={TOOLTIPS.withdrawals} position="bottom" />
-      <span className="text-xs" style={{ color: "var(--text-muted)" }}>Withdrawals:</span>
       <button onClick={() => onChange(!enabled)}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
         style={{
@@ -148,16 +181,15 @@ function WithdrawalToggle({ enabled, onChange }) {
           color:       enabled ? "var(--accent-warning)" : "var(--text-muted)",
         }}>
         {enabled ? <ToggleRight size={13}/> : <ToggleLeft size={13}/>}
-        {enabled ? "Included" : "Excluded"}
+        {enabled ? "Withdrawals: On" : "Withdrawals: Off"}
       </button>
     </div>
   )
 }
 
-// ─── Quick Trade Modal (unchanged in structure, added theme-safe styles) ──────
+// ─── Quick Trade Modal ─────────────────────────────────────────────────────────
 const SYMBOLS  = ["EURUSD","GBPUSD","USDJPY","XAUUSD","AUDUSD","GBPJPY","USDCAD","NZDUSD","USDCHF","US30","NAS100","SPX500","CUSTOM"]
 const SESSIONS = ["LONDON","NEW_YORK","ASIAN","SYDNEY"]
-const TFS      = ["M1","M5","M15","M30","H1","H4","D1"]
 
 function QuickTradeModal({ open, onClose, onSaved }) {
   const empty = {
@@ -299,7 +331,7 @@ function QuickTradeModal({ open, onClose, onSaved }) {
   )
 }
 
-// ─── Activity Feed ────────────────────────────────────────────────────────────
+// ─── Activity Feed ─────────────────────────────────────────────────────────────
 function ActivityFeed({ trades }) {
   if (!trades.length) return <p className="text-sm py-4" style={{ color:"var(--text-muted)" }}>No recent activity. Log your first trade!</p>
   const items = [...trades].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,8)
@@ -308,19 +340,20 @@ function ActivityFeed({ trades }) {
       {items.map(t=>(
         <div key={t.id} className="flex items-start gap-3">
           <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-            style={{ background: t.outcome==="WIN"?"rgba(46,213,115,0.15)":t.outcome==="LOSS"?"rgba(255,71,87,0.15)":"rgba(108,99,255,0.15)" }}>
+            style={{ background: t.outcome==="WIN"?"rgba(46,213,115,0.12)":t.outcome==="LOSS"?"rgba(255,71,87,0.12)":"rgba(108,99,255,0.12)" }}>
             {t.outcome==="WIN"?<TrendingUp size={12} style={{ color:"var(--accent-success)" }}/>
               :t.outcome==="LOSS"?<TrendingDown size={12} style={{ color:"var(--accent-danger)" }}/>
               :<Activity size={12} style={{ color:"var(--accent)" }}/>}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium" style={{ color:"var(--text-primary)" }}>
-              {t.direction} {t.symbol}
+              <span style={{ fontFamily:"var(--font-mono)", color:"var(--accent)" }}>{t.symbol}</span>
+              {" "}{t.direction}
               <span className="ml-1.5 font-semibold" style={{ color:t.outcome==="WIN"?"var(--accent-success)":t.outcome==="LOSS"?"var(--accent-danger)":"var(--accent)" }}>
                 {t.outcome}
               </span>
             </p>
-            <p className="text-xs" style={{ color:"var(--text-muted)" }}>
+            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>
               {t.pnl>=0?"+":""}${(t.pnl||0).toFixed(2)} · {t.session} · {fmtDate(t.entry_time)}
             </p>
           </div>
@@ -330,17 +363,35 @@ function ActivityFeed({ trades }) {
   )
 }
 
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
+// ─── Chart Card ────────────────────────────────────────────────────────────────
+function ChartCard({ title, tooltip, children }) {
+  return (
+    <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)", position:"relative", overflow:"hidden" }}>
+      {/* Top shimmer */}
+      <div style={{
+        position:"absolute", top:0, left:0, right:0, height:1,
+        background:"linear-gradient(90deg,transparent,rgba(108,99,255,0.4),transparent)",
+        opacity:0.5
+      }}/>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>{title}</h2>
+        {tooltip && <InfoTooltip content={tooltip} position="left" />}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user } = useUser()
   const [trades,          setTrades]         = useState([])
   const [tradeModalOpen,  setTradeModalOpen]  = useState(false)
   const [eaAccounts,      setEaAccounts]      = useState([])
   const [selectedAccount, setSelectedAccount] = useState("ALL")
-  // P&L display mode: "net" (after fees) or "gross" (before fees)
   const [pnlMode,         setPnlMode]         = useState("net")
-  // Include withdrawals in equity curve?
   const [showWithdrawals, setShowWithdrawals] = useState(false)
+  const [equityRange,     setEquityRange]     = useState("1M")
 
   const loadTrades = async () => {
     try {
@@ -363,16 +414,13 @@ export default function Dashboard() {
   }, [])
 
   // ── Account filter ─────────────────────────────────────────────────────────
-  const allTrades = trades
   const filteredTrades = selectedAccount === "ALL"
-    ? allTrades
-    : allTrades.filter(t => (t.account_login || "MANUAL") === selectedAccount)
+    ? trades
+    : trades.filter(t => (t.account_login || "MANUAL") === selectedAccount)
 
-  // Separate real trades from withdrawals
-  const realTrades     = filteredTrades.filter(t => !t.is_withdrawal)
-  const withdrawals    = filteredTrades.filter(t => t.is_withdrawal)
+  const realTrades  = filteredTrades.filter(t => !t.is_withdrawal)
+  const withdrawals = filteredTrades.filter(t => t.is_withdrawal)
 
-  // ── P&L value per trade (net or gross) ────────────────────────────────────
   const tradePnl = (t) => pnlMode === "gross"
     ? (t.gross_pnl || t.pnl || 0)
     : (t.pnl || 0)
@@ -381,7 +429,6 @@ export default function Dashboard() {
   const wins         = realTrades.filter(t => t.outcome === "WIN")
   const losses       = realTrades.filter(t => t.outcome === "LOSS")
   const netPnl       = realTrades.reduce((s,t) => s + tradePnl(t), 0)
-  const withdrawalSum= showWithdrawals ? withdrawals.reduce((s,t) => s + (t.withdrawal_amount || 0), 0) : 0
   const totalFees    = realTrades.reduce((s,t) => s + Math.abs(t.commission||0) + Math.abs(t.swap||0), 0)
   const winRate      = realTrades.length ? (wins.length/realTrades.length*100).toFixed(1) : "0.0"
   const avgWin       = wins.length   ? wins.reduce((s,t)=>s+tradePnl(t),0)/wins.length   : 0
@@ -390,36 +437,30 @@ export default function Dashboard() {
   const expectancy   = realTrades.length ? (netPnl/realTrades.length).toFixed(2) : "0.00"
   const syllaScore   = calcSyllaScore(realTrades)
 
-  // ── Equity curve (withdrawal-aware) ───────────────────────────────────────
-  const sorted = [...realTrades].sort((a,b)=>new Date(a.entry_time)-new Date(b.entry_time))
-  const tradesByDay = {}
-  sorted.forEach(t => {
-    const d = new Date(t.entry_time).toISOString().slice(0,10)
-    if (!tradesByDay[d]) tradesByDay[d] = []
-    tradesByDay[d].push(t)
-  })
-  if (showWithdrawals) {
-    withdrawals.forEach(t => {
-      const d = new Date(t.entry_time).toISOString().slice(0,10)
-      if (!tradesByDay[d]) tradesByDay[d] = []
-      tradesByDay[d].push(t)
-    })
-  }
-  const sortedDays = Object.keys(tradesByDay).sort()
+  // ── Equity curve with range filter ────────────────────────────────────────
+  const RANGE_DAYS = { "1W":7, "1M":30, "3M":90, "ALL":9999 }
+  const rangeFiltered = useMemo(() => {
+    const days = RANGE_DAYS[equityRange]
+    const cutoff = new Date(Date.now() - days * 86400000)
+    return [...realTrades]
+      .filter(t => days === 9999 || new Date(t.entry_time) >= cutoff)
+      .sort((a,b)=>new Date(a.entry_time)-new Date(b.entry_time))
+  }, [realTrades, equityRange])
+
   let cum = 0
-  const cumulativePnlData = sortedDays.map(d => {
-    const dayTrades = tradesByDay[d]
-    const dayPnl = dayTrades.reduce((s, t) => {
-      if (t.is_withdrawal && showWithdrawals) return s - (t.withdrawal_amount || 0)
-      return s + tradePnl(t)
-    }, 0)
-    cum += dayPnl
-    return { date: d.slice(5), cumPnl: parseFloat(cum.toFixed(2)) }
+  const cumulativePnlData = rangeFiltered.map(t => {
+    cum += tradePnl(t)
+    return { date: new Date(t.entry_time).toLocaleDateString("en-US",{month:"2-digit",day:"2-digit"}), cumPnl: parseFloat(cum.toFixed(2)) }
   })
-  const dailyPnlData = sortedDays.map(d => ({
-    date: d.slice(5),
-    pnl: parseFloat(tradesByDay[d].filter(t=>!t.is_withdrawal).reduce((s,t)=>s+tradePnl(t),0).toFixed(2))
-  }))
+
+  const dailyPnlData = useMemo(() => {
+    const byDay = {}
+    realTrades.forEach(t => {
+      const d = new Date(t.entry_time).toLocaleDateString("en-US",{month:"2-digit",day:"2-digit"})
+      byDay[d] = (byDay[d]||0) + tradePnl(t)
+    })
+    return Object.entries(byDay).map(([date,pnl])=>({ date, pnl:parseFloat(pnl.toFixed(2)) }))
+  }, [realTrades, pnlMode])
 
   const radarData = [
     { metric:"Win %",   value: realTrades.length ? parseFloat(winRate) : 0 },
@@ -431,13 +472,22 @@ export default function Dashboard() {
   const recentTrades  = realTrades.slice(0,8)
   const today = new Date().toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"})
 
+  // Equity curve end value for change badge
+  const equityChange = cumulativePnlData.length
+    ? cumulativePnlData[cumulativePnlData.length-1].cumPnl
+    : 0
+
+  const tipStyle = {
+    contentStyle: { background:"var(--bg-elevated)", border:"1px solid var(--border)", borderRadius:8, color:"var(--text-primary)", fontSize:11 }
+  }
+
   return (
     <div>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
         <div>
           <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>
-            Good morning, {user?.full_name?.split(" ")[0] || "Trader"} 👋
+            Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"}, {user?.full_name?.split(" ")[0] || "Trader"} 👋
           </h1>
           <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>{today}</p>
         </div>
@@ -455,7 +505,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── View controls row ─────────────────────────────────────────────── */}
+      {/* View controls */}
       <div className="flex flex-wrap gap-3 items-center mb-4 rounded-xl px-4 py-3"
         style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
         <PnlToggle mode={pnlMode} onChange={setPnlMode} />
@@ -467,32 +517,22 @@ export default function Dashboard() {
             <div className="flex items-center gap-1.5">
               <InfoTooltip content={TOOLTIPS.totalFees} position="bottom" />
               <span className="text-xs" style={{ color:"var(--text-muted)" }}>
-                Total fees: <span className="font-semibold" style={{ color:"var(--accent-danger)" }}>
+                Fees: <span className="font-semibold" style={{ color:"var(--accent-danger)" }}>
                   ${totalFees.toFixed(2)}
                 </span>
               </span>
             </div>
           </>
         )}
-        {showWithdrawals && withdrawalSum > 0 && (
-          <>
-            <div className="w-px h-5 hidden sm:block" style={{ background:"var(--border)" }}/>
-            <span className="text-xs" style={{ color:"var(--text-muted)" }}>
-              Withdrawals: <span className="font-semibold" style={{ color:"var(--accent-warning)" }}>
-                -${withdrawalSum.toFixed(2)}
-              </span>
-            </span>
-          </>
-        )}
       </div>
 
-      {/* ── Account HUD ──────────────────────────────────────────────────────── */}
+      {/* Account HUD */}
       {eaAccounts.length > 0 && (
         <div className="mb-5 rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
           <div className="flex items-center gap-2 px-4 py-2.5 overflow-x-auto"
             style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
             <Users size={12} style={{ color:"var(--text-muted)", flexShrink:0 }}/>
-            <span className="text-xs font-semibold mr-1 flex-shrink-0" style={{ color:"var(--text-muted)" }}>ACCOUNT:</span>
+            <span className="text-xs font-semibold mr-1 flex-shrink-0" style={{ color:"var(--text-muted)" }}>ACCOUNT</span>
             <button onClick={()=>setSelectedAccount("ALL")}
               className="px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap flex-shrink-0 transition-all border"
               style={{ background:selectedAccount==="ALL"?"var(--accent)":"transparent",
@@ -517,11 +557,10 @@ export default function Dashboard() {
           {activeAccount && (
             <div className="px-4 py-3 flex flex-wrap gap-x-5 gap-y-2 items-center">
               {[
-                { label:"Account", value:activeAccount.account_name||activeAccount.broker_name||"MT5" },
-                { label:"Login",   value:`#${activeAccount.mt5_login||"—"}` },
-                { label:"Balance", value:activeAccount.balance?`${activeAccount.currency||"$"} ${parseFloat(activeAccount.balance).toLocaleString(undefined,{minimumFractionDigits:2})}`:"-", color:"var(--accent-success)" },
-                { label:"Equity",  value:activeAccount.equity?`${activeAccount.currency||"$"} ${parseFloat(activeAccount.equity).toLocaleString(undefined,{minimumFractionDigits:2})}`:"-", color:"var(--accent)" },
-                { label:"Leverage",value:activeAccount.leverage?`1:${activeAccount.leverage}`:"—" },
+                { label:"Balance",  value:activeAccount.balance?`${activeAccount.currency||"$"} ${parseFloat(activeAccount.balance).toLocaleString(undefined,{minimumFractionDigits:2})}`:"-", color:"var(--accent-success)" },
+                { label:"Equity",   value:activeAccount.equity?`${activeAccount.currency||"$"} ${parseFloat(activeAccount.equity).toLocaleString(undefined,{minimumFractionDigits:2})}`:"-", color:"var(--accent)" },
+                { label:"Leverage", value:activeAccount.leverage?`1:${activeAccount.leverage}`:"—" },
+                { label:"Login",    value:`#${activeAccount.mt5_login||"—"}` },
               ].map(s=>(
                 <div key={s.label}>
                   <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
@@ -540,52 +579,83 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Stat Cards ─────────────────────────────────────────────────────── */}
+      {/* ── Stat Cards v3 ───────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-3 mb-4">
         <StatCard
           label={`${pnlMode === "net" ? "Net" : "Gross"} P&L`}
           value={`${netPnl>=0?"+":""}$${netPnl.toFixed(2)}`}
-          icon={DollarSign} color="#2ed573" positive={netPnl>=0}
+          icon={DollarSign}
+          color={netPnl>=0?"var(--accent-success)":"var(--accent-danger)"}
+          positive={netPnl>=0}
+          sub={`${wins.length}W / ${losses.length}L`}
           tooltip={pnlMode === "net" ? TOOLTIPS.netPnl : TOOLTIPS.grossPnl}
+          barPct={Math.min(100, Math.max(5, (wins.length/(realTrades.length||1))*100))}
+          gradient={netPnl>=0?["#2ed573","#00d4aa"]:["#ff4757","#ff6b81"]}
         />
         <StatCard
           label="Win Rate"
-          value={`${winRate}%`} sub={`${wins.length}W / ${losses.length}L`}
-          icon={Target} color="#6c63ff" positive={parseFloat(winRate)>=50}
+          value={`${winRate}%`}
+          icon={Target}
+          color="var(--accent)"
+          positive={parseFloat(winRate)>=50}
+          sub={`${(parseFloat(winRate)-50).toFixed(1)}% vs 50%`}
           tooltip={TOOLTIPS.winRate}
+          barPct={parseFloat(winRate)}
+          gradient={["#6c63ff","#4facfe"]}
         />
         <StatCard
           label="Profit Factor"
-          value={profitFactor} sub="Avg W/L"
-          icon={BarChart3} color="#00d4aa" positive={parseFloat(profitFactor)>=1}
+          value={profitFactor}
+          icon={BarChart3}
+          color="var(--accent-secondary)"
+          positive={parseFloat(profitFactor)>=1}
+          sub="Avg W/L ratio"
           tooltip={TOOLTIPS.profitFactor}
+          barPct={Math.min(100, (parseFloat(profitFactor)||0)/3*100)}
+          gradient={["#00d4aa","#0fd"]}
         />
         <StatCard
           label="Expectancy"
-          value={`$${expectancy}`} sub="Per trade"
-          icon={Activity} color="#ffa502" positive={parseFloat(expectancy)>=0}
+          value={`$${expectancy}`}
+          icon={Activity}
+          color="var(--accent-warning)"
+          positive={parseFloat(expectancy)>=0}
+          sub="Per trade"
           tooltip={TOOLTIPS.expectancy}
+          barPct={parseFloat(expectancy) > 0 ? Math.min(100, parseFloat(expectancy)/5*100) : 20}
+          gradient={["#ffa502","#ff6b35"]}
         />
         {/* SYLLA Score */}
-        <div className="metric-card card-hover flex-1 min-w-0" style={{ minWidth:120 }}>
-          <div className="flex items-start justify-between mb-2">
-            <div className="p-2 rounded-lg" style={{ background:"rgba(108,99,255,0.15)" }}>
+        <div className="metric-card flex-1 min-w-0" style={{ minWidth:120, display:"flex", flexDirection:"column", gap:10 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ width:32, height:32, borderRadius:9, background:"rgba(108,99,255,0.15)", display:"flex", alignItems:"center", justifyContent:"center" }}>
               <Shield size={15} style={{ color:"var(--accent)" }}/>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs" style={{ color:"var(--text-muted)" }}>{realTrades.length} trades</span>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ fontFamily:"var(--font-mono)", fontSize:10, color:"var(--text-muted)" }}>{realTrades.length} trades</span>
               <InfoTooltip content={TOOLTIPS.syllaScore} position="top" />
             </div>
           </div>
-          <p className="text-xl font-bold mb-0.5" style={{
+          <div style={{
+            fontFamily:"var(--font-display)", fontSize:24, fontWeight:800,
+            letterSpacing:"-0.03em", lineHeight:1,
             color: syllaScore>=70?"var(--accent-success)":syllaScore>=40?"var(--accent-warning)":"var(--accent-danger)"
-          }}>{syllaScore}</p>
-          <p className="text-xs" style={{ color:"var(--text-muted)" }}>SYLLA Score</p>
+          }}>{syllaScore}</div>
+          <div style={{ fontFamily:"var(--font-mono)", fontSize:10, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:"0.12em" }}>SYLLA Score</div>
+          <div style={{ height:3, borderRadius:100, background:"rgba(255,255,255,0.05)", overflow:"hidden" }}>
+            <div style={{
+              height:"100%", borderRadius:100,
+              width:`${syllaScore}%`,
+              background:syllaScore>=70?"linear-gradient(90deg,#2ed573,#00d4aa)":syllaScore>=40?"linear-gradient(90deg,#ffa502,#ff6b35)":"linear-gradient(90deg,#ff4757,#ff6b81)",
+              transition:"width 1s cubic-bezier(0.4,0,0.2,1)"
+            }}/>
+          </div>
         </div>
       </div>
 
-      {/* ── Charts row ─────────────────────────────────────────────────────── */}
+      {/* ── Charts row ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        {/* SYLLA Radar */}
         <ChartCard title="SYLLA Score" tooltip={TOOLTIPS.syllaRadar}>
           {realTrades.length >= 2 ? (
             <>
@@ -593,7 +663,7 @@ export default function Dashboard() {
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="var(--border)"/>
                   <PolarAngleAxis dataKey="metric" tick={{ fill:"var(--text-secondary)", fontSize:10 }}/>
-                  <Radar dataKey="value" stroke="#6c63ff" fill="#6c63ff" fillOpacity={0.3}/>
+                  <Radar dataKey="value" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.25}/>
                 </RadarChart>
               </ResponsiveContainer>
               <p className="text-center text-sm mt-1" style={{ color:"var(--text-secondary)" }}>
@@ -607,36 +677,58 @@ export default function Dashboard() {
           )}
         </ChartCard>
 
-        <ChartCard title={`Cumulative ${pnlMode === "net" ? "Net" : "Gross"} P&L`} tooltip={TOOLTIPS.equityCurve}>
+        {/* Equity Curve with range selector */}
+        <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)", position:"relative", overflow:"hidden" }}>
+          <div style={{ position:"absolute", top:0, left:0, right:0, height:1, background:"linear-gradient(90deg,transparent,rgba(46,213,115,0.5),transparent)", opacity:0.6 }}/>
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <p className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>
+                {pnlMode === "net" ? "Net" : "Gross"} Equity
+              </p>
+              <p className="text-lg font-bold mt-0.5" style={{ color:equityChange>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+                {equityChange>=0?"+":""}${equityChange.toFixed(2)}
+              </p>
+            </div>
+            {/* Range selector */}
+            <div className="flex gap-0.5 p-0.5 rounded-lg" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+              {["1W","1M","3M","ALL"].map(r=>(
+                <button key={r} onClick={()=>setEquityRange(r)}
+                  className="px-2 py-1 rounded text-xs font-semibold transition-all"
+                  style={{ background:equityRange===r?"var(--accent)":"transparent", color:equityRange===r?"#fff":"var(--text-muted)", fontFamily:"var(--font-mono)" }}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
           {cumulativePnlData.length > 1 ? (
-            <ResponsiveContainer width="100%" height={180}>
+            <ResponsiveContainer width="100%" height={140}>
               <AreaChart data={cumulativePnlData}>
                 <defs>
-                  <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#00d4aa" stopOpacity={0.4}/>
-                    <stop offset="95%" stopColor="#00d4aa" stopOpacity={0}/>
+                  <linearGradient id="eqGrad2" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={equityChange>=0?"#2ed573":"#ff4757"} stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor={equityChange>=0?"#2ed573":"#ff4757"} stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="date" tick={{ fill:"var(--text-secondary)", fontSize:9 }} interval="preserveStartEnd"/>
-                <YAxis tick={{ fill:"var(--text-secondary)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
-                <Tooltip contentStyle={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", borderRadius:8, color:"var(--text-primary)", fontSize:11 }} formatter={v=>[`$${v}`,"Equity"]}/>
-                <Area type="monotone" dataKey="cumPnl" stroke="#00d4aa" strokeWidth={2} fill="url(#cumGrad)"/>
+                <XAxis dataKey="date" tick={{ fill:"var(--text-muted)", fontSize:9 }} interval="preserveStartEnd" axisLine={false} tickLine={false}/>
+                <Tooltip {...tipStyle} formatter={v=>[`$${v}`,"Equity"]}/>
+                <Area type="monotone" dataKey="cumPnl" stroke={equityChange>=0?"#2ed573":"#ff4757"} strokeWidth={2} fill="url(#eqGrad2)" dot={false}/>
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-44 flex items-center justify-center">
+            <div className="h-36 flex items-center justify-center">
               <p className="text-sm" style={{ color:"var(--text-muted)" }}>Log trades to see chart</p>
             </div>
           )}
-        </ChartCard>
+        </div>
 
-        <ChartCard title="Net Daily P&L" tooltip={TOOLTIPS.dailyPnl}>
+        {/* Daily P&L */}
+        <ChartCard title="Daily P&L" tooltip={TOOLTIPS.dailyPnl}>
           {dailyPnlData.length > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={dailyPnlData}>
-                <XAxis dataKey="date" tick={{ fill:"var(--text-secondary)", fontSize:9 }} interval="preserveStartEnd"/>
-                <YAxis tick={{ fill:"var(--text-secondary)", fontSize:10 }} tickFormatter={v=>`$${v}`}/>
-                <Tooltip contentStyle={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", borderRadius:8, color:"var(--text-primary)", fontSize:11 }} formatter={v=>[`$${v}`,"P&L"]}/>
+                <XAxis dataKey="date" tick={{ fill:"var(--text-muted)", fontSize:9 }} interval="preserveStartEnd" axisLine={false} tickLine={false}/>
+                <YAxis tick={{ fill:"var(--text-muted)", fontSize:10 }} tickFormatter={v=>`$${v}`} axisLine={false} tickLine={false}/>
+                <Tooltip {...tipStyle} formatter={v=>[`$${v}`,"P&L"]}/>
                 <Bar dataKey="pnl" radius={[3,3,0,0]}>
                   {dailyPnlData.map((d,i) => <Cell key={i} fill={d.pnl>=0?"#2ed573":"#ff4757"}/>)}
                 </Bar>
@@ -650,12 +742,15 @@ export default function Dashboard() {
         </ChartCard>
       </div>
 
-      {/* ── Bottom row ─────────────────────────────────────────────────────── */}
+      {/* ── Bottom row ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         <div className="lg:col-span-2 rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>Activity Feed</h2>
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"/>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
+              <span className="text-xs" style={{ color:"var(--accent-success)" }}>Live</span>
+            </div>
           </div>
           <ActivityFeed trades={realTrades}/>
         </div>
@@ -670,14 +765,14 @@ export default function Dashboard() {
           <div className="overflow-x-auto">
             {recentTrades.length===0 ? (
               <div className="py-12 text-center">
-                <p className="text-sm" style={{ color:"var(--text-muted)" }}>No trades yet. Hit the <span style={{ color:"var(--accent)" }}>+</span> button to log your first trade!</p>
+                <p className="text-sm" style={{ color:"var(--text-muted)" }}>No trades yet. Hit the <span style={{ color:"var(--accent)" }}>+</span> button!</p>
               </div>
             ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom:"1px solid var(--border)" }}>
                     {["Symbol","Direction","P&L","Outcome","Date"].map(h=>(
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold" style={{ color:"var(--text-secondary)" }}>{h}</th>
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold" style={{ color:"var(--text-secondary)", fontFamily:"var(--font-mono)" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -686,20 +781,20 @@ export default function Dashboard() {
                     <tr key={t.id} style={{ borderBottom:"1px solid var(--border)" }}
                       onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"}
                       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                      <td className="px-4 py-3 font-semibold" style={{ color:"var(--text-primary)" }}>{t.symbol}</td>
+                      <td className="px-4 py-3 font-semibold" style={{ color:"var(--accent)", fontFamily:"var(--font-mono)", fontSize:12 }}>{t.symbol}</td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded text-xs font-medium"
-                          style={{ background:t.direction==="BUY"?"rgba(46,213,115,0.15)":"rgba(255,71,87,0.15)",
+                        <span className="px-2 py-0.5 rounded text-xs font-semibold"
+                          style={{ background:t.direction==="BUY"?"rgba(46,213,115,0.12)":"rgba(255,71,87,0.12)",
                             color:t.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)" }}>
                           {t.direction==="BUY"?"▲":"▼"} {t.direction}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-semibold text-xs" style={{ color:tradePnl(t)>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+                      <td className="px-4 py-3 font-semibold text-xs" style={{ color:tradePnl(t)>=0?"var(--accent-success)":"var(--accent-danger)", fontFamily:"var(--font-mono)" }}>
                         {tradePnl(t)>=0?"+":""}${tradePnl(t).toFixed(2)}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium"
-                          style={{ background:t.outcome==="WIN"?"rgba(46,213,115,0.15)":t.outcome==="LOSS"?"rgba(255,71,87,0.15)":"rgba(108,99,255,0.15)",
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                          style={{ background:t.outcome==="WIN"?"rgba(46,213,115,0.12)":t.outcome==="LOSS"?"rgba(255,71,87,0.12)":"rgba(108,99,255,0.12)",
                             color:t.outcome==="WIN"?"var(--accent-success)":t.outcome==="LOSS"?"var(--accent-danger)":"var(--accent)" }}>
                           {t.outcome}
                         </span>
@@ -717,7 +812,7 @@ export default function Dashboard() {
       {/* Floating + */}
       <button onClick={()=>setTradeModalOpen(true)}
         className="fixed bottom-6 right-6 w-14 h-14 rounded-full shadow-2xl flex items-center justify-center z-40 transition-transform hover:scale-110"
-        style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
+        style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)", boxShadow:"0 8px 32px rgba(108,99,255,0.4)" }}>
         <Plus size={24} className="text-white"/>
       </button>
 

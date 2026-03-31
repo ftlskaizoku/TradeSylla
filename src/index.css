@@ -1,18 +1,17 @@
 /* ============================================================
-   TradeSylla — Visual Upgrade v2.0
-   src/index.css  (replace your existing index.css entirely)
-   
-   Changes from mockup:
-   - New fonts: Syne (headings) + DM Mono (numbers/labels)
-   - Refined stat cards with gradient accent bars
-   - Sharper borders, better shadows
-   - Equity curve improvements
-   - Journal table pip-quality bars
-   - Smoother sidebar with badge support
-   - All 6 themes from the concept file
+   TradeSylla — Visual Upgrade v3.0
+   src/index.css — Full redesign based on concepts file
+
+   Key changes from v2:
+   - Stat cards: permanent top shimmer + gradient progress bar
+   - Sidebar: wider (220px), icon containers, trade count badges
+   - Journal table: pip-bar quality, better row density
+   - Equity chart: time range selector, glowing endpoint
+   - SYLLEDGE chat: file download cards, data highlight spans
+   - Global: richer depth, subtle mesh backgrounds
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Instrument+Serif:ital@0;1&display=swap');
 
 /* ── Reset ──────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
@@ -46,6 +45,7 @@
   /* Fonts */
   --font-display: 'Syne', sans-serif;
   --font-mono:    'DM Mono', monospace;
+  --font-serif:   'Instrument Serif', serif;
   --font-body:    'Syne', sans-serif;
 
   /* Radius */
@@ -55,7 +55,7 @@
   --radius-xl: 20px;
 }
 
-/* ── Theme: Eclipse (amber/charcoal) ─────────────────────────── */
+/* ── Theme: Eclipse ──────────────────────────────────────────── */
 [data-theme="eclipse"] {
   --bg-primary:       #0d0c07;
   --bg-secondary:     #131108;
@@ -74,7 +74,7 @@
   --border-light:     #332a0a;
 }
 
-/* ── Theme: Arctic (light/steel blue) ───────────────────────── */
+/* ── Theme: Arctic ───────────────────────────────────────────── */
 [data-theme="arctic"] {
   --bg-primary:       #f0f4f8;
   --bg-secondary:     #ffffff;
@@ -93,7 +93,7 @@
   --border-light:     #f1f5f9;
 }
 
-/* ── Theme: Forest (deep green/gold) ────────────────────────── */
+/* ── Theme: Forest ───────────────────────────────────────────── */
 [data-theme="forest"] {
   --bg-primary:       #060e08;
   --bg-secondary:     #0a1509;
@@ -112,7 +112,7 @@
   --border-light:     #1c4420;
 }
 
-/* ── Theme: Noir (true black/crimson) ───────────────────────── */
+/* ── Theme: Noir ─────────────────────────────────────────────── */
 [data-theme="noir"] {
   --bg-primary:       #000000;
   --bg-secondary:     #0a0a0a;
@@ -131,7 +131,7 @@
   --border-light:     #222222;
 }
 
-/* ── Theme: Dusk (slate purple/mint) ────────────────────────── */
+/* ── Theme: Dusk ─────────────────────────────────────────────── */
 [data-theme="dusk"] {
   --bg-primary:       #0d0d1a;
   --bg-secondary:     #11111f;
@@ -150,7 +150,7 @@
   --border-light:     #262650;
 }
 
-/* ── Base ───────────────────────────────────────────────────── */
+/* ── Base ─────────────────────────────────────────────────────── */
 html { font-size: 16px; -webkit-font-smoothing: antialiased; }
 
 body {
@@ -161,7 +161,7 @@ body {
   min-height:       100vh;
 }
 
-/* ── Typography ─────────────────────────────────────────────── */
+/* ── Typography ──────────────────────────────────────────────── */
 h1, h2, h3, h4, h5, h6 {
   font-family:   var(--font-display);
   font-weight:   700;
@@ -173,7 +173,9 @@ h1, h2, h3, h4, h5, h6 {
 .mono, code, pre,
 .font-mono { font-family: var(--font-mono) !important; }
 
-/* ── Gradient text ──────────────────────────────────────────── */
+.serif { font-family: var(--font-serif) !important; }
+
+/* ── Gradient text ───────────────────────────────────────────── */
 .gradient-text {
   background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
   -webkit-background-clip: text;
@@ -181,18 +183,18 @@ h1, h2, h3, h4, h5, h6 {
   background-clip: text;
 }
 
-/* ── Scrollbars ─────────────────────────────────────────────── */
-::-webkit-scrollbar       { width: 4px; height: 4px; }
+/* ── Scrollbars ──────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 3px; height: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background:    rgba(var(--accent-rgb), 0.25);
+  background:    rgba(var(--accent-rgb), 0.2);
   border-radius: 100px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--accent-rgb), 0.4);
 }
 
-/* ── Cards ──────────────────────────────────────────────────── */
+/* ── Cards ───────────────────────────────────────────────────── */
 .card {
   background:    var(--bg-card);
   border:        1px solid var(--border);
@@ -201,7 +203,7 @@ h1, h2, h3, h4, h5, h6 {
   overflow:      hidden;
 }
 
-/* Top shimmer line on cards */
+/* Top shimmer line — always visible, brighter on hover */
 .card::before {
   content:    '';
   position:   absolute;
@@ -209,15 +211,16 @@ h1, h2, h3, h4, h5, h6 {
   height:     1px;
   background: linear-gradient(90deg,
     transparent 0%,
-    rgba(var(--accent-rgb), 0.3) 40%,
-    rgba(var(--accent-rgb), 0.3) 60%,
+    rgba(var(--accent-rgb), 0.2) 30%,
+    rgba(var(--accent-rgb), 0.4) 50%,
+    rgba(var(--accent-rgb), 0.2) 70%,
     transparent 100%);
-  opacity: 0;
+  opacity: 0.6;
   transition: opacity 0.3s;
 }
 .card:hover::before { opacity: 1; }
 
-/* ── Stat Cards (upgraded from mockup) ─────────────────────── */
+/* ── Stat Cards — v3 Upgrade ─────────────────────────────────── */
 .stat-card {
   background:    var(--bg-card);
   border:        1px solid var(--border);
@@ -230,16 +233,45 @@ h1, h2, h3, h4, h5, h6 {
   overflow:      hidden;
   transition:    transform 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
+
+/* Always-on top shimmer (stronger than generic card) */
+.stat-card::before {
+  content:    '';
+  position:   absolute;
+  top: 0; left: 0; right: 0;
+  height:     1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(var(--accent-rgb), 0.3) 20%,
+    rgba(var(--accent-rgb), 0.6) 50%,
+    rgba(var(--accent-rgb), 0.3) 80%,
+    transparent 100%);
+  opacity: 0.7;
+  transition: opacity 0.3s;
+}
+
 .stat-card:hover {
   transform:    translateY(-2px);
-  border-color: rgba(var(--accent-rgb), 0.3);
-  box-shadow:   0 8px 32px rgba(0,0,0,0.3);
+  border-color: rgba(var(--accent-rgb), 0.25);
+  box-shadow:   0 12px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(var(--accent-rgb), 0.06);
+}
+.stat-card:hover::before { opacity: 1; }
+
+/* Subtle mesh background on cards */
+.stat-card::after {
+  content:    '';
+  position:   absolute;
+  inset:      0;
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(var(--accent-rgb), 0.04) 0%, transparent 70%);
+  pointer-events: none;
 }
 
 .stat-card-icon-row {
   display:         flex;
   align-items:     center;
   justify-content: space-between;
+  position:        relative;
+  z-index:         1;
 }
 .stat-card-icon {
   width:           34px;
@@ -259,10 +291,12 @@ h1, h2, h3, h4, h5, h6 {
 }
 .stat-card-value {
   font-family:    var(--font-display);
-  font-size:      28px;
+  font-size:      26px;
   font-weight:    800;
   letter-spacing: -0.03em;
   line-height:    1;
+  position:       relative;
+  z-index:        1;
 }
 .stat-card-label {
   font-family:    var(--font-mono);
@@ -270,21 +304,65 @@ h1, h2, h3, h4, h5, h6 {
   color:          var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.12em;
+  position:       relative;
+  z-index:        1;
 }
 .stat-card-bar {
   height:        3px;
   border-radius: 100px;
-  background:    rgba(255,255,255,0.06);
+  background:    rgba(255,255,255,0.05);
   overflow:      hidden;
-  margin-top:    2px;
+  margin-top:    4px;
+  position:      relative;
+  z-index:       1;
 }
 .stat-card-bar-fill {
   height:        100%;
   border-radius: 100px;
-  transition:    width 0.8s cubic-bezier(0.4,0,0.2,1);
+  transition:    width 1s cubic-bezier(0.4,0,0.2,1);
+  position:      relative;
+}
+/* Glow on the bar fill */
+.stat-card-bar-fill::after {
+  content:      '';
+  position:     absolute;
+  right:        0;
+  top:          50%;
+  transform:    translateY(-50%);
+  width:        8px;
+  height:       8px;
+  border-radius:50%;
+  background:   currentColor;
+  opacity:      0.6;
+  filter:       blur(3px);
 }
 
-/* ── Sidebar nav (upgraded) ─────────────────────────────────── */
+/* ── Metric Card (Dashboard) ─────────────────────────────────── */
+.metric-card {
+  background:    var(--bg-card);
+  border:        1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding:       1.25rem;
+  position:      relative;
+  overflow:      hidden;
+  transition:    all 0.2s ease;
+}
+.metric-card::before {
+  content:    '';
+  position:   absolute;
+  top: 0; left: 0; right: 0;
+  height:     1px;
+  background: linear-gradient(90deg,transparent,rgba(var(--accent-rgb),0.4),transparent);
+  opacity:    0.5;
+  transition: opacity 0.3s;
+}
+.metric-card:hover {
+  border-color: rgba(var(--accent-rgb), 0.25);
+  transform:    translateY(-1px);
+}
+.metric-card:hover::before { opacity: 1; }
+
+/* ── Sidebar nav — v3 Upgrade ────────────────────────────────── */
 .sidebar-nav-item {
   border-radius: var(--radius);
   transition:    background 0.15s, color 0.15s;
@@ -297,8 +375,19 @@ h1, h2, h3, h4, h5, h6 {
 .sidebar-nav-item.active {
   background:   rgba(var(--accent-rgb), 0.12) !important;
   color:        var(--accent) !important;
-  border:       1px solid rgba(var(--accent-rgb), 0.2);
   font-weight:  600;
+}
+/* Left accent bar on active item */
+.sidebar-nav-item.active::before {
+  content:      '';
+  position:     absolute;
+  left:         0;
+  top:          50%;
+  transform:    translateY(-50%);
+  width:        3px;
+  height:       60%;
+  background:   var(--accent);
+  border-radius:0 2px 2px 0;
 }
 
 /* Nav badge (trade count, "New" etc.) */
@@ -308,13 +397,20 @@ h1, h2, h3, h4, h5, h6 {
   font-size:     9px;
   padding:       2px 7px;
   border-radius: 100px;
-  background:    rgba(var(--accent-rgb), 0.15);
+  background:    rgba(var(--accent-rgb), 0.12);
   color:         var(--accent);
   font-weight:   500;
+  border:        1px solid rgba(var(--accent-rgb), 0.2);
 }
 .nav-badge.success {
-  background: rgba(46,213,115,0.12);
+  background: rgba(46,213,115,0.1);
   color:      var(--accent-success);
+  border-color: rgba(46,213,115,0.2);
+}
+.nav-badge.warning {
+  background: rgba(255,165,2,0.1);
+  color:      var(--accent-warning);
+  border-color: rgba(255,165,2,0.2);
 }
 
 /* ── Journal table upgrades ─────────────────────────────────── */
@@ -336,7 +432,7 @@ h1, h2, h3, h4, h5, h6 {
   transition: background 0.1s;
 }
 .journal-table tr:hover td {
-  background: rgba(var(--accent-rgb), 0.03);
+  background: rgba(var(--accent-rgb), 0.025);
 }
 
 /* Symbol pill */
@@ -364,28 +460,30 @@ h1, h2, h3, h4, h5, h6 {
 /* Outcome dot */
 .outcome-dot {
   display:       inline-block;
-  width:         7px; height: 7px;
+  width:         6px; height: 6px;
   border-radius: 50%;
   margin-right:  6px;
   flex-shrink:   0;
 }
 
-/* Quality pip bar */
+/* Quality pip bar — v3 (taller, with lit glow) */
 .quality-pips {
-  display: flex;
-  gap:     2px;
+  display:     flex;
+  gap:         2px;
   align-items: center;
 }
 .quality-pip {
   width:         4px;
-  height:        13px;
+  height:        14px;
   border-radius: 2px;
-  background:    rgba(255,255,255,0.08);
+  background:    rgba(255,255,255,0.06);
   transition:    background 0.2s;
 }
-.quality-pip.lit { background: var(--accent); }
-.quality-pip.lit.high { background: var(--accent-success); }
-.quality-pip.lit.low  { background: var(--accent-warning); }
+.quality-pip.lit        { background: var(--accent); }
+.quality-pip.lit.high   { background: var(--accent-success); box-shadow: 0 0 4px rgba(46,213,115,0.4); }
+.quality-pip.lit.medium { background: var(--accent); }
+.quality-pip.lit.low    { background: var(--accent-warning); }
+.quality-pip.lit.bad    { background: var(--accent-danger); }
 
 /* P&L value */
 .pnl-value {
@@ -397,12 +495,21 @@ h1, h2, h3, h4, h5, h6 {
 .pnl-value.negative { color: var(--accent-danger); }
 .pnl-value.neutral  { color: var(--text-muted); }
 
-/* ── Equity curve SVG wrapper ───────────────────────────────── */
+/* ── Equity curve — v3 ──────────────────────────────────────── */
 .equity-chart {
   background:    var(--bg-card);
   border:        1px solid var(--border);
   border-radius: var(--radius-lg);
   padding:       20px;
+  position:      relative;
+  overflow:      hidden;
+}
+.equity-chart::before {
+  content:    '';
+  position:   absolute;
+  top: 0; left: 0; right: 0;
+  height:     1px;
+  background: linear-gradient(90deg,transparent,rgba(var(--accent-rgb),0.5),transparent);
 }
 .equity-chart-header {
   display:         flex;
@@ -467,13 +574,28 @@ h1, h2, h3, h4, h5, h6 {
 .time-range-btn.active {
   background: var(--accent);
   color:      #fff;
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.3);
 }
 .time-range-btn:hover:not(.active) {
   color: var(--text-primary);
   background: rgba(var(--accent-rgb), 0.1);
 }
 
-/* ── Buttons ────────────────────────────────────────────────── */
+/* Equity glowing endpoint dot */
+.equity-endpoint {
+  position:    relative;
+  display:     inline-block;
+}
+.equity-endpoint::after {
+  content:      '';
+  position:     absolute;
+  inset:        -4px;
+  border-radius:50%;
+  background:   rgba(46,213,115,0.2);
+  animation:    pulse-glow 2s ease infinite;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
 .btn {
   display:         inline-flex;
   align-items:     center;
@@ -518,7 +640,7 @@ h1, h2, h3, h4, h5, h6 {
   color:        var(--accent);
 }
 
-/* ── Input ──────────────────────────────────────────────────── */
+/* ── Input ───────────────────────────────────────────────────── */
 .input {
   width:         100%;
   background:    var(--bg-elevated);
@@ -537,7 +659,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 .input::placeholder { color: var(--text-muted); }
 
-/* ── Badges ─────────────────────────────────────────────────── */
+/* ── Badges ──────────────────────────────────────────────────── */
 .badge {
   display:        inline-flex;
   align-items:    center;
@@ -554,7 +676,7 @@ h1, h2, h3, h4, h5, h6 {
 .badge-accent  { background:rgba(var(--accent-rgb),0.1); border:1px solid rgba(var(--accent-rgb),0.2); color:var(--accent); }
 .badge-muted   { background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-muted); }
 
-/* ── SYLLEDGE chat bubbles ───────────────────────────────────── */
+/* ── SYLLEDGE chat — v3 ─────────────────────────────────────── */
 .chat-bubble-ai {
   background:    var(--bg-card);
   border:        1px solid var(--border);
@@ -572,7 +694,7 @@ h1, h2, h3, h4, h5, h6 {
   line-height:   1.6;
   color:         #fff;
 }
-/* Inline data highlight in SYLLEDGE responses */
+/* Inline data highlight */
 .chat-highlight {
   display:       inline-block;
   background:    rgba(var(--accent-rgb), 0.12);
@@ -584,7 +706,7 @@ h1, h2, h3, h4, h5, h6 {
   font-size:     12px;
   font-weight:   500;
 }
-/* File download card inside chat */
+/* File download card in chat */
 .chat-file-card {
   display:       flex;
   align-items:   center;
@@ -594,10 +716,13 @@ h1, h2, h3, h4, h5, h6 {
   border:        1px solid rgba(46,213,115,0.2);
   border-radius: 10px;
   cursor:        pointer;
-  transition:    background 0.2s;
+  transition:    background 0.2s, transform 0.15s;
   margin-top:    8px;
 }
-.chat-file-card:hover { background: rgba(46,213,115,0.12); }
+.chat-file-card:hover {
+  background:   rgba(46,213,115,0.12);
+  transform:    translateX(2px);
+}
 .chat-file-name {
   font-size:   12px;
   font-weight: 600;
@@ -609,7 +734,7 @@ h1, h2, h3, h4, h5, h6 {
   color:       var(--text-muted);
 }
 
-/* ── Tooltips ───────────────────────────────────────────────── */
+/* ── Tooltips ─────────────────────────────────────────────────── */
 .tooltip-trigger { position: relative; }
 .tooltip {
   position:      absolute;
@@ -632,7 +757,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 .tooltip-trigger:hover .tooltip { opacity: 1; }
 
-/* ── Animations ─────────────────────────────────────────────── */
+/* ── Animations ───────────────────────────────────────────────── */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -645,9 +770,14 @@ h1, h2, h3, h4, h5, h6 {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-4px); }
+}
 
-.animate-fade-up      { animation: fadeUp 0.4s ease both; }
-.animate-pulse-glow   { animation: pulse-glow 2s ease infinite; }
+.animate-fade-up    { animation: fadeUp 0.4s ease both; }
+.animate-pulse-glow { animation: pulse-glow 2s ease infinite; }
+.animate-float      { animation: float 3s ease-in-out infinite; }
 
 /* Loading skeleton */
 .skeleton {
@@ -662,7 +792,7 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: var(--radius-sm);
 }
 
-/* ── Misc utilities ─────────────────────────────────────────── */
+/* ── Misc utilities ───────────────────────────────────────────── */
 .live-dot {
   width:         8px; height: 8px;
   border-radius: 50%;
@@ -677,14 +807,39 @@ h1, h2, h3, h4, h5, h6 {
   margin:     16px 0;
 }
 
-.text-accent   { color: var(--accent); }
-.text-success  { color: var(--accent-success); }
-.text-danger   { color: var(--accent-danger); }
-.text-warning  { color: var(--accent-warning); }
-.text-muted    { color: var(--text-muted); }
-.text-secondary{ color: var(--text-secondary); }
+.text-accent    { color: var(--accent); }
+.text-success   { color: var(--accent-success); }
+.text-danger    { color: var(--accent-danger); }
+.text-warning   { color: var(--accent-warning); }
+.text-muted     { color: var(--text-muted); }
+.text-secondary { color: var(--text-secondary); }
 
-/* Recharts overrides */
+/* Glass morphism */
+.glass {
+  background:      rgba(var(--bg-card), 0.8);
+  backdrop-filter: blur(12px);
+  border:          1px solid var(--border);
+}
+
+/* Card hover utility */
+.card-hover { transition: all 0.2s ease; }
+.card-hover:hover {
+  transform:    translateY(-2px);
+  border-color: rgba(var(--accent-rgb), 0.3);
+  box-shadow:   0 8px 30px rgba(0,0,0,0.3);
+}
+
+/* Gradient utils */
+.gradient-text {
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.win-gradient  { background: linear-gradient(135deg, #2ed573, #00d4aa); }
+.loss-gradient { background: linear-gradient(135deg, #ff4757, #ff6b81); }
+
+/* ── Recharts overrides ───────────────────────────────────────── */
 .recharts-cartesian-axis-tick-value { font-family: var(--font-mono) !important; font-size: 11px !important; }
 .recharts-legend-item-text          { font-family: var(--font-mono) !important; font-size: 11px !important; }
 .recharts-tooltip-wrapper .recharts-default-tooltip {
