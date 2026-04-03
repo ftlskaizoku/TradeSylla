@@ -1,839 +1,388 @@
+// src/pages/Settings.jsx  — Visual Upgrade v2
 import { useState, useEffect } from "react"
 import { useUser } from "@/lib/UserContext"
 import { supabase } from "@/lib/supabase"
 import { Trade, Playbook, BacktestSession, BrokerConnection, SylledgeInsight } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
-  User, Key, Palette, Download, Upload, Trash2, Shield,
-  ChevronRight, Database, Save, AlertTriangle, CheckCircle,
-  Eye, EyeOff, Info, Moon, Sun, Zap, LogOut, Camera, Edit3,
-  Bell, BellOff, BellRing, Megaphone, TrendingUp, TrendingDown, Trophy, Clock,
-  Copy, RefreshCw, Bot
+  User, Palette, Database, Key, Bell, Save, Download, Upload,
+  Eye, EyeOff, Copy, CheckCircle, RefreshCw, Trash2,
+  Shield, Zap, Crown, LogOut, ChevronRight
 } from "lucide-react"
 
-// ─── Theme definitions ────────────────────────────────────────────────────────
+// ─── Themes ───────────────────────────────────────────────────────────────────
 const THEMES = [
   {
-    id: "void",
-    name: "Void",
-    desc: "Electric violet · sharp & focused",
-    preview: ["#05050d","#6c63ff","#00d4aa","#2ed573"],
-    vars: {
-      "--bg-primary":"#05050d","--bg-secondary":"#0a0a18","--bg-card":"#0f0f22",
-      "--bg-elevated":"#141430","--accent":"#6c63ff","--accent-rgb":"108,99,255",
-      "--accent-secondary":"#00d4aa","--accent-danger":"#ff4757","--accent-warning":"#ffa502","--accent-success":"#2ed573",
+    id:"dark", label:"Deep Space", emoji:"🌌",
+    vars:{ "--bg-primary":"#070714","--bg-secondary":"#0a0a1a","--bg-card":"#0d0d1f","--bg-elevated":"#111128",
+      "--accent":"#6c63ff","--accent-rgb":"108,99,255","--accent-secondary":"#00d4aa",
+      "--accent-danger":"#ff4757","--accent-warning":"#ffa502","--accent-success":"#2ed573",
       "--text-primary":"#f0f0f8","--text-secondary":"#8b8d9e","--text-muted":"#4a4c5e",
-      "--border":"#1a1a30","--border-light":"#222240",
-    }
+      "--border":"#1a1a30","--border-light":"#222240" }
   },
   {
-    id: "eclipse",
-    name: "Eclipse",
-    desc: "Warm amber · Bloomberg-grade",
-    preview: ["#0d0c07","#f59e0b","#f97316","#22c55e"],
-    vars: {
-      "--bg-primary":"#0d0c07","--bg-secondary":"#131108","--bg-card":"#191508",
-      "--bg-elevated":"#1f1b09","--accent":"#f59e0b","--accent-rgb":"245,158,11",
-      "--accent-secondary":"#f97316","--accent-danger":"#ef4444","--accent-warning":"#fbbf24","--accent-success":"#22c55e",
-      "--text-primary":"#fef3c7","--text-secondary":"#a08030","--text-muted":"#554422",
-      "--border":"#2a2208","--border-light":"#332a0a",
-    }
-  },
-  {
-    id: "arctic",
-    name: "Arctic",
-    desc: "Clean light · steel blue",
-    preview: ["#f0f4f8","#2563eb","#06b6d4","#10b981"],
-    vars: {
-      "--bg-primary":"#f0f4f8","--bg-secondary":"#ffffff","--bg-card":"#ffffff",
-      "--bg-elevated":"#f5f8fc","--accent":"#2563eb","--accent-rgb":"37,99,235",
-      "--accent-secondary":"#06b6d4","--accent-danger":"#ef4444","--accent-warning":"#f59e0b","--accent-success":"#10b981",
-      "--text-primary":"#0f172a","--text-secondary":"#475569","--text-muted":"#94a3b8",
-      "--border":"#e2e8f0","--border-light":"#f1f5f9",
-    }
-  },
-  {
-    id: "forest",
-    name: "Forest",
-    desc: "Deep green · gold — disciplined",
-    preview: ["#060e08","#22c55e","#eab308","#4ade80"],
-    vars: {
-      "--bg-primary":"#060e08","--bg-secondary":"#0a1509","--bg-card":"#0d1c0c",
-      "--bg-elevated":"#112510","--accent":"#22c55e","--accent-rgb":"34,197,94",
-      "--accent-secondary":"#eab308","--accent-danger":"#ef4444","--accent-warning":"#f97316","--accent-success":"#4ade80",
-      "--text-primary":"#f0fdf4","--text-secondary":"#6faf78","--text-muted":"#2d5c33",
-      "--border":"#143314","--border-light":"#1c4420",
-    }
-  },
-  {
-    id: "noir",
-    name: "Noir",
-    desc: "True black · crimson — intense",
-    preview: ["#000000","#dc2626","#f87171","#22c55e"],
-    vars: {
-      "--bg-primary":"#000000","--bg-secondary":"#0a0a0a","--bg-card":"#0f0f0f",
-      "--bg-elevated":"#141414","--accent":"#dc2626","--accent-rgb":"220,38,38",
-      "--accent-secondary":"#f87171","--accent-danger":"#dc2626","--accent-warning":"#f59e0b","--accent-success":"#22c55e",
-      "--text-primary":"#fafafa","--text-secondary":"#737373","--text-muted":"#404040",
-      "--border":"#1a1a1a","--border-light":"#222222",
-    }
-  },
-  {
-    id: "dusk",
-    name: "Dusk",
-    desc: "Slate purple · mint — distinctive",
-    preview: ["#0d0d1a","#8b5cf6","#06d6a0","#f43f5e"],
-    vars: {
-      "--bg-primary":"#0d0d1a","--bg-secondary":"#11111f","--bg-card":"#14142a",
-      "--bg-elevated":"#18183a","--accent":"#8b5cf6","--accent-rgb":"139,92,246",
-      "--accent-secondary":"#06d6a0","--accent-danger":"#f43f5e","--accent-warning":"#f59e0b","--accent-success":"#06d6a0",
+    id:"void", label:"Void", emoji:"⬛",
+    vars:{ "--bg-primary":"#000000","--bg-secondary":"#0a0a0a","--bg-card":"#111111","--bg-elevated":"#161616",
+      "--accent":"#8b5cf6","--accent-rgb":"139,92,246","--accent-secondary":"#06d6a0",
+      "--accent-danger":"#f43f5e","--accent-warning":"#f59e0b","--accent-success":"#06d6a0",
       "--text-primary":"#ede9fe","--text-secondary":"#7c7a9e","--text-muted":"#3d3b5e",
-      "--border":"#1e1e3a","--border-light":"#262650",
-    }
+      "--border":"#1e1e3a","--border-light":"#262650" }
+  },
+  {
+    id:"midnight", label:"Midnight Blue", emoji:"🌊",
+    vars:{ "--bg-primary":"#040c18","--bg-secondary":"#071222","--bg-card":"#091829","--bg-elevated":"#0d2035",
+      "--accent":"#38bdf8","--accent-rgb":"56,189,248","--accent-secondary":"#34d399",
+      "--accent-danger":"#f87171","--accent-warning":"#fbbf24","--accent-success":"#34d399",
+      "--text-primary":"#e0f2fe","--text-secondary":"#7cb9d4","--text-muted":"#3a6077",
+      "--border":"#0f2d42","--border-light":"#163550" }
+  },
+  {
+    id:"forest", label:"Emerald Dark", emoji:"🌿",
+    vars:{ "--bg-primary":"#030d09","--bg-secondary":"#071410","--bg-card":"#0b1a12","--bg-elevated":"#0f2018",
+      "--accent":"#10b981","--accent-rgb":"16,185,129","--accent-secondary":"#a78bfa",
+      "--accent-danger":"#ef4444","--accent-warning":"#f59e0b","--accent-success":"#10b981",
+      "--text-primary":"#d1fae5","--text-secondary":"#6b9e82","--text-muted":"#2e5c42",
+      "--border":"#0f2d1c","--border-light":"#164027" }
+  },
+  {
+    id:"light", label:"Clean Light", emoji:"☀️",
+    vars:{ "--bg-primary":"#f8f9fc","--bg-secondary":"#ffffff","--bg-card":"#ffffff","--bg-elevated":"#f1f3f9",
+      "--accent":"#6c63ff","--accent-rgb":"108,99,255","--accent-secondary":"#00b894",
+      "--accent-danger":"#e84393","--accent-warning":"#f39c12","--accent-success":"#00b894",
+      "--text-primary":"#1a1b2e","--text-secondary":"#5a5c6e","--text-muted":"#9a9cae",
+      "--border":"#e2e4f0","--border-light":"#eceef8" }
   },
 ]
 
 function applyTheme(theme, customColors) {
-  const root = document.documentElement
-  Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v))
-  // Apply custom color overrides on top
-  if (customColors) {
-    Object.entries(customColors).forEach(([k, v]) => { if (v) root.style.setProperty(k, v) })
-    localStorage.setItem("ts_custom_colors", JSON.stringify(customColors))
+  const root=document.documentElement
+  Object.entries(theme.vars).forEach(([k,v])=>root.style.setProperty(k,v))
+  if(customColors) {
+    Object.entries(customColors).forEach(([k,v])=>{ if(v)root.style.setProperty(k,v) })
+    localStorage.setItem("ts_custom_colors",JSON.stringify(customColors))
   }
-  localStorage.setItem("ts_theme", theme.id)
+  localStorage.setItem("ts_theme",theme.id)
 }
 
-function loadSavedTheme() {
-  const id = localStorage.getItem("ts_theme") || "void"
-  const theme = THEMES.find(t => t.id === id) || THEMES[0]
-  const customColors = JSON.parse(localStorage.getItem("ts_custom_colors") || "{}")
-  applyTheme(theme, customColors)
-  return id
+export function loadSavedTheme() {
+  const id=localStorage.getItem("ts_theme")||"dark"
+  const theme=THEMES.find(t=>t.id===id)||THEMES[0]
+  const custom=JSON.parse(localStorage.getItem("ts_custom_colors")||"{}")
+  applyTheme(theme,custom); return id
 }
 
-// ─── Sidebar nav items ────────────────────────────────────────────────────────
+// ─── Sidebar pages ────────────────────────────────────────────────────────────
 const PAGES = [
   { id:"account",    label:"Account",      icon:User,     color:"#6c63ff" },
   { id:"appearance", label:"Appearance",   icon:Palette,  color:"#00d4aa" },
   { id:"data",       label:"Data & Import",icon:Database, color:"#ffa502" },
   { id:"apikeys",    label:"API Keys",     icon:Key,      color:"#ff6b35" },
-  { id:"notifications", label:"Notifications", icon:Bell,   color:"#ff6b35" },
+  { id:"notifications",label:"Notifications",icon:Bell,   color:"#a29bfe" },
 ]
 
 // ─── Toggle ───────────────────────────────────────────────────────────────────
 function Toggle({ value, onChange }) {
   return (
-    <button onClick={() => onChange(!value)}
+    <button onClick={()=>onChange(!value)}
       className="relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0"
-      style={{ background: value ? "var(--accent)" : "var(--bg-elevated)", border:"1px solid var(--border)" }}>
+      style={{ background:value?"var(--accent)":"var(--bg-elevated)", border:"1px solid var(--border)" }}>
       <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
-        style={{ transform: value ? "translateX(22px)" : "translateX(2px)" }}/>
+        style={{ transform:value?"translateX(20px)":"translateX(2px)" }}/>
     </button>
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// ACCOUNT PAGE
-// ═══════════════════════════════════════════════════════════════════
-function AccountPage({ user, updateUser, stats }) {
-  const [name,    setName]    = useState(user?.full_name || "")
-  const [email,   setEmail]   = useState(user?.email || "")
-  const [bio,     setBio]     = useState(user?.bio || "")
-  const [currency,setCurrency]= useState(user?.currency || "USD")
-  const [saving,  setSaving]  = useState(false)
-
-  useEffect(() => {
-    setName(user?.full_name || "")
-    setEmail(user?.email || "")
-    setBio(user?.bio || "")
-    setCurrency(user?.currency || "USD")
-  }, [user])
+// ─── Account Page ─────────────────────────────────────────────────────────────
+function AccountPage({ user, updateUser, signOut, stats }) {
+  const [name,     setName]     = useState(user?.full_name||"")
+  const [email,    setEmail]    = useState(user?.email||"")
+  const [bio,      setBio]      = useState(user?.bio||"")
+  const [currency, setCurrency] = useState(user?.currency||"USD")
+  const [saving,   setSaving]   = useState(false)
 
   const save = async () => {
-    if (!name.trim()) { toast.error("Name is required"); return }
     setSaving(true)
-    updateUser({ full_name: name.trim(), email: email.trim(), bio: bio.trim(), currency })
-    await new Promise(r => setTimeout(r, 300))
+    try { await updateUser({ full_name:name, email, bio, currency }); toast.success("Profile saved!") }
+    catch { toast.error("Failed to save") }
     setSaving(false)
-    toast.success("Account saved!")
   }
 
-  const initials = (name || "T").split(" ").map(w => w[0]).join("").toUpperCase().slice(0,2)
+  const initials = (name||"T").split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2)
 
   return (
-    <div className="space-y-6 max-w-xl">
-      {/* Avatar + name hero */}
-      <div className="rounded-2xl p-6 flex items-center gap-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <div className="relative">
-          <div className="w-20 h-20 rounded-2xl flex items-center justify-center text-2xl font-bold text-white"
-            style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))" }}>
+    <div className="space-y-4">
+      {/* Profile hero */}
+      <div className="card p-5">
+        <div className="flex items-center gap-4 mb-5">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-black text-white flex-shrink-0"
+            style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)", fontFamily:"var(--font-display)" }}>
             {initials}
           </div>
-        </div>
-        <div>
-          <h2 className="text-xl font-bold" style={{ color:"var(--text-primary)" }}>{name || "Trader"}</h2>
-          <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>{email || "No email set"}</p>
-          <div className="flex gap-3 mt-3">
-            {[
-              { label:"Trades",    value:stats.trades },
-              { label:"Strategies",value:stats.playbooks },
-              { label:"Backtests", value:stats.backtests },
-            ].map(s=>(
-              <div key={s.label} className="text-center">
-                <p className="text-base font-bold" style={{ color:"var(--accent)" }}>{s.value}</p>
-                <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
-              </div>
-            ))}
+          <div>
+            <p className="text-lg font-black" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>{name||"Trader"}</p>
+            <p className="text-xs mono" style={{ color:"var(--text-muted)" }}>{email}</p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="badge" style={{ background:"rgba(108,99,255,0.12)", color:"var(--accent)" }}>Free Plan</span>
+            </div>
           </div>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+          {[
+            { label:"Trades",    v:stats.trades },
+            { label:"Strategies",v:stats.playbooks },
+            { label:"Backtests", v:stats.backtests },
+            { label:"Brokers",   v:stats.brokers },
+            { label:"Insights",  v:stats.insights },
+          ].map(s=>(
+            <div key={s.label} className="rounded-xl py-3 px-2 text-center" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+              <p className="text-lg font-black mono" style={{ color:"var(--accent)" }}>{s.v}</p>
+              <p className="stat-card-label" style={{ fontSize:9 }}>{s.label}</p>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* Profile form */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+      <div className="card overflow-hidden">
         <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>Profile Information</h3>
+          <h3 className="font-bold" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>Profile Information</h3>
         </div>
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs mb-1 block font-medium" style={{ color:"var(--text-muted)" }}>Display Name</label>
+              <label className="stat-card-label block mb-1">Display Name</label>
               <input value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"
-                className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+                className="w-full h-10 rounded-xl px-3 text-sm border"
+                style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)" }}/>
             </div>
             <div>
-              <label className="text-xs mb-1 block font-medium" style={{ color:"var(--text-muted)" }}>Currency</label>
-              <select value={currency} onChange={e=>setCurrency(e.target.value)} className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}>
+              <label className="stat-card-label block mb-1">Currency</label>
+              <select value={currency} onChange={e=>setCurrency(e.target.value)}
+                className="w-full h-10 rounded-xl px-3 text-sm border"
+                style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)" }}>
                 {["USD","EUR","GBP","CHF","JPY","AUD","CAD","ZAR"].map(c=><option key={c}>{c}</option>)}
               </select>
             </div>
           </div>
           <div>
-            <label className="text-xs mb-1 block font-medium" style={{ color:"var(--text-muted)" }}>Email</label>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"
-              className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+            <label className="stat-card-label block mb-1">Email</label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+              className="w-full h-10 rounded-xl px-3 text-sm border"
+              style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)" }}/>
           </div>
           <div>
-            <label className="text-xs mb-1 block font-medium" style={{ color:"var(--text-muted)" }}>Bio / Trading style</label>
-            <textarea rows={2} value={bio} onChange={e=>setBio(e.target.value)} placeholder="e.g. London session scalper, ICT concepts, 3-5 trades/day"
-              className="w-full rounded-lg px-3 py-2 text-sm border resize-none" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+            <label className="stat-card-label block mb-1">Trading Style / Bio</label>
+            <textarea rows={2} value={bio} onChange={e=>setBio(e.target.value)} placeholder="e.g. London session scalper, ICT concepts, 3–5 trades/day"
+              className="w-full rounded-xl px-3 py-2 text-sm border resize-none"
+              style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)" }}/>
           </div>
-          <button onClick={save} disabled={saving} className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white"
-            style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", opacity:saving?0.7:1 }}>
-            <Save size={13}/> {saving ? "Saving..." : "Save Profile"}
-          </button>
+          <div className="flex items-center justify-between pt-1">
+            <button onClick={save} disabled={saving} className="btn btn-primary gap-2" style={{ opacity:saving?0.7:1 }}>
+              <Save size={13}/>{saving?"Saving…":"Save Profile"}
+            </button>
+            <button onClick={signOut} className="flex items-center gap-2 text-xs px-3 py-2 rounded-xl hover:opacity-70"
+              style={{ color:"var(--accent-danger)", fontFamily:"var(--font-display)" }}>
+              <LogOut size={12}/> Sign out
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Stats overview */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>Account Overview</h3>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-0">
-          {[
-            { label:"Total Trades",    value:stats.trades,    color:"var(--accent)" },
-            { label:"Strategies",      value:stats.playbooks, color:"var(--accent-secondary)" },
-            { label:"Backtest Sessions",value:stats.backtests,color:"var(--accent-warning)" },
-            { label:"Broker Accounts", value:stats.brokers,   color:"#ff6b35" },
-          ].map((s,i)=>(
-            <div key={s.label} className="p-5 text-center" style={{ borderRight: i<3?"1px solid var(--border)":"none" }}>
-              <p className="text-2xl font-bold" style={{ color:s.color }}>{s.value}</p>
-              <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>{s.label}</p>
+      {/* Upgrade CTA */}
+      <div className="card p-5" style={{ background:"linear-gradient(135deg,rgba(108,99,255,0.08),rgba(0,212,170,0.08))", border:"1px solid rgba(108,99,255,0.25)" }}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Crown size={16} style={{ color:"var(--accent)" }}/>
+              <p className="font-bold" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>Upgrade to Pro</p>
             </div>
-          ))}
+            <p className="text-sm" style={{ color:"var(--text-secondary)" }}>Unlimited trades, SYLLEDGE AI unlimited, advanced analytics</p>
+          </div>
+          <a href="/pricing" className="btn btn-primary flex-shrink-0">Upgrade →</a>
         </div>
       </div>
     </div>
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// APPEARANCE PAGE
-// ═══════════════════════════════════════════════════════════════════
+// ─── Appearance Page ──────────────────────────────────────────────────────────
 function AppearancePage() {
-  const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem("ts_theme") || "dark")
-  const [defaultTF,   setDefaultTF]    = useState("H1")
-  const [defaultSession, setDefaultSession] = useState("LONDON")
-  const [showPnlHeader,  setShowPnlHeader]  = useState(true)
-  const [compactMode,    setCompactMode]    = useState(false)
-  const [customColors,   setCustomColors]   = useState(() => {
-    try { return JSON.parse(localStorage.getItem("ts_custom_colors") || "{}") } catch { return {} }
-  })
+  const [activeTheme, setActiveTheme] = useState(()=>localStorage.getItem("ts_theme")||"dark")
+  const [customColors,setCustomColors]= useState(()=>JSON.parse(localStorage.getItem("ts_custom_colors")||"{}"))
 
-  useEffect(()=>{
-    const p = JSON.parse(localStorage.getItem("ts_prefs") || "{}")
-    if (p.defaultTF)        setDefaultTF(p.defaultTF)
-    if (p.defaultSession)   setDefaultSession(p.defaultSession)
-    if (p.showPnlHeader !== undefined) setShowPnlHeader(p.showPnlHeader)
-    if (p.compactMode   !== undefined) setCompactMode(p.compactMode)
-  }, [])
-
-  const selectTheme = (theme) => {
+  const applyAndSave = (theme, colors=customColors) => {
     setActiveTheme(theme.id)
-    applyTheme(theme, customColors)
-    toast.success(`${theme.name} theme applied!`)
+    applyTheme(theme, colors)
+    toast.success(`Theme "${theme.label}" applied!`)
   }
 
-  const updateColor = (cssVar, value) => {
-    const updated = { ...customColors, [cssVar]: value }
-    setCustomColors(updated)
-    document.documentElement.style.setProperty(cssVar, value)
-    localStorage.setItem("ts_custom_colors", JSON.stringify(updated))
-  }
-
-  const resetColors = () => {
-    setCustomColors({})
-    localStorage.removeItem("ts_custom_colors")
-    const theme = THEMES.find(t => t.id === activeTheme) || THEMES[0]
-    applyTheme(theme, {})
-    toast.success("Colors reset to theme defaults")
-  }
-
-  const savePrefs = () => {
-    localStorage.setItem("ts_prefs", JSON.stringify({ defaultTF, defaultSession, showPnlHeader, compactMode }))
-    toast.success("Preferences saved!")
+  const updateColor = (key,val) => {
+    const next = {...customColors,[key]:val}
+    setCustomColors(next)
+    const theme = THEMES.find(t=>t.id===activeTheme)||THEMES[0]
+    applyTheme(theme, next)
   }
 
   const COLOR_PICKERS = [
-    { label:"Accent / Primary",    var:"--accent",          desc:"Main buttons, active states" },
-    { label:"Accent Secondary",    var:"--accent-secondary",desc:"Gradients, charts" },
-    { label:"Win / Profit color",  var:"--accent-success",  desc:"Wins, positive P&L" },
-    { label:"Loss / Danger color", var:"--accent-danger",   desc:"Losses, negative P&L" },
-    { label:"Warning color",       var:"--accent-warning",  desc:"Alerts, cautions" },
-    { label:"Card background",     var:"--bg-card",         desc:"Main card color" },
-    { label:"Page background",     var:"--bg-primary",      desc:"Overall page background" },
+    { key:"--accent",          label:"Primary Accent" },
+    { key:"--accent-secondary",label:"Secondary Accent" },
+    { key:"--accent-success",  label:"Success / Win" },
+    { key:"--accent-danger",   label:"Danger / Loss" },
   ]
 
-  // Get current computed value for a CSS var
-  const getCurrentColor = (cssVar) => {
-    if (customColors[cssVar]) return customColors[cssVar]
-    return getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim() || "#6c63ff"
-  }
-
   return (
-    <div className="space-y-6 max-w-2xl">
-      {/* Theme selector */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+    <div className="space-y-4">
+      <div className="card overflow-hidden">
         <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>Theme</h3>
-          <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Persists across sessions automatically</p>
+          <h3 className="font-bold" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>Theme</h3>
         </div>
         <div className="p-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {THEMES.map(theme => {
-            const isActive = activeTheme === theme.id
-            return (
-              <button key={theme.id} onClick={() => selectTheme(theme)}
-                className="relative rounded-xl p-4 text-left transition-all"
-                style={{
-                  background:   "var(--bg-elevated)",
-                  border:       `2px solid ${isActive ? "var(--accent)" : "var(--border)"}`,
-                  boxShadow:    isActive ? "0 0 0 3px rgba(var(--accent-rgb),0.15)" : "none",
-                }}>
-                {/* Color preview — 4 swatches */}
-                <div className="flex gap-1.5 mb-3">
-                  {theme.preview.map((c,i) => (
-                    <div key={i} className="flex-1 h-7 rounded-lg" style={{ background: c, border: "1px solid rgba(255,255,255,0.06)" }}/>
-                  ))}
-                </div>
-                <p className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{theme.name}</p>
-                <p className="text-xs mt-0.5 leading-snug" style={{ color:"var(--text-muted)" }}>{theme.desc}</p>
-                {isActive && (
-                  <div className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full flex items-center justify-center"
-                    style={{ background:"var(--accent)" }}>
-                    <CheckCircle size={11} className="text-white"/>
-                  </div>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Custom Color Pickers */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom:"1px solid var(--border)" }}>
-          <div>
-            <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>Custom Colors</h3>
-            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Override individual colors on top of any theme</p>
-          </div>
-          {Object.keys(customColors).length > 0 && (
-            <button onClick={resetColors} className="text-xs px-3 py-1.5 rounded-lg border" style={{ color:"var(--accent-danger)", borderColor:"var(--accent-danger)", background:"rgba(255,71,87,0.05)" }}>
-              Reset all
+          {THEMES.map(t=>(
+            <button key={t.id} onClick={()=>applyAndSave(t)}
+              className="rounded-xl p-3 text-left transition-all"
+              style={{
+                background: activeTheme===t.id?"rgba(108,99,255,0.15)":"var(--bg-elevated)",
+                border:`1px solid ${activeTheme===t.id?"var(--accent)":"var(--border)"}`,
+              }}>
+              <div className="text-xl mb-1">{t.emoji}</div>
+              <p className="text-xs font-bold" style={{ fontFamily:"var(--font-display)", color:activeTheme===t.id?"var(--accent)":"var(--text-primary)" }}>{t.label}</p>
+              {activeTheme===t.id && <div className="w-1.5 h-1.5 rounded-full mt-1" style={{ background:"var(--accent)" }}/>}
             </button>
-          )}
-        </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {COLOR_PICKERS.map(cp => (
-            <div key={cp.var} className="flex items-center gap-3 p-3 rounded-xl" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
-              <div className="relative flex-shrink-0">
-                <div className="w-10 h-10 rounded-xl border-2 overflow-hidden cursor-pointer" style={{ borderColor:"var(--border)" }}>
-                  <input
-                    type="color"
-                    value={getCurrentColor(cp.var)}
-                    onChange={e => updateColor(cp.var, e.target.value)}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    style={{ transform:"scale(1.5)" }}
-                  />
-                  <div className="w-full h-full rounded-lg" style={{ background: getCurrentColor(cp.var) }}/>
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium" style={{ color:"var(--text-primary)" }}>{cp.label}</p>
-                <p className="text-xs" style={{ color:"var(--text-muted)" }}>{cp.desc}</p>
-              </div>
-              {customColors[cp.var] && (
-                <button onClick={()=>updateColor(cp.var, "")} className="text-xs px-2 py-1 rounded flex-shrink-0" style={{ color:"var(--text-muted)", background:"var(--bg-card)" }}>✕</button>
-              )}
-            </div>
           ))}
-        </div>
-        <div className="px-5 pb-5">
-          <div className="p-3 rounded-xl flex items-center gap-2" style={{ background:"rgba(108,99,255,0.06)", border:"1px solid rgba(108,99,255,0.15)" }}>
-            <Info size={13} style={{ color:"var(--accent)", flexShrink:0 }}/>
-            <p className="text-xs" style={{ color:"var(--text-muted)" }}>Custom colors are applied on top of your selected theme and saved automatically.</p>
-          </div>
         </div>
       </div>
 
-      {/* Display preferences */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+      <div className="card overflow-hidden">
         <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>Display Preferences</h3>
+          <h3 className="font-bold" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>Custom Colors</h3>
+          <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Override individual colors on top of any theme.</p>
         </div>
-        <div className="p-5 space-y-0 divide-y" style={{ borderColor:"var(--border)" }}>
-          {[
-            { label:"Show P&L in header",    sub:"Display net P&L in the top bar",   val:showPnlHeader, set:setShowPnlHeader },
-            { label:"Compact mode",          sub:"Reduce spacing for more data density", val:compactMode, set:setCompactMode },
-          ].map(row=>(
-            <div key={row.label} className="flex items-center justify-between py-4">
-              <div>
-                <p className="text-sm font-medium" style={{ color:"var(--text-primary)" }}>{row.label}</p>
-                <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{row.sub}</p>
-              </div>
-              <Toggle value={row.val} onChange={row.set}/>
+        <div className="p-5 grid grid-cols-2 gap-4">
+          {COLOR_PICKERS.map(c=>(
+            <div key={c.key} className="flex items-center gap-3">
+              <input type="color"
+                value={customColors[c.key]||getComputedStyle(document.documentElement).getPropertyValue(c.key).trim()||"#6c63ff"}
+                onChange={e=>updateColor(c.key,e.target.value)}
+                className="w-8 h-8 rounded-lg border cursor-pointer"
+                style={{ borderColor:"var(--border)", padding:2 }}/>
+              <label className="stat-card-label">{c.label}</label>
             </div>
           ))}
-          <div className="flex items-center justify-between py-4">
-            <div>
-              <p className="text-sm font-medium" style={{ color:"var(--text-primary)" }}>Default Timeframe</p>
-              <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Pre-selected when logging trades</p>
-            </div>
-            <select value={defaultTF} onChange={e=>setDefaultTF(e.target.value)} className="h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}>
-              {["M1","M5","M15","M30","H1","H4","D1"].map(t=><option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center justify-between py-4">
-            <div>
-              <p className="text-sm font-medium" style={{ color:"var(--text-primary)" }}>Default Session</p>
-              <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Pre-selected when logging trades</p>
-            </div>
-            <select value={defaultSession} onChange={e=>setDefaultSession(e.target.value)} className="h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}>
-              {["LONDON","NEW_YORK","ASIAN","SYDNEY"].map(s=><option key={s}>{s}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="px-5 pb-5">
-          <button onClick={savePrefs} className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white"
-            style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))" }}>
-            <Save size={13}/> Save Preferences
-          </button>
         </div>
       </div>
     </div>
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// DATA & IMPORT PAGE
-// ═══════════════════════════════════════════════════════════════════
-
-// Smart CSV field mapper — recognizes common broker column names
-const FIELD_MAP = {
-  // Symbol / pair
-  symbol:    ["symbol","pair","instrument","asset","market","ticker","currency pair","item"],
-  // Direction
-  direction: ["direction","type","side","action","trade type","order type","buy/sell","b/s"],
-  // Entry
-  entry_price:["entry price","entry","open price","open","price open","entryprice","entry_price","open rate"],
-  // Exit
-  exit_price: ["exit price","exit","close price","close","price close","exitprice","exit_price","close rate","closing price"],
-  // P&L
-  pnl:        ["pnl","p&l","profit","profit/loss","net profit","net p&l","gain/loss","profit loss","realized pl","realized p&l","net","result"],
-  // Pips
-  pips:       ["pips","points","pip","ticks","tick"],
-  // Volume/lots
-  volume:     ["volume","lots","size","quantity","lot size","units","position size"],
-  // Date/time
-  entry_time: ["open time","open date","date","time","entry time","entry date","trade date","datetime","opened","open date/time","date/time"],
-  // Session
-  session:    ["session","market session","trading session"],
-  // Timeframe
-  timeframe:  ["timeframe","time frame","tf","period","chart period"],
-  // Outcome
-  outcome:    ["outcome","result","win/loss","trade result","status","win loss"],
-  // Notes
-  notes:      ["notes","comment","comments","remark","remarks","description","note","memo"],
-  // Quality
-  quality:    ["quality","rating","score","grade","setup quality","trade quality"],
-}
-
-function normalizeHeader(h) { return h.toLowerCase().trim().replace(/[_\-\.]/g," ") }
-
-function mapCSVRow(headers, row) {
-  const mapped = {}
-  const usedCols = new Set()
-
-  for (const [field, aliases] of Object.entries(FIELD_MAP)) {
-    for (let hi = 0; hi < headers.length; hi++) {
-      const norm = normalizeHeader(headers[hi])
-      if (aliases.some(a => norm === a || norm.includes(a))) {
-        mapped[field] = row[hi]?.trim() || ""
-        usedCols.add(hi)
-        break
-      }
-    }
-  }
-
-  // Normalize direction
-  if (mapped.direction) {
-    const d = mapped.direction.toUpperCase()
-    if (d.includes("BUY") || d === "B" || d === "LONG" || d === "0") mapped.direction = "BUY"
-    else if (d.includes("SELL") || d === "S" || d === "SHORT" || d === "1") mapped.direction = "SELL"
-    else mapped.direction = "BUY"
-  }
-
-  // Normalize outcome
-  if (mapped.outcome) {
-    const o = mapped.outcome.toUpperCase()
-    if (o.includes("WIN") || o.includes("PROFIT") || o === "W" || o === "1") mapped.outcome = "WIN"
-    else if (o.includes("LOSS") || o.includes("LOSE") || o === "L" || o === "0" || o === "-1") mapped.outcome = "LOSS"
-    else if (o.includes("BREAK") || o.includes("BE") || o === "0.00" || o === "0") {
-      const pnl = parseFloat(mapped.pnl || "0")
-      mapped.outcome = pnl > 0 ? "WIN" : pnl < 0 ? "LOSS" : "BREAKEVEN"
-    }
-    else {
-      // Infer from P&L
-      const pnl = parseFloat(mapped.pnl || "0")
-      mapped.outcome = pnl > 0 ? "WIN" : pnl < 0 ? "LOSS" : "BREAKEVEN"
-    }
-  } else if (mapped.pnl !== undefined) {
-    const pnl = parseFloat(mapped.pnl || "0")
-    mapped.outcome = pnl > 0 ? "WIN" : pnl < 0 ? "LOSS" : "BREAKEVEN"
-  }
-
-  // Normalize P&L (remove currency symbols)
-  if (mapped.pnl) {
-    mapped.pnl = parseFloat(mapped.pnl.replace(/[^0-9.\-]/g, "")) || 0
-  }
-  if (mapped.pips)        mapped.pips = parseFloat(mapped.pips) || 0
-  if (mapped.entry_price) mapped.entry_price = parseFloat(mapped.entry_price) || 0
-  if (mapped.exit_price)  mapped.exit_price  = parseFloat(mapped.exit_price)  || 0
-  if (mapped.quality)     mapped.quality = parseInt(mapped.quality) || 5
-
-  return mapped
-}
-
-function parseCSV(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim())
-  if (lines.length < 2) return { trades: [], skipped: 0, mapped: [] }
-
-  // Detect delimiter
-  const firstLine = lines[0]
-  const delim = firstLine.includes("\t") ? "\t" : firstLine.includes(";") ? ";" : ","
-
-  const parseRow = (line) => {
-    const result = []
-    let inQuote = false, cur = ""
-    for (let c of line) {
-      if (c === '"') { inQuote = !inQuote }
-      else if (c === delim && !inQuote) { result.push(cur); cur = "" }
-      else { cur += c }
-    }
-    result.push(cur)
-    return result
-  }
-
-  const headers = parseRow(lines[0])
-  const trades  = []
-  let skipped   = 0
-  const mappedFields = []
-
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue
-    const row = parseRow(lines[i])
-    const mapped = mapCSVRow(headers, row)
-    // Must have at least symbol or pnl to be a valid trade row
-    if (!mapped.symbol && mapped.pnl === undefined) { skipped++; continue }
-    if (!mapped.symbol) mapped.symbol = "UNKNOWN"
-    if (!mapped.direction) mapped.direction = "BUY"
-    if (!mapped.outcome) mapped.outcome = mapped.pnl >= 0 ? "WIN" : "LOSS"
-    trades.push(mapped)
-  }
-
-  // Report which fields were recognized
-  if (trades.length > 0) {
-    Object.keys(trades[0]).forEach(k => mappedFields.push(k))
-  }
-
-  return { trades, skipped, headers, mappedFields }
-}
-
-function DataPage({ stats, onStatsRefresh }) {
-  const [csvFile,      setCsvFile]      = useState(null)
-  const [csvPreview,   setCsvPreview]   = useState(null)
-  const [importing,    setImporting]    = useState(false)
-  const [importResult, setImportResult] = useState(null)
-  const [clearTarget,  setClearTarget]  = useState(null)
-  const [clearing,     setClearing]     = useState(false)
+// ─── Data Page ────────────────────────────────────────────────────────────────
+function DataPage({ stats }) {
+  const [clearTarget, setClearTarget] = useState(null)
+  const [clearing,    setClearing]    = useState(false)
 
   const CLEAR_OPTIONS = [
-    { key:"ts_trades",             label:"All Trades",              color:"var(--accent-danger)" },
-    { key:"ts_playbooks",          label:"All Playbook Strategies",  color:"var(--accent-danger)" },
-    { key:"ts_backtest_sessions",  label:"All Backtest Sessions",    color:"var(--accent-danger)" },
-    { key:"ts_sylledge_insights",  label:"All AI Insights",          color:"var(--accent-warning)" },
-    { key:"__all__",               label:"Everything — Full Reset",  color:"var(--accent-danger)" },
+    { key:"trades",    label:"All Trades",             danger:true },
+    { key:"playbooks", label:"All Playbook Strategies", danger:true },
+    { key:"backtests", label:"All Backtest Sessions",   danger:true },
+    { key:"insights",  label:"All SYLLEDGE Insights",   danger:false },
   ]
 
-  const handleCSVSelect = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setCsvFile(file)
-    setImportResult(null)
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const result = parseCSV(ev.target.result)
-      setCsvPreview(result)
-    }
-    reader.readAsText(file)
-    e.target.value = ""
+  const exportData = async () => {
+    try {
+      const [trades,playbooks,backtests,insights] = await Promise.all([
+        Trade.list(),Playbook.list(),BacktestSession.list(),SylledgeInsight.list()
+      ])
+      const blob = new Blob([JSON.stringify({trades,playbooks,backtests,insights,exportDate:new Date().toISOString()},null,2)],{type:"application/json"})
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement("a"); a.href=url; a.download=`tradesylla-backup-${new Date().toISOString().slice(0,10)}.json`; a.click()
+      URL.revokeObjectURL(url)
+      toast.success("Backup exported!")
+    } catch { toast.error("Export failed") }
   }
 
-  const importCSV = async () => {
-    if (!csvPreview || !csvPreview.trades.length) return
-    setImporting(true)
-    let imported = 0
-    for (const t of csvPreview.trades) {
-      try { await Trade.create(t); imported++ } catch {}
-    }
-    setImporting(false)
-    setCsvFile(null)
-    setCsvPreview(null)
-    setImportResult({ imported, skipped: csvPreview.skipped })
-    onStatsRefresh()
-    toast.success(`Imported ${imported} trades!`)
-  }
-
-  const exportData = () => {
-    const allKeys = Object.keys(localStorage).filter(k => k.startsWith("ts_"))
-    const data = {}
-    allKeys.forEach(k => {
-      try { data[k] = JSON.parse(localStorage.getItem(k)) }
-      catch { data[k] = localStorage.getItem(k) }
-    })
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement("a")
-    a.href = url
-    a.download = `tradesylla-backup-${new Date().toISOString().slice(0,10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-    toast.success("Backup exported!")
-  }
-
-  const importJSON = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result)
-        Object.entries(data).forEach(([k, v]) => {
-          if (k.startsWith("ts_")) localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v))
-        })
-        onStatsRefresh()
-        toast.success("Backup imported! Refresh the page to see all changes.")
-      } catch { toast.error("Invalid backup file") }
-    }
-    reader.readAsText(file)
-    e.target.value = ""
+  const importJSON = async e => {
+    const file = e.target.files?.[0]; if(!file)return
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      if(data.trades)    for(const t of data.trades)    await Trade.create(t)
+      if(data.playbooks) for(const p of data.playbooks) await Playbook.create(p)
+      toast.success("Backup imported!")
+    } catch { toast.error("Import failed — invalid backup file") }
+    e.target.value=""
   }
 
   const doClear = async () => {
-    if (!clearTarget) return
+    if(!clearTarget) return
     setClearing(true)
-    await new Promise(r => setTimeout(r, 400))
-    if (clearTarget === "__all__") {
-      Object.keys(localStorage).filter(k => k.startsWith("ts_") && k !== "ts_anthropic_key" && k !== "ts_theme" && k !== "ts_prefs").forEach(k => localStorage.removeItem(k))
-    } else {
-      localStorage.removeItem(clearTarget)
-    }
-    setClearTarget(null)
+    try {
+      const entity = { trades:Trade, playbooks:Playbook, backtests:BacktestSession, insights:SylledgeInsight }[clearTarget]
+      const items  = await entity.list()
+      for(const item of items) await entity.delete(item.id)
+      toast.success("Data cleared!")
+      setClearTarget(null)
+    } catch { toast.error("Clear failed") }
     setClearing(false)
-    onStatsRefresh()
-    toast.success("Cleared!")
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      {/* CSV Import */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+    <div className="space-y-4">
+      <div className="card overflow-hidden">
         <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>CSV Import</h3>
-          <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>
-            Smart importer — automatically recognizes MT4, MT5, cTrader, TradingView and custom CSV formats
-          </p>
+          <h3 className="font-bold" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>Data Summary</h3>
         </div>
         <div className="p-5">
-          {/* Supported formats */}
-          <div className="flex flex-wrap gap-2 mb-4">
-            {["MT4 History","MT5 History","cTrader","TradingView","Generic CSV"].map(f=>(
-              <span key={f} className="px-2.5 py-1 rounded-lg text-xs font-medium"
-                style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.2)" }}>
-                {f}
-              </span>
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-5">
+            {[
+              { label:"Trades",    v:stats.trades },
+              { label:"Strategies",v:stats.playbooks },
+              { label:"Backtests", v:stats.backtests },
+              { label:"Brokers",   v:stats.brokers },
+              { label:"Insights",  v:stats.insights },
+            ].map(s=>(
+              <div key={s.label} className="rounded-xl py-3 text-center" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+                <p className="text-lg font-black mono" style={{ color:"var(--accent)" }}>{s.v}</p>
+                <p className="stat-card-label" style={{ fontSize:9 }}>{s.label}</p>
+              </div>
             ))}
           </div>
-
-          {!csvFile ? (
-            <label className="flex flex-col items-center gap-3 p-8 rounded-xl border-2 border-dashed cursor-pointer hover:opacity-80 transition-opacity"
-              style={{ borderColor:"var(--border)", background:"var(--bg-elevated)" }}>
-              <Upload size={28} style={{ color:"var(--accent)" }}/>
-              <div className="text-center">
-                <p className="font-medium text-sm" style={{ color:"var(--text-primary)" }}>Drop CSV file or click to browse</p>
-                <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>Supports .csv and .txt trade history exports</p>
-              </div>
-              <input type="file" accept=".csv,.txt" onChange={handleCSVSelect} className="hidden"/>
+          <div className="flex flex-wrap gap-3">
+            <button onClick={exportData} className="btn btn-secondary gap-2"><Download size={13}/> Export Backup</button>
+            <label className="btn btn-secondary gap-2 cursor-pointer">
+              <Upload size={13}/> Import Backup
+              <input type="file" accept=".json" onChange={importJSON} className="hidden"/>
             </label>
-          ) : csvPreview && (
-            <div className="space-y-3">
-              {/* Preview */}
-              <div className="rounded-xl p-4" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle size={15} style={{ color:"var(--accent-success)" }}/>
-                    <p className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>{csvFile.name}</p>
-                  </div>
-                  <button onClick={()=>{setCsvFile(null);setCsvPreview(null)}} className="text-xs px-2 py-1 rounded"
-                    style={{ color:"var(--text-muted)", background:"var(--bg-card)" }}>✕ Clear</button>
-                </div>
-                <div className="flex flex-wrap gap-3 text-sm">
-                  <span style={{ color:"var(--accent-success)" }}>✓ {csvPreview.trades.length} trades ready</span>
-                  {csvPreview.skipped>0 && <span style={{ color:"var(--accent-warning)" }}>⚠ {csvPreview.skipped} rows skipped</span>}
-                </div>
-                {/* Mapped fields */}
-                {csvPreview.mappedFields?.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-xs mb-2" style={{ color:"var(--text-muted)" }}>Recognized fields:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {csvPreview.mappedFields.map(f=>(
-                        <span key={f} className="px-2 py-0.5 rounded text-xs" style={{ background:"rgba(46,213,115,0.12)", color:"var(--accent-success)" }}>{f}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {/* Sample rows */}
-                {csvPreview.trades.slice(0,3).map((t,i)=>(
-                  <div key={i} className="mt-2 p-2 rounded-lg text-xs flex gap-3 flex-wrap" style={{ background:"var(--bg-card)", color:"var(--text-secondary)" }}>
-                    <span className="font-semibold" style={{ color:"var(--text-primary)" }}>{t.symbol||"?"}</span>
-                    <span style={{ color:t.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)" }}>{t.direction}</span>
-                    {t.pnl!==undefined && <span style={{ color:t.pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>{t.pnl>=0?"+":""}{t.pnl}</span>}
-                    <span style={{ color:t.outcome==="WIN"?"var(--accent-success)":t.outcome==="LOSS"?"var(--accent-danger)":"var(--accent)" }}>{t.outcome}</span>
-                  </div>
-                ))}
-              </div>
-              <button onClick={importCSV} disabled={importing} className="w-full h-10 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
-                style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", opacity:importing?0.7:1 }}>
-                <Upload size={14}/> {importing ? "Importing..." : `Import ${csvPreview.trades.length} Trades`}
-              </button>
-            </div>
-          )}
-
-          {importResult && (
-            <div className="mt-3 flex items-center gap-2 p-3 rounded-xl" style={{ background:"rgba(46,213,115,0.1)", border:"1px solid rgba(46,213,115,0.2)" }}>
-              <CheckCircle size={15} style={{ color:"var(--accent-success)" }}/>
-              <p className="text-sm" style={{ color:"var(--accent-success)" }}>
-                Successfully imported <strong>{importResult.imported}</strong> trades
-                {importResult.skipped>0 && ` · ${importResult.skipped} rows skipped (unrecognized)`}
-              </p>
-            </div>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* Storage stats */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>Storage</h3>
-        </div>
-        <div className="grid grid-cols-5 divide-x" style={{ borderColor:"var(--border)" }}>
-          {[
-            { label:"Trades",     value:stats.trades },
-            { label:"Strategies", value:stats.playbooks },
-            { label:"Backtests",  value:stats.backtests },
-            { label:"Brokers",    value:stats.brokers },
-            { label:"Insights",   value:stats.insights },
-          ].map(s=>(
-            <div key={s.label} className="p-4 text-center">
-              <p className="text-xl font-bold" style={{ color:"var(--accent)" }}>{s.value}</p>
-              <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
-            </div>
-          ))}
-        </div>
-        <div className="p-5 flex flex-wrap gap-3" style={{ borderTop:"1px solid var(--border)" }}>
-          <button onClick={exportData} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border"
-            style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}>
-            <Download size={13}/> Export Backup
-          </button>
-          <label className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border cursor-pointer"
-            style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}>
-            <Upload size={13}/> Import Backup
-            <input type="file" accept=".json" onChange={importJSON} className="hidden"/>
-          </label>
-        </div>
-      </div>
-
-      {/* Danger zone */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid rgba(255,71,87,0.3)" }}>
-        <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <h3 className="font-semibold" style={{ color:"var(--accent-danger)" }}>Danger Zone</h3>
+      <div className="card overflow-hidden" style={{ border:"1px solid rgba(255,71,87,0.25)" }}>
+        <div className="px-5 py-4" style={{ borderBottom:"1px solid rgba(255,71,87,0.15)" }}>
+          <h3 className="font-bold" style={{ fontFamily:"var(--font-display)", color:"var(--accent-danger)" }}>Danger Zone</h3>
         </div>
         <div className="p-5 space-y-2">
           {CLEAR_OPTIONS.map(opt=>(
             <button key={opt.key} onClick={()=>setClearTarget(opt.key)}
-              className="w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left hover:opacity-80 transition-opacity"
-              style={{ background:"var(--bg-elevated)", borderColor:"var(--border)" }}>
-              <div className="flex items-center gap-2">
-                <Trash2 size={13} style={{ color:opt.color }}/>
-                <span className="text-sm" style={{ color:opt.color }}>{opt.label}</span>
-              </div>
-              <ChevronRight size={13} style={{ color:"var(--text-muted)" }}/>
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all hover:opacity-80"
+              style={{ background:"rgba(255,71,87,0.05)", borderColor:"rgba(255,71,87,0.15)", color:"var(--accent-danger)" }}>
+              <span className="text-sm font-semibold" style={{ fontFamily:"var(--font-display)" }}>Clear {opt.label}</span>
+              <Trash2 size={14}/>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Clear confirm */}
       {clearTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>!clearing&&setClearTarget(null)}/>
-          <div className="relative rounded-2xl p-6 w-full max-w-sm z-10" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background:"rgba(255,71,87,0.15)" }}>
-                <AlertTriangle size={20} style={{ color:"var(--accent-danger)" }}/>
-              </div>
-              <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>Are you sure?</h3>
-            </div>
-            <p className="text-sm font-bold mb-4" style={{ color:"var(--accent-danger)" }}>
-              {CLEAR_OPTIONS.find(o=>o.key===clearTarget)?.label}
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>setClearTarget(null)}/>
+          <div className="relative card p-6 w-full max-w-sm z-10">
+            <h3 className="font-bold mb-2" style={{ fontFamily:"var(--font-display)", color:"var(--accent-danger)" }}>Are you sure?</h3>
+            <p className="text-sm mb-5" style={{ color:"var(--text-muted)" }}>
+              This will permanently delete <strong style={{ color:"var(--text-primary)" }}>{CLEAR_OPTIONS.find(o=>o.key===clearTarget)?.label}</strong>. Export a backup first.
             </p>
-            <p className="text-xs mb-5" style={{ color:"var(--text-muted)" }}>This cannot be undone. Export a backup first.</p>
             <div className="flex gap-3">
-              <button onClick={()=>setClearTarget(null)} disabled={clearing} className="flex-1 h-9 rounded-lg text-sm border"
-                style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>Cancel</button>
-              <button onClick={doClear} disabled={clearing} className="flex-1 h-9 rounded-lg text-sm font-semibold text-white"
-                style={{ background:"var(--accent-danger)", opacity:clearing?0.7:1 }}>
-                {clearing ? "Clearing..." : "Yes, Delete"}
+              <button onClick={()=>setClearTarget(null)} disabled={clearing} className="btn btn-secondary flex-1">Cancel</button>
+              <button onClick={doClear} disabled={clearing} className="btn flex-1 text-white" style={{ background:"var(--accent-danger)", opacity:clearing?0.7:1 }}>
+                {clearing?"Clearing…":"Yes, Delete"}
               </button>
             </div>
           </div>
@@ -843,584 +392,274 @@ function DataPage({ stats, onStatsRefresh }) {
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// API KEYS PAGE — DUAL TOKEN VERSION
-// user_token  → TradeSylla_Sync EA  (trade journal sync)
-// admin_token → TradeSylla_MarketData EA (SYLLEDGE market data)
-// ═══════════════════════════════════════════════════════════════════
-export function APIKeysPage() {
-  const { user } = useUser()
-
-  // ── Anthropic API key ─────────────────────────────────────────────────────
+// ─── API Keys Page ────────────────────────────────────────────────────────────
+function APIKeysPage({ user }) {
   const [apiKey,   setApiKey]   = useState("")
   const [showKey,  setShowKey]  = useState(false)
   const [keySaved, setKeySaved] = useState(false)
-
-  // ── Tokens ────────────────────────────────────────────────────────────────
   const [userToken,    setUserToken]    = useState("")
   const [adminToken,   setAdminToken]   = useState("")
   const [loadingTokens,setLoadingTokens]= useState(true)
-  const [genning,      setGenning]      = useState("") // "user" | "admin" | ""
+  const [genning,      setGenning]      = useState("")
   const [copied,       setCopied]       = useState("")
   const [showUT,       setShowUT]       = useState(false)
   const [showAT,       setShowAT]       = useState(false)
 
-  useEffect(() => {
-    const k = localStorage.getItem("ts_anthropic_key") || ""
+  useEffect(()=>{
+    const k=localStorage.getItem("ts_anthropic_key")||""
     setApiKey(k); if(k) setKeySaved(true)
-
     if(user?.id) {
-      supabase.from("profiles")
-        .select("user_token, admin_token")
-        .eq("id", user.id).single()
-        .then(({ data }) => {
+      supabase.from("profiles").select("user_token,admin_token,ea_token").eq("id",user.id).single()
+        .then(({ data })=>{
           if(data?.user_token)  setUserToken(data.user_token)
+          else if(data?.ea_token) setUserToken(data.ea_token) // legacy fallback
           if(data?.admin_token) setAdminToken(data.admin_token)
           setLoadingTokens(false)
-        })
-        .catch(() => setLoadingTokens(false))
-    } else { setLoadingTokens(false) }
-  }, [user?.id])
+        }).catch(()=>setLoadingTokens(false))
+    } else setLoadingTokens(false)
+  },[user?.id])
 
   const saveAnthropicKey = () => {
-    const t = apiKey.trim()
-    if(t && !t.startsWith("sk-ant-")) { toast.error("Invalid key — must start with sk-ant-"); return }
-    if(t) { localStorage.setItem("ts_anthropic_key",t); setKeySaved(true); toast.success("API key saved! SYLLEDGE AI is ready.") }
-    else  { localStorage.removeItem("ts_anthropic_key"); setKeySaved(false); toast.success("API key removed") }
+    const t=apiKey.trim()
+    if(t&&!t.startsWith("sk-ant-")){ toast.error("Invalid key — must start with sk-ant-"); return }
+    if(t){ localStorage.setItem("ts_anthropic_key",t); setKeySaved(true); toast.success("API key saved!") }
   }
 
-  const mkToken = () => {
-    const a = new Uint8Array(28); crypto.getRandomValues(a)
-    return Array.from(a).map(b=>b.toString(16).padStart(2,"0")).join("")
-  }
-
-  const generateUserToken = async () => {
+  const genToken = async (type) => {
     if(!user?.id) return
-    setGenning("user")
+    setGenning(type)
     try {
-      const t = mkToken()
-      const { error } = await supabase.from("profiles").update({ user_token: t }).eq("id", user.id)
+      const arr=new Uint8Array(24); crypto.getRandomValues(arr)
+      const tok=Array.from(arr).map(b=>b.toString(16).padStart(2,"0")).join("")
+      const col = type==="user" ? { user_token:tok, ea_token:tok } : { admin_token:tok }
+      const { error }=await supabase.from("profiles").update(col).eq("id",user.id)
       if(error) throw error
-      setUserToken(t); setShowUT(true); toast.success("Sync EA token generated!")
-    } catch(e) { toast.error(e.message) }
+      if(type==="user")  setUserToken(tok)
+      else               setAdminToken(tok)
+      toast.success("Token generated!")
+    } catch(e) { toast.error("Failed: "+e.message) }
     setGenning("")
   }
 
-  const generateAdminToken = async () => {
-    if(!user?.id) return
-    setGenning("admin")
-    try {
-      const t = mkToken()
-      const { error } = await supabase.from("profiles").update({ admin_token: t }).eq("id", user.id)
-      if(error) throw error
-      setAdminToken(t); setShowAT(true); toast.success("Market Data EA token generated!")
-    } catch(e) { toast.error(e.message) }
-    setGenning("")
+  const copy = (text,key) => {
+    navigator.clipboard.writeText(text).then(()=>{ setCopied(key); setTimeout(()=>setCopied(""),2000) })
   }
 
-  const copy = (text, key) => {
-    navigator.clipboard.writeText(text).then(() => { setCopied(key); setTimeout(()=>setCopied(""),2500) })
-  }
-
-  // ── Token card component ──────────────────────────────────────────────────
-  const TokenCard = ({ title, subtitle, token, show, setShow, onGenerate, onRegen, genKey, field, eaFile, accentColor, infoText }) => (
-    <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-      <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{ background: accentColor }}>
-            <Bot size={17} className="text-white"/>
-          </div>
-          <div>
-            <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>{title}</h3>
-            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{subtitle}</p>
-          </div>
-        </div>
-      </div>
-      <div className="p-5 space-y-3">
-        <div className="flex items-start gap-2 rounded-xl p-3"
-          style={{ background:"rgba(108,99,255,0.06)", border:"1px solid rgba(108,99,255,0.15)" }}>
-          <Shield size={13} style={{ color:"var(--accent)", flexShrink:0, marginTop:2 }}/>
-          <p className="text-xs" style={{ color:"var(--text-secondary)" }}>{infoText}</p>
-        </div>
-
-        {loadingTokens ? (
-          <div className="flex items-center gap-2 py-2" style={{ color:"var(--text-muted)" }}>
-            <RefreshCw size={13} className="animate-spin"/>
-            <span className="text-sm">Loading…</span>
-          </div>
-        ) : token ? (
-          <div className="space-y-3">
-            {/* Token display */}
-            <div className="rounded-xl overflow-hidden" style={{ border:"1px solid rgba(46,213,115,0.3)", background:"var(--bg-elevated)" }}>
-              <div className="flex items-center justify-between px-3 py-2"
-                style={{ borderBottom:"1px solid var(--border)", background:"rgba(46,213,115,0.06)" }}>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-green-400"/>
-                  <span className="text-xs font-semibold" style={{ color:"var(--accent-success)" }}>Token active</span>
-                </div>
-                <button onClick={()=>setShow(s=>!s)} className="text-xs hover:opacity-70 flex items-center gap-1" style={{ color:"var(--text-muted)" }}>
-                  {show ? <EyeOff size={12}/> : <Eye size={12}/>}{show?"Hide":"Reveal"}
-                </button>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-3">
-                <code className="flex-1 text-xs font-mono truncate" style={{ color:show?"var(--accent-success)":"var(--text-muted)" }}>
-                  {show ? token : token.slice(0,8)+"••••••••••••••••••••••••••••••••••••••••••••••••"}
-                </code>
-                <button onClick={()=>copy(token,genKey+"_token")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0"
-                  style={{
-                    background: copied===genKey+"_token"?"rgba(46,213,115,0.15)":"var(--bg-card)",
-                    color:      copied===genKey+"_token"?"var(--accent-success)":"var(--text-primary)",
-                    border:     `1px solid ${copied===genKey+"_token"?"var(--accent-success)":"var(--border)"}`,
-                  }}>
-                  {copied===genKey+"_token"?<><CheckCircle size={12}/> Copied!</>:<><Copy size={12}/> Copy</>}
-                </button>
-              </div>
-            </div>
-            {/* Where to paste */}
-            <div className="rounded-xl p-3" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
-              <p className="text-xs font-semibold mb-2" style={{ color:"var(--text-muted)" }}>PASTE INTO</p>
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-medium" style={{ color:"var(--text-primary)" }}>{eaFile}</p>
-                  <p className="text-xs" style={{ color:"var(--text-muted)" }}>Field: <code style={{ color:"var(--accent)" }}>{field}</code></p>
-                </div>
-                <button onClick={()=>copy(token,genKey+"_ea")}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium flex-shrink-0"
-                  style={{
-                    background: copied===genKey+"_ea"?"rgba(46,213,115,0.15)":"var(--bg-card)",
-                    color:      copied===genKey+"_ea"?"var(--accent-success)":"var(--text-secondary)",
-                    border:     `1px solid ${copied===genKey+"_ea"?"var(--accent-success)":"var(--border)"}`,
-                  }}>
-                  {copied===genKey+"_ea"?<CheckCircle size={11}/>:<Copy size={11}/>}
-                  {copied===genKey+"_ea"?"Copied":"Copy"}
-                </button>
-              </div>
-            </div>
-            {/* Regenerate */}
-            <button onClick={onRegen} disabled={genning===genKey}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border"
-              style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)", opacity:genning===genKey?0.6:1 }}>
-              <RefreshCw size={12} className={genning===genKey?"animate-spin":""}/>
-              {genning===genKey?"Generating…":"Regenerate"}
-            </button>
-          </div>
-        ) : (
-          <div className="rounded-xl p-4 text-center" style={{ background:"var(--bg-elevated)", border:"1px dashed var(--border)" }}>
-            <Key size={22} className="mx-auto mb-2" style={{ color:"var(--text-muted)" }}/>
-            <p className="text-sm font-medium mb-1" style={{ color:"var(--text-primary)" }}>No token yet</p>
-            <p className="text-xs mb-3" style={{ color:"var(--text-muted)" }}>Generate to connect this EA</p>
-            <button onClick={onGenerate} disabled={genning===genKey}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white"
-              style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", opacity:genning===genKey?0.7:1 }}>
-              <Key size={14}/>{genning===genKey?"Generating…":"Generate Token"}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="space-y-6 max-w-xl">
-
-      {/* ── ANTHROPIC API KEY ────────────────────────────────────────────────── */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
-              <span className="text-white font-bold text-sm">AI</span>
+  function TokenCard({ title, subtitle, token, show, setShow, onGenerate, genKey, field, eaFile, color, info }) {
+    return (
+      <div className="card overflow-hidden">
+        <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background:`${color||"var(--accent)"}20` }}>
+              <Key size={14} style={{ color:color||"var(--accent)" }}/>
             </div>
             <div>
-              <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>Anthropic API — SYLLEDGE AI</h3>
-              <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Powers your personal trading coach</p>
+              <p className="font-bold text-sm" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>{title}</p>
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>{subtitle}</p>
             </div>
           </div>
         </div>
-        <div className="p-5 space-y-4">
-          <div className="flex items-start gap-2 rounded-xl p-3" style={{ background:"rgba(0,212,170,0.08)", border:"1px solid rgba(0,212,170,0.2)" }}>
-            <Info size={14} style={{ color:"var(--accent-secondary)", flexShrink:0, marginTop:2 }}/>
-            <p className="text-xs" style={{ color:"var(--text-secondary)" }}>
-              Get your key at{" "}
-              <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer"
-                className="underline font-semibold" style={{ color:"var(--accent)" }}>console.anthropic.com</a>
-              . Stored <strong style={{ color:"var(--text-primary)" }}>only in your browser</strong>.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <input type={showKey?"text":"password"} value={apiKey}
-                onChange={e=>{ setApiKey(e.target.value); setKeySaved(false) }}
-                placeholder="sk-ant-api03-..."
-                className="w-full h-10 rounded-xl px-3 pr-10 text-sm border font-mono"
-                style={{ background:"var(--bg-elevated)", borderColor:keySaved?"var(--accent-success)":"var(--border)", color:"var(--text-primary)" }}/>
-              <button onClick={()=>setShowKey(s=>!s)} className="absolute right-3 top-2.5 hover:opacity-70" style={{ color:"var(--text-muted)" }}>
-                {showKey?<EyeOff size={16}/>:<Eye size={16}/>}
-              </button>
+        <div className="p-5 space-y-3">
+          <p className="text-xs leading-relaxed" style={{ color:"var(--text-secondary)", fontFamily:"var(--font-display)" }}>{info}</p>
+          {loadingTokens ? (
+            <div className="h-9 rounded-xl animate-pulse" style={{ background:"var(--bg-elevated)" }}/>
+          ) : token ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
+                style={{ background:"var(--bg-elevated)", border:`1px solid ${color||"var(--accent)"}30` }}>
+                <span className="flex-1 truncate mono text-xs" style={{ color:color||"var(--accent)" }}>
+                  {show?token:"●●●●●●●●●●●●●●●●●●●●●●●●"}
+                </span>
+                <button onClick={()=>setShow(!show)} className="hover:opacity-70 flex-shrink-0" style={{ color:"var(--text-muted)" }}>
+                  {show?<EyeOff size={12}/>:<Eye size={12}/>}
+                </button>
+                <button onClick={()=>copy(token,genKey)} className="hover:opacity-70 flex-shrink-0" style={{ color:color||"var(--accent)" }}>
+                  {copied===genKey?<CheckCircle size={12}/>:<Copy size={12}/>}
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs mono" style={{ color:"var(--text-muted)" }}>
+                  Paste into <strong>{field}</strong> field of <strong>{eaFile}</strong>
+                </p>
+                <button onClick={onGenerate} disabled={genning===genKey}
+                  className="btn btn-secondary text-xs h-7 gap-1">
+                  <RefreshCw size={10}/>{genning===genKey?"Generating…":"Regen"}
+                </button>
+              </div>
             </div>
-            <button onClick={saveAnthropicKey}
-              className="px-4 h-10 rounded-xl text-sm font-semibold flex items-center gap-1.5"
-              style={{ background:keySaved?"rgba(46,213,115,0.15)":"linear-gradient(135deg,#6c63ff,#5a52d5)", color:keySaved?"var(--accent-success)":"#fff", border:keySaved?"1px solid var(--accent-success)":"none" }}>
+          ) : (
+            <button onClick={onGenerate} disabled={genning===genKey} className="btn btn-primary gap-2">
+              <Key size={13}/>{genning===genKey?"Generating…":"Generate Token"}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Anthropic API Key */}
+      <div className="card overflow-hidden">
+        <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background:"rgba(162,155,254,0.15)" }}>
+              <Zap size={14} style={{ color:"#a29bfe" }}/>
+            </div>
+            <div>
+              <p className="font-bold text-sm" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>SYLLEDGE AI (Anthropic API Key)</p>
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>Powers SYLLEDGE AI chat — stored locally in your browser</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <input type={showKey?"text":"password"} value={apiKey} onChange={e=>setApiKey(e.target.value)}
+              placeholder="sk-ant-api03-..."
+              className="flex-1 h-10 rounded-xl px-3 text-sm border mono"
+              style={{ background:"var(--bg-elevated)", borderColor:keySaved?"rgba(46,213,115,0.4)":"var(--border)", color:"var(--text-primary)" }}/>
+            <button onClick={()=>setShowKey(!showKey)} className="p-2.5 rounded-xl" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--text-muted)" }}>
+              {showKey?<EyeOff size={14}/>:<Eye size={14}/>}
+            </button>
+            <button onClick={saveAnthropicKey} className="btn btn-primary gap-1.5">
               {keySaved?<><CheckCircle size={13}/> Saved</>:<><Save size={13}/> Save</>}
             </button>
           </div>
-          {keySaved&&(
+          {keySaved && (
             <div className="flex items-center gap-2 p-3 rounded-xl" style={{ background:"rgba(46,213,115,0.08)", border:"1px solid rgba(46,213,115,0.2)" }}>
-              <CheckCircle size={14} style={{ color:"var(--accent-success)" }}/>
-              <p className="text-sm font-medium" style={{ color:"var(--accent-success)" }}>SYLLEDGE AI is active and ready</p>
+              <CheckCircle size={13} style={{ color:"var(--accent-success)" }}/>
+              <p className="text-xs font-medium" style={{ color:"var(--accent-success)" }}>SYLLEDGE AI is active and ready</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* ── TOKEN 1: SYNC EA (user_token) ────────────────────────────────────── */}
       <TokenCard
         title="TradeSylla_Sync EA Token"
         subtitle="Trade journal sync — imports your closed positions"
         token={userToken} show={showUT} setShow={setShowUT}
-        onGenerate={generateUserToken} onRegen={generateUserToken}
-        genKey="user" field="UserToken" eaFile="TradeSylla_Sync.ex5"
-        accentColor="linear-gradient(135deg,#1a73e8,#0d47a1)"
-        infoText="Paste this token into the UserToken input of TradeSylla_Sync.ex5. It lets the EA write your closed trades to TradeSylla."
+        onGenerate={()=>genToken("user")} genKey="user"
+        field="UserToken" eaFile="TradeSylla_Sync.mq5"
+        color="#1a73e8"
+        info="Paste this into the UserToken input of TradeSylla_Sync.mq5. The EA uses it to write your closed trades to your journal."
       />
 
-      {/* ── TOKEN 2: MARKET DATA EA (admin_token) ────────────────────────────── */}
       <TokenCard
         title="SYLLEDGE Market Data EA Token"
         subtitle="OHLCV feed — powers SYLLEDGE AI market analysis"
         token={adminToken} show={showAT} setShow={setShowAT}
-        onGenerate={generateAdminToken} onRegen={generateAdminToken}
-        genKey="admin" field="AdminToken" eaFile="TradeSylla_MarketData.ex5"
-        accentColor="linear-gradient(135deg,#00897b,#004d40)"
-        infoText="Paste this token into the AdminToken input of TradeSylla_MarketData.ex5. It gives the EA permission to upload market data for SYLLEDGE AI analysis."
+        onGenerate={()=>genToken("admin")} genKey="admin"
+        field="AdminToken" eaFile="TradeSylla_MarketData.mq5"
+        color="#00897b"
+        info="Paste this into the AdminToken input of TradeSylla_MarketData.mq5. The EA uses it to upload historical and live OHLCV data for SYLLEDGE AI analysis."
       />
-
-      {/* ── MT5 WebRequest reminder ───────────────────────────────────────────── */}
-      <div className="flex items-start gap-2 rounded-xl p-3" style={{ background:"rgba(255,165,2,0.06)", border:"1px solid rgba(255,165,2,0.2)" }}>
-        <AlertTriangle size={13} style={{ color:"var(--accent-warning)", flexShrink:0, marginTop:1 }}/>
-        <p className="text-xs" style={{ color:"var(--text-secondary)" }}>
-          In MT5 → Tools → Options → Expert Advisors → Allow WebRequest, whitelist:{" "}
-          <code style={{ color:"var(--accent)" }}>https://tradesylla-9i88il99d-ftlskaizokus-projects.vercel.app</code>
-          {" "}and{" "}
-          <code style={{ color:"var(--accent)" }}>https://tradesylla.vercel.app</code>
-        </p>
-      </div>
-
-      {/* ── ABOUT ────────────────────────────────────────────────────────────── */}
-      <div className="rounded-2xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <h3 className="font-semibold mb-3" style={{ color:"var(--text-primary)" }}>About TradeSylla</h3>
-        <div className="flex items-center gap-4 mb-3">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
-            <span className="text-white font-bold text-lg">T</span>
-          </div>
-          <div>
-            <p className="font-bold" style={{ color:"var(--text-primary)" }}>TradeSylla v1.0.0</p>
-            <p className="text-xs" style={{ color:"var(--text-muted)" }}>Cloud-synced · Multi-device · Supabase backend</p>
-          </div>
-        </div>
-        <p className="text-xs" style={{ color:"var(--text-muted)" }}>Built with React + Vite + Recharts + Tailwind CSS + Radix UI + Supabase</p>
-      </div>
     </div>
   )
 }
 
-
-// ═══════════════════════════════════════════════════════════════════
-// NOTIFICATION CENTER PAGE
-// ═══════════════════════════════════════════════════════════════════
-
-// Notification store helpers
-const NOTIF_KEY = "ts_notifications"
-const NOTIF_PREFS_KEY = "ts_notif_prefs"
-
-function getNotifications() {
-  try { return JSON.parse(localStorage.getItem(NOTIF_KEY) || "[]") } catch { return [] }
-}
-function saveNotifications(arr) { localStorage.setItem(NOTIF_KEY, JSON.stringify(arr)) }
-function getNotifPrefs() {
-  try { return JSON.parse(localStorage.getItem(NOTIF_PREFS_KEY) || "{}") } catch { return {} }
-}
-
-const DEFAULT_NOTIF_PREFS = {
-  trade_logged:    true,
-  milestone_wins:  true,
-  daily_summary:   true,
-  loss_streak:     true,
-  playbook_linked: false,
-  import_done:     true,
-  sync_done:       true,
-}
-
-const NOTIF_TYPES = {
-  trade_win:     { icon: TrendingUp,   color: "var(--accent-success)", bg: "rgba(46,213,115,0.08)"  },
-  trade_loss:    { icon: TrendingDown, color: "var(--accent-danger)",  bg: "rgba(255,71,87,0.08)"   },
-  milestone:     { icon: Trophy,       color: "#ffd700",               bg: "rgba(255,215,0,0.08)"   },
-  import:        { icon: Upload,       color: "var(--accent)",         bg: "rgba(108,99,255,0.08)"  },
-  streak_loss:   { icon: BellRing,     color: "var(--accent-warning)", bg: "rgba(255,165,2,0.08)"   },
-  sync:          { icon: Zap,          color: "var(--accent-secondary)",bg:"rgba(0,212,170,0.08)"   },
-  system:        { icon: Megaphone,    color: "var(--text-secondary)", bg: "var(--bg-elevated)"     },
-}
-
-// Call this from anywhere in the app to push a notification
-export function pushNotification({ type = "system", title, body }) {
-  const notifs = getNotifications()
-  notifs.unshift({
-    id:    crypto.randomUUID(),
-    type,
-    title,
-    body,
-    read:  false,
-    time:  new Date().toISOString(),
-  })
-  // Keep max 100
-  if (notifs.length > 100) notifs.pop()
-  saveNotifications(notifs)
-  // Fire toast too
-  toast(title, { type: type.includes("loss") ? "error" : type === "milestone" ? "success" : "default" })
-}
-
-export function getUnreadCount() {
-  return getNotifications().filter(n => !n.read).length
-}
-
+// ─── Notifications Page ───────────────────────────────────────────────────────
 function NotificationsPage() {
-  const [notifs, setNotifs]   = useState([])
-  const [prefs,  setPrefs]    = useState(DEFAULT_NOTIF_PREFS)
-  const [filter, setFilter]   = useState("all") // all | unread
-
-  useEffect(() => {
-    setNotifs(getNotifications())
-    setPrefs({ ...DEFAULT_NOTIF_PREFS, ...getNotifPrefs() })
-  }, [])
-
-  const markAllRead = () => {
-    const updated = notifs.map(n => ({ ...n, read: true }))
-    saveNotifications(updated)
-    setNotifs(updated)
-    toast.success("All notifications marked as read")
-  }
-
-  const markRead = (id) => {
-    const updated = notifs.map(n => n.id === id ? { ...n, read: true } : n)
-    saveNotifications(updated)
-    setNotifs(updated)
-  }
-
-  const clearAll = () => {
-    saveNotifications([])
-    setNotifs([])
-    toast.success("Notifications cleared")
-  }
+  const PREFS = [
+    { key:"notif_daily_summary",  label:"Daily P&L Summary",       desc:"Morning recap of yesterday's performance" },
+    { key:"notif_win_streak",     label:"Win Streak Alerts",        desc:"Alert when you hit a 3+ win streak" },
+    { key:"notif_loss_streak",    label:"Loss Streak Alerts",       desc:"Alert when you hit a 3+ loss streak" },
+    { key:"notif_drawdown",       label:"Drawdown Warning",         desc:"Notify when max daily drawdown is reached" },
+    { key:"notif_sync_success",   label:"EA Sync Confirmation",     desc:"Confirm when trades are received from MT5" },
+    { key:"notif_weekly_report",  label:"Weekly Performance Report",desc:"Sent every Monday morning" },
+  ]
 
   const savePref = (key, val) => {
-    const updated = { ...prefs, [key]: val }
-    setPrefs(updated)
-    localStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(updated))
+    localStorage.setItem(key, JSON.stringify(val))
     toast.success("Preference saved")
   }
 
-  const displayed = filter === "unread" ? notifs.filter(n => !n.read) : notifs
-  const unread    = notifs.filter(n => !n.read).length
-
-  const fmtTime = (iso) => {
-    const d = new Date(iso)
-    const now = new Date()
-    const diff = Math.floor((now - d) / 1000)
-    if (diff < 60)   return "just now"
-    if (diff < 3600) return Math.floor(diff/60) + "m ago"
-    if (diff < 86400)return Math.floor(diff/3600) + "h ago"
-    return d.toLocaleDateString()
-  }
-
   return (
-    <div className="space-y-5 max-w-2xl">
-      {/* Header row */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center relative" style={{ background:"rgba(255,107,53,0.15)" }}>
-            <Bell size={17} style={{ color:"#ff6b35" }}/>
-            {unread > 0 && (
-              <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background:"var(--accent-danger)", fontSize:9 }}>{unread}</div>
-            )}
-          </div>
-          <div>
-            <h2 className="font-bold" style={{ color:"var(--text-primary)" }}>Notifications</h2>
-            <p className="text-xs" style={{ color:"var(--text-muted)" }}>{unread} unread · {notifs.length} total</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {unread > 0 && (
-            <button onClick={markAllRead} className="text-xs px-3 py-1.5 rounded-lg border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>
-              Mark all read
-            </button>
-          )}
-          {notifs.length > 0 && (
-            <button onClick={clearAll} className="text-xs px-3 py-1.5 rounded-lg border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--accent-danger)" }}>
-              Clear all
-            </button>
-          )}
-        </div>
+    <div className="card overflow-hidden">
+      <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
+        <h3 className="font-bold" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>Notification Preferences</h3>
+        <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Coming soon — notifications will be delivered via email.</p>
       </div>
-
-      {/* Filter tabs */}
-      <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background:"var(--bg-elevated)" }}>
-        {[{id:"all",label:"All"},{id:"unread",label:`Unread${unread>0?" ("+unread+")":""}`}].map(f=>(
-          <button key={f.id} onClick={()=>setFilter(f.id)}
-            className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
-            style={{ background:filter===f.id?"var(--accent)":"transparent", color:filter===f.id?"#fff":"var(--text-secondary)" }}>
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Notification list */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        {displayed.length === 0 ? (
-          <div className="py-14 text-center">
-            <BellOff size={26} className="mx-auto mb-3" style={{ color:"var(--text-muted)" }}/>
-            <p className="text-sm font-medium" style={{ color:"var(--text-primary)" }}>
-              {filter === "unread" ? "No unread notifications" : "No notifications yet"}
-            </p>
-            <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>Notifications appear here when you log trades, hit milestones, and more.</p>
-          </div>
-        ) : (
-          <div className="divide-y" style={{ borderColor:"var(--border)" }}>
-            {displayed.map(n => {
-              const cfg = NOTIF_TYPES[n.type] || NOTIF_TYPES.system
-              const Icon = cfg.icon
-              return (
-                <div key={n.id} onClick={()=>markRead(n.id)}
-                  className="flex items-start gap-3 px-4 py-3.5 cursor-pointer transition-colors hover:opacity-90"
-                  style={{ background: n.read ? "transparent" : cfg.bg }}>
-                  <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: n.read ? "var(--bg-elevated)" : cfg.bg, border:`1px solid ${cfg.color}30` }}>
-                    <Icon size={15} style={{ color: cfg.color }}/>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>{n.title}</p>
-                      {!n.read && <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background:"var(--accent)" }}/>}
-                    </div>
-                    {n.body && <p className="text-xs mt-0.5 leading-relaxed" style={{ color:"var(--text-secondary)" }}>{n.body}</p>}
-                    <p className="text-xs mt-1 flex items-center gap-1" style={{ color:"var(--text-muted)" }}>
-                      <Clock size={10}/>{fmtTime(n.time)}
-                    </p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Notification preferences */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-          <h3 className="font-semibold" style={{ color:"var(--text-primary)" }}>Notification Preferences</h3>
-          <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>Choose what triggers a notification</p>
-        </div>
-        <div className="divide-y" style={{ borderColor:"var(--border)" }}>
-          {[
-            { key:"trade_logged",    label:"Trade logged",          sub:"Every time you log a new trade" },
-            { key:"milestone_wins",  label:"Milestone reached",     sub:"e.g. 10 wins, 50 trades, new win streak" },
-            { key:"daily_summary",   label:"Daily summary",         sub:"End-of-day recap of your P&L and stats" },
-            { key:"loss_streak",     label:"Loss streak alert",     sub:"Notify after 3+ consecutive losses" },
-            { key:"playbook_linked", label:"Strategy linked",       sub:"When a trade is linked to a Playbook strategy" },
-            { key:"import_done",     label:"CSV import completed",  sub:"After a successful trade import" },
-            { key:"sync_done",       label:"MT5 sync completed",    sub:"After a successful MT5 auto-sync" },
-          ].map(row => (
-            <div key={row.key} className="flex items-center justify-between px-5 py-3.5">
-              <div>
-                <p className="text-sm font-medium" style={{ color:"var(--text-primary)" }}>{row.label}</p>
-                <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{row.sub}</p>
-              </div>
-              <Toggle value={prefs[row.key] ?? true} onChange={v => savePref(row.key, v)}/>
+      <div className="p-5 space-y-3">
+        {PREFS.map(row=>(
+          <div key={row.key} className="flex items-center justify-between gap-4 py-2" style={{ borderBottom:"1px solid var(--border)" }}>
+            <div>
+              <p className="text-sm font-semibold" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>{row.label}</p>
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>{row.desc}</p>
             </div>
-          ))}
-        </div>
+            <Toggle value={JSON.parse(localStorage.getItem(row.key)||"true")} onChange={v=>savePref(row.key,v)}/>
+          </div>
+        ))}
       </div>
     </div>
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// MAIN SETTINGS PAGE
-// ═══════════════════════════════════════════════════════════════════
+// ─── Main Settings Page ───────────────────────────────────────────────────────
 export default function Settings() {
-  const { user, updateUser } = useUser()
-  const [activePage, setActivePage] = useState(() => localStorage.getItem("ts_settings_page") || "account")
-  const [stats, setStats] = useState({ trades:0, playbooks:0, backtests:0, brokers:0, insights:0 })
+  const { user, updateUser, signOut } = useUser()
+  const [activePage, setActivePage] = useState(()=>localStorage.getItem("ts_settings_page")||"account")
+  const [stats, setStats] = useState({ trades:0,playbooks:0,backtests:0,brokers:0,insights:0 })
 
   useEffect(()=>{
-    // Load and apply saved theme on mount
     loadSavedTheme()
-    loadStats()
-  }, [])
+    Promise.all([Trade.list(),Playbook.list(),BacktestSession.list(),BrokerConnection.list(),SylledgeInsight.list()])
+      .then(([t,p,b,br,i])=>setStats({ trades:t.length,playbooks:p.length,backtests:b.length,brokers:br.length,insights:i.length }))
+  },[])
 
-  const loadStats = async () => {
-    const [trades, playbooks, backtests, brokers, insights] = await Promise.all([
-      Trade.list(), Playbook.list(), BacktestSession.list(), BrokerConnection.list(), SylledgeInsight.list()
-    ])
-    setStats({ trades:trades.length, playbooks:playbooks.length, backtests:backtests.length, brokers:brokers.length, insights:insights.length })
-  }
-
-  const handlePageChange = (id) => {
-    setActivePage(id)
-    localStorage.setItem("ts_settings_page", id)
-  }
+  const changePage = id => { setActivePage(id); localStorage.setItem("ts_settings_page",id) }
 
   return (
-    <div className="flex flex-col md:flex-row gap-4 md:gap-6">
-      {/* Mobile: horizontal scrollable tabs */}
-      <div className="md:hidden w-full overflow-x-auto pb-1">
-        <div className="flex gap-2 min-w-max px-1">
-          {PAGES.map(p => {
-            const active = activePage === p.id
-            return (
-              <button key={p.id} onClick={() => handlePageChange(p.id)}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium flex-shrink-0 transition-all"
-                style={{ background: active ? `${p.color}20` : "var(--bg-elevated)",
-                  color: active ? p.color : "var(--text-secondary)",
-                  border: `1px solid ${active ? p.color + "40" : "var(--border)"}` }}>
-                <p.icon size={14}/>
-                {p.label}
-              </button>
-            )
-          })}
-        </div>
+    <div>
+      <div className="mb-5">
+        <h1 className="gradient-text font-black" style={{ fontFamily:"var(--font-display)", fontSize:28 }}>Settings</h1>
       </div>
 
-      {/* Desktop: vertical sidebar */}
-      <div className="hidden md:block w-48 flex-shrink-0">
-        <div className="sticky top-0">
-          <p className="text-xs font-semibold uppercase tracking-wider mb-3 px-3" style={{ color:"var(--text-muted)" }}>Settings</p>
-          <nav className="space-y-1">
-            {PAGES.map(p => {
-              const active = activePage === p.id
+      <div className="flex flex-col md:flex-row gap-5">
+        {/* Mobile: horizontal tabs */}
+        <div className="md:hidden overflow-x-auto pb-1">
+          <div className="flex gap-2 min-w-max">
+            {PAGES.map(p=>{
+              const active=activePage===p.id
               return (
-                <button key={p.id} onClick={() => handlePageChange(p.id)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-all"
-                  style={{ background: active ? `${p.color}15` : "transparent",
-                    color: active ? p.color : "var(--text-secondary)",
-                    border: active ? `1px solid ${p.color}30` : "1px solid transparent" }}>
-                  <p.icon size={16}/>
-                  {p.label}
-                  {active && <ChevronRight size={12} className="ml-auto"/>}
+                <button key={p.id} onClick={()=>changePage(p.id)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold flex-shrink-0 transition-all"
+                  style={{ background:active?`${p.color}18`:"var(--bg-elevated)", color:active?p.color:"var(--text-secondary)", border:`1px solid ${active?p.color+"40":"var(--border)"}`, fontFamily:"var(--font-display)" }}>
+                  <p.icon size={13}/>{p.label}
                 </button>
               )
             })}
-          </nav>
+          </div>
         </div>
-      </div>
 
-      {/* Content — full width on mobile */}
-      <div className="flex-1 min-w-0">
-        {activePage === "account"       && <AccountPage    user={user} updateUser={updateUser} stats={stats}/>}
-        {activePage === "appearance"    && <AppearancePage/>}
-        {activePage === "data"          && <DataPage stats={stats} onStatsRefresh={loadStats}/>}
-        {activePage === "apikeys"       && <APIKeysPage/>}
-        {activePage === "notifications" && <NotificationsPage/>}
+        {/* Desktop: vertical sidebar */}
+        <div className="hidden md:block w-44 flex-shrink-0">
+          <div className="card p-2 sticky top-0">
+            <p className="text-xs font-semibold uppercase tracking-widest mb-2 px-3 pt-1" style={{ fontFamily:"var(--font-mono)", color:"var(--text-muted)", fontSize:9 }}>Settings</p>
+            <nav className="space-y-0.5">
+              {PAGES.map(p=>{
+                const active=activePage===p.id
+                return (
+                  <button key={p.id} onClick={()=>changePage(p.id)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-left transition-all"
+                    style={{ background:active?`${p.color}12`:"transparent", color:active?p.color:"var(--text-secondary)", border:`1px solid ${active?p.color+"25":"transparent"}`, fontFamily:"var(--font-display)" }}>
+                    <p.icon size={14}/>
+                    {p.label}
+                    {active && <ChevronRight size={11} className="ml-auto"/>}
+                  </button>
+                )
+              })}
+            </nav>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          {activePage==="account"      && <AccountPage user={user} updateUser={updateUser} signOut={signOut} stats={stats}/>}
+          {activePage==="appearance"   && <AppearancePage/>}
+          {activePage==="data"         && <DataPage stats={stats}/>}
+          {activePage==="apikeys"      && <APIKeysPage user={user}/>}
+          {activePage==="notifications"&& <NotificationsPage/>}
+        </div>
       </div>
     </div>
   )

@@ -1,26 +1,19 @@
-// src/pages/Sylledge.jsx  — SYLLEDGE AI v3.0
-// ✅ File generation from chat (HTML/CSV/JSON download)
-// ✅ File upload (PDF, image, CSV — SYLLEDGE reads them)
-// ✅ Market Data EA command system (SYLLEDGE requests candles on demand)
-// ✅ Backtesting memory: compares user trades vs backtested strategies
-// ✅ Deep strategy analysis: best session, entry time, SL, RR, winrate prediction
-// ✅ Playbook integration in every analysis
-// ✅ Advanced HTML report generation with interactive charts
-
+// src/pages/Sylledge.jsx  — SYLLEDGE AI v3.1 — Visual Upgrade
 import { useState, useEffect, useRef } from "react"
 import { useUser }  from "@/lib/UserContext"
 import { supabase } from "@/lib/supabase"
 import {
-  Send, Bot, User, Sparkles, TrendingUp, BarChart2,
-  FileText, Download, Upload, Brain, Zap,
-  AlertCircle, CheckCircle, Clock, Target, Shield,
-  BookOpen, Activity, Database, RefreshCw, X,
-  MessageSquare, LineChart, Paperclip, File,
-  FileSpreadsheet
+  Send, Sparkles, TrendingUp, BarChart2, FileText, Download, Upload,
+  Brain, AlertCircle, CheckCircle, Clock, Target, Shield,
+  BookOpen, Activity, RefreshCw, X, MessageSquare, LineChart,
+  Paperclip, File, FileSpreadsheet, Trash2, ChevronRight, Zap,
+  ArrowUpRight
 } from "lucide-react"
+import { Trade, Playbook, BacktestSession, SylledgeInsight } from "@/api/supabaseStore"
+import { toast } from "@/components/ui/toast"
 
-const MODEL    = "claude-sonnet-4-20250514"
-const MAX_MSGS = 40
+const MAX_MSGS   = 40
+const MEMORY_KEY = uid => `sylledge_memory_${uid}`
 
 const TABS = [
   { id:"chat",     label:"Chat",     Icon:MessageSquare },
@@ -29,30 +22,163 @@ const TABS = [
 ]
 
 const QUICK_PROMPTS = [
-  { label:"Best session for me",  icon:Clock,     prompt:"Based on my trade history, which trading session gives me the best results? Give a detailed breakdown with win rates, avg P&L, and specific hours." },
-  { label:"Best entry times",     icon:Target,    prompt:"Analyze my entry times (entry_time field) across all sessions. When exactly should I enter? Build an entry time heatmap from my data." },
-  { label:"SL improvement",       icon:Shield,    prompt:"Analyze my stop loss placements. Where should I have placed them based on market structure? Build an advanced SL strategy for my setups." },
-  { label:"RR audit",             icon:TrendingUp,prompt:"Audit my risk/reward. Compare my actual RR vs market-offered RR. How do I improve my TP system? Give concrete rules." },
-  { label:"Strategy vs Backtest", icon:Activity,  prompt:"Compare my live trading results vs my backtested strategies. Find the gap. What am I doing differently live vs backtest?" },
-  { label:"Playbook deep dive",   icon:BookOpen,  prompt:"Examine my playbook strategies. Which ones perform best live? Which need refinement? Give specific rule improvements." },
-  { label:"Win rate prediction",  icon:BarChart2, prompt:"Based on my patterns and data, predict my win rate for the next 20 trades if I follow my current setup strictly. Show your reasoning." },
-  { label:"Generate report",      icon:FileText,  prompt:"Generate a comprehensive performance report as a downloadable HTML file with charts, statistics, session analysis, and AI recommendations." },
+  { label:"Best session",        icon:Clock,     color:"#00d4aa", prompt:"Which trading session gives me the best results? Break down win rates, avg P&L, and specific hours." },
+  { label:"Entry time analysis", icon:Target,    color:"#6c63ff", prompt:"Analyze my entry times across all sessions. When exactly should I enter? Build a heatmap from my data." },
+  { label:"SL improvement",      icon:Shield,    color:"#ffa502", prompt:"Analyze my stop loss placements. Where should they have been? Build a better SL strategy." },
+  { label:"R:R audit",           icon:TrendingUp,color:"#2ed573", prompt:"Audit my risk/reward. Compare actual RR vs market-offered RR. How do I improve my TP system?" },
+  { label:"vs Backtest",         icon:Activity,  color:"#ff6b35", prompt:"Compare my live trading vs backtested strategies. Find the gap. What am I doing differently live?" },
+  { label:"Playbook deep dive",  icon:BookOpen,  color:"#a29bfe", prompt:"Which playbook strategies perform best live? Which need refinement? Give specific rule improvements." },
+  { label:"Win rate prediction", icon:BarChart2, color:"#74b9ff", prompt:"Predict my win rate for the next 20 trades if I follow my current setup strictly. Show reasoning." },
+  { label:"Generate report",     icon:FileText,  color:"#fd79a8", prompt:"Generate a comprehensive performance report as a downloadable HTML file with interactive charts." },
 ]
 
 function fmtTime(iso){ return new Date(iso).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}) }
 function fmtBytes(n){ if(n<1024)return n+" B"; if(n<1048576)return(n/1024).toFixed(1)+" KB"; return(n/1048576).toFixed(1)+" MB" }
 
 function FileIcon({type}){
-  if(type?.startsWith("image/"))         return <Sparkles size={12}/>
-  if(type==="application/pdf")           return <FileText size={12}/>
-  if(type?.includes("csv"))              return <FileSpreadsheet size={12}/>
+  if(type?.startsWith("image/")) return <Sparkles size={12}/>
+  if(type==="application/pdf")   return <FileText size={12}/>
+  if(type?.includes("csv"))      return <FileSpreadsheet size={12}/>
   return <File size={12}/>
 }
 
-// ════════════════════════════════════════════════════════════════════
+function buildTradeSummary(trades) {
+  if(!trades.length) return "No trades logged yet."
+  const wins   = trades.filter(t=>t.outcome==="WIN").length
+  const losses = trades.filter(t=>t.outcome==="LOSS").length
+  const wr     = (wins/trades.length*100).toFixed(1)
+  const pnl    = trades.reduce((s,x)=>s+(x.total_pnl||x.pnl||0),0).toFixed(2)
+  const avgQ   = (trades.reduce((s,x)=>s+(x.quality||5),0)/trades.length).toFixed(1)
+  const sess   = {}
+  trades.forEach(x=>{ if(!x.session)return; if(!sess[x.session])sess[x.session]={w:0,n:0,p:0}; sess[x.session].n++; sess[x.session].p+=(x.total_pnl||x.pnl||0); if(x.outcome==="WIN")sess[x.session].w++ })
+  const sessStr=Object.entries(sess).map(([s,v])=>`${s}:${v.n}t,${(v.w/v.n*100).toFixed(0)}%WR,$${v.p.toFixed(2)}`).join(" | ")
+  const hourMap={}
+  trades.forEach(x=>{ if(!x.entry_time)return; const h=new Date(x.entry_time).getUTCHours(); if(!hourMap[h])hourMap[h]={w:0,n:0}; hourMap[h].n++; if(x.outcome==="WIN")hourMap[h].w++ })
+  const bestHours=Object.entries(hourMap).filter(([,v])=>v.n>=3).sort((a,b)=>(b[1].w/b[1].n)-(a[1].w/a[1].n)).slice(0,5).map(([h,v])=>`${h}:00UTC(${(v.w/v.n*100).toFixed(0)}%WR,${v.n}t)`).join(", ")
+  const sample=trades.slice(0,20).map(t=>`${t.symbol} ${t.direction} ${t.outcome} $${(t.total_pnl||t.pnl||0).toFixed(2)} Q:${t.quality||5} Sess:${t.session||"?"} TF:${t.timeframe||"?"}`).join("\n")
+  return `TRADER DATA: Trades:${trades.length} | WR:${wr}% | P&L:$${pnl} | AvgQ:${avgQ}/10\nSessions: ${sessStr||"none"}\nBest Hours: ${bestHours||"insufficient data"}\n\nRECENT TRADES:\n${sample}`
+}
+
+function buildSystemPrompt(trades,playbooks,backtests,memory,selPlaybook,attachments) {
+  const tradeSummary = buildTradeSummary(trades)
+  const pbTxt = selPlaybook ? (() => { const pb=playbooks.find(p=>p.id===selPlaybook); return pb?`\n\nACTIVE PLAYBOOK: "${pb.name}"\n${pb.description||""}\nRules:${JSON.stringify(pb.rules||{})}`:"" })() : ""
+  const btTxt = backtests.length ? "\n\nBACKTESTED STRATEGIES:\n"+backtests.slice(0,5).map(b=>`• ${b.name||"Strategy"}: ${b.total_trades||0}t,${b.win_rate||0}%WR,$${b.total_pnl||0}`).join("\n") : ""
+  const attachTxt = attachments.length ? `\n\nUPLOADED FILES: ${attachments.map(a=>a.name).join(", ")} — analyze their content too if relevant.` : ""
+  return `You are SYLLEDGE, an elite professional trading coach and quant analyst embedded in TradeSylla.
+
+${tradeSummary}${pbTxt}${btTxt}${attachTxt}
+
+YOUR MEMORY:\n${memory||"no memory yet"}
+
+YOUR CAPABILITIES:
+1. DEEP ANALYSIS of entry times, sessions, SL, TP, RR — use the actual data above
+2. MARKET DATA: request live candles from MT5 EA using <<<REQUEST_MARKET_DATA>>>
+3. BACKTEST COMPARISON: compare live vs backtest results
+4. FILE GENERATION: downloadable reports/CSVs/HTML charts
+5. FILE READING: read uploaded PDFs, images, CSVs
+6. STRATEGY INTEGRATION: use the active playbook
+7. RISK MANAGEMENT: position sizing, session exposure, max daily loss
+
+FILE GENERATION:
+• HTML: <<<HTML_FILE>>><!DOCTYPE html>...</html><<<END_HTML>>>
+• CSV: <<<CSV_FILE>>>header1,header2\nval1,val2<<<END_CSV>>>
+• JSON: <<<JSON_FILE>>>{...}<<<END_JSON>>>
+MARKET DATA: <<<REQUEST_MARKET_DATA>>>{"symbol":"XAUUSD","timeframe":"H1","from":"2025-01-01","to":"2025-03-01"}<<<END_REQUEST>>>
+MEMORY: <<<MEMORY_UPDATE>>>key finding<<<END_MEMORY>>>
+
+Be specific, data-driven, and actionable. You have their actual trade data — use it.`
+}
+
+function parseResp(text) {
+  const files=[]; let clean=text; let mdReq=null
+  const htmlM=text.match(/<<<HTML_FILE>>>([\s\S]*?)<<<END_HTML>>>/)
+  if(htmlM){ files.push({type:"html",name:"sylledge_report.html",content:htmlM[1].trim()}); clean=clean.replace(htmlM[0],"") }
+  const csvM=text.match(/<<<CSV_FILE>>>([\s\S]*?)<<<END_CSV>>>/)
+  if(csvM){ files.push({type:"csv",name:"sylledge_data.csv",content:csvM[1].trim()}); clean=clean.replace(csvM[0],"") }
+  const jsonM=text.match(/<<<JSON_FILE>>>([\s\S]*?)<<<END_JSON>>>/)
+  if(jsonM){ files.push({type:"json",name:"sylledge_analysis.json",content:jsonM[1].trim()}); clean=clean.replace(jsonM[0],"") }
+  const mdM=text.match(/<<<REQUEST_MARKET_DATA>>>([\s\S]*?)<<<END_REQUEST>>>/)
+  if(mdM){ try{ mdReq=JSON.parse(mdM[1].trim()) }catch{}; clean=clean.replace(mdM[0],"") }
+  const memM=text.match(/<<<MEMORY_UPDATE>>>([\s\S]*?)<<<END_MEMORY>>>/)
+  if(memM){ clean=clean.replace(memM[0],"") }
+  return { clean:clean.trim(), files, mdReq, memUpdate:memM?memM[1].trim():null }
+}
+
+function downloadFile(content,name,type) {
+  const mime={ html:"text/html", csv:"text/csv", json:"application/json" }[type]||"text/plain"
+  const blob=new Blob([content],{type:mime})
+  const url=URL.createObjectURL(blob)
+  const a=document.createElement("a"); a.href=url; a.download=name; a.click()
+  URL.revokeObjectURL(url)
+}
+
+function MessageBubble({ msg, onSave }) {
+  const isUser = msg.role === "user"
+  const formatContent = text => {
+    const lines = text.split("\n")
+    return lines.map((line, i) => {
+      const bold = line.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/`(.*?)`/g, '<code style="background:var(--bg-elevated);padding:0 4px;border-radius:4px;font-family:var(--font-mono);font-size:11px">$1</code>')
+      return (
+        <p key={i} className={`text-sm leading-relaxed ${line.trim()===""?"h-2":""}`}
+          dangerouslySetInnerHTML={{ __html: bold || "&nbsp;" }}/>
+      )
+    })
+  }
+  return (
+    <div className={`flex gap-3 ${isUser?"justify-end":""}`}>
+      {!isUser && (
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-1"
+          style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
+          <Brain size={14} className="text-white"/>
+        </div>
+      )}
+      <div className={`max-w-[85%] ${isUser?"items-end":""} flex flex-col gap-1`}>
+        <div className={`px-4 py-3 rounded-2xl ${isUser?"rounded-tr-sm":"rounded-tl-sm"}`}
+          style={{
+            background: isUser ? "var(--accent)" : "var(--bg-elevated)",
+            border: isUser ? "none" : "1px solid var(--border)",
+            color: isUser ? "#fff" : "var(--text-secondary)",
+          }}>
+          {isUser
+            ? <p className="text-sm" style={{ fontFamily:"var(--font-display)" }}>{msg.content}</p>
+            : <div className="space-y-1">{formatContent(msg.content)}</div>
+          }
+          {msg.files?.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {msg.files.map((f,i) => (
+                <div key={i} className="flex items-center gap-2 p-2 rounded-xl cursor-pointer hover:opacity-80"
+                  style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}
+                  onClick={() => downloadFile(f.content,f.name,f.type)}>
+                  <FileText size={13} style={{ color:"var(--accent)" }}/>
+                  <span className="text-xs font-medium" style={{ fontFamily:"var(--font-mono)", color:"var(--accent)" }}>{f.name}</span>
+                  <Download size={11} className="ml-auto" style={{ color:"var(--text-muted)" }}/>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {msg.timestamp && <span className="text-xs" style={{ fontFamily:"var(--font-mono)", color:"var(--text-muted)", fontSize:10 }}>{fmtTime(msg.timestamp)}</span>}
+          {!isUser && onSave && (
+            <button onClick={()=>onSave(msg.content)} className="text-xs px-2 py-0.5 rounded-lg hover:opacity-70"
+              style={{ background:"rgba(108,99,255,0.12)", color:"var(--accent)", fontFamily:"var(--font-display)" }}>
+              Save insight
+            </button>
+          )}
+        </div>
+      </div>
+      {isUser && (
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-1 text-xs font-bold text-white"
+          style={{ background:"var(--accent-secondary)", fontFamily:"var(--font-display)" }}>
+          U
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Sylledge() {
   const { user } = useUser()
-
   const [tab,        setTab]        = useState("chat")
   const [messages,   setMessages]   = useState([])
   const [input,      setInput]      = useState("")
@@ -64,556 +190,276 @@ export default function Sylledge() {
   const [selPlaybook,setSelPlaybook]= useState("")
   const [attachments,setAttachments]= useState([])
   const [insights,   setInsights]   = useState([])
-  const [chartData,  setChartData]  = useState([])
   const [eaStatus,   setEaStatus]   = useState("idle")
-
   const bottomRef = useRef(null)
   const fileRef   = useRef(null)
 
-  // ── Get Supabase session token for server auth ────────────────────────────
   async function getSessionToken() {
     const { data } = await supabase.auth.getSession()
-    return data?.session?.access_token || null
-  }
-
-  // ── Server-side Claude call — no client API key needed ─────────────────
-  async function callClaude(msgs, system) {
-    const token = await getSessionToken()
-    if (!token) throw new Error("Not authenticated — please log in again")
-    const res = await fetch("/api/sylledge-chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4096, system, messages: msgs }),
-    })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error || "Server error")
-    return data
+    return data?.session?.access_token || ""
   }
 
   useEffect(() => {
-    loadAll()
-    loadMemory()
+    Trade.list().then(setTrades)
+    Playbook.list().then(setPlaybooks)
+    BacktestSession.list().then(setBacktests)
+    SylledgeInsight.list().then(d=>setInsights(d.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))))
+    if(user?.id) {
+      try {
+        const saved = localStorage.getItem(MEMORY_KEY(user.id))
+        const parsed = saved ? JSON.parse(saved) : []
+        if(parsed.length>0) { setMessages(parsed); return }
+      } catch {}
+    }
+    setMessages([{ role:"assistant", content:"Hey! I'm SYLLEDGE AI — your personal trading coach.\n\nI have access to your full trade history, playbook, and backtests. Ask me anything, or use one of the quick prompts below. 🎯", timestamp:new Date().toISOString() }])
   }, [user?.id])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({behavior:"smooth"}) }, [messages,loading])
+  useEffect(() => {
+    if(user?.id && messages.length>0) {
+      try { localStorage.setItem(MEMORY_KEY(user.id), JSON.stringify(messages.slice(-MAX_MSGS))) } catch {}
+    }
+    bottomRef.current?.scrollIntoView({ behavior:"smooth" })
+  }, [messages])
 
-  async function loadAll() {
-    if(!user?.id) return
-    const [{ data:t },{ data:p },{ data:b }] = await Promise.all([
-      supabase.from("trades").select("*").eq("user_id",user.id).order("exit_time",{ascending:false}).limit(500),
-      supabase.from("playbooks").select("*").eq("user_id",user.id),
-      supabase.from("backtest_sessions").select("*").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20),
-    ])
-    if(t){ setTrades(t); buildInsights(t,b||[]) }
-    if(p) setPlaybooks(p)
-    if(b) setBacktests(b)
-  }
-
-  async function loadMemory() {
-    if(!user?.id) return
+  const callAI = async (userMsg, extraContent) => {
+    const jwt   = await getSessionToken()
+    const system = buildSystemPrompt(trades,playbooks,backtests,memory,selPlaybook,attachments)
+    const history = messages.slice(-12).map(m=>({ role:m.role, content:m.content }))
+    let content = userMsg
+    if(extraContent?.length) {
+      content = [{ type:"text", text:userMsg }, ...extraContent]
+    }
     try {
-      const { data } = await supabase.from("sylledge_memory").select("content").eq("user_id",user.id).single()
-      if(data?.content) setMemory(data.content)
-    } catch { const l=localStorage.getItem("sylledge_memory"); if(l) setMemory(l) }
-  }
-
-  async function saveMemory(content) {
-    setMemory(content)
-    localStorage.setItem("sylledge_memory",content)
-    if(!user?.id) return
-    await supabase.from("sylledge_memory").upsert({user_id:user.id,content,updated_at:new Date().toISOString()},{onConflict:"user_id"})
-  }
-
-  function buildInsights(t,b) {
-    if(!t.length) return
-    const wins  = t.filter(x=>x.outcome==="WIN")
-    const losses= t.filter(x=>x.outcome==="LOSS")
-    const wr    = (wins.length/t.length*100).toFixed(1)
-    const pnl   = t.reduce((s,x)=>s+(x.total_pnl||0),0)
-    const avgW  = wins.length?wins.reduce((s,x)=>s+(x.total_pnl||0),0)/wins.length:0
-    const avgL  = losses.length?losses.reduce((s,x)=>s+(x.total_pnl||0),0)/losses.length:0
-
-    const sess = {}
-    t.forEach(x=>{ if(!x.session)return; if(!sess[x.session])sess[x.session]={w:0,n:0,p:0}; sess[x.session].n++; sess[x.session].p+=(x.total_pnl||0); if(x.outcome==="WIN")sess[x.session].w++ })
-    const bestS = Object.entries(sess).sort((a,b)=>(b[1].w/b[1].n)-(a[1].w/a[1].n))[0]
-
-    const tf = {}
-    t.forEach(x=>{ if(!x.timeframe)return; if(!tf[x.timeframe])tf[x.timeframe]={w:0,n:0}; tf[x.timeframe].n++; if(x.outcome==="WIN")tf[x.timeframe].w++ })
-    const bestTF = Object.entries(tf).sort((a,b)=>(b[1].w/b[1].n)-(a[1].w/a[1].n))[0]
-
-    setInsights([
-      { label:"Win Rate",    value:wr+"%",           color:parseFloat(wr)>50?"var(--accent-success)":"var(--accent-danger)" },
-      { label:"Total P&L",  value:"$"+pnl.toFixed(2),color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" },
-      { label:"Avg Win",    value:"$"+avgW.toFixed(2),color:"var(--accent-success)" },
-      { label:"Avg Loss",   value:"$"+avgL.toFixed(2),color:"var(--accent-danger)" },
-      { label:"Best Session",value:bestS?.[0]||"N/A", color:"var(--accent)" },
-      { label:"Best TF",    value:bestTF?.[0]||"N/A", color:"var(--accent-secondary)" },
-    ])
-
-    const qd = [1,2,3,4,5,6,7,8,9,10].map(q=>{
-      const g=t.filter(x=>(x.quality||5)===q)
-      return { q, n:g.length, avg:g.length?g.reduce((s,x)=>s+(x.total_pnl||0),0)/g.length:0 }
-    }).filter(x=>x.n>0)
-    setChartData(qd)
-  }
-
-  // ── File attach ────────────────────────────────────────────────────────────
-  async function handleFiles(e) {
-    const files = Array.from(e.target.files)
-    const atts  = []
-    for(const f of files) {
-      if(f.size > 5*1024*1024){ alert(f.name+" too large (max 5MB)"); continue }
-      await new Promise(res => {
-        const r = new FileReader()
-        r.onload = async () => {
-          if(f.type.startsWith("image/")) {
-            atts.push({ name:f.name, type:f.type, size:f.size, b64:r.result.split(",")[1], isImage:true })
-          } else if(f.type==="application/pdf") {
-            atts.push({ name:f.name, type:f.type, size:f.size, b64:r.result.split(",")[1], isPdf:true })
-          } else {
-            atts.push({ name:f.name, type:f.type, size:f.size, text:await f.text(), isText:true })
-          }
-          res()
-        }
-        if(f.type.startsWith("image/")||f.type==="application/pdf") r.readAsDataURL(f)
-        else r.readAsText(f)
+      const res = await fetch("/api/sylledge-chat", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${jwt}` },
+        body: JSON.stringify({ system, messages:[...history,{ role:"user",content }], max_tokens:1200 })
       })
-    }
-    setAttachments(p=>[...p,...atts])
-    fileRef.current.value=""
+      const data = await res.json()
+      if(data.error) return `SYLLEDGE error: ${data.error}`
+      return data.content?.map(b=>b.text||"").join("") || "No response."
+    } catch(e) { return "Connection error: "+e.message }
   }
 
-  // ── Market data request ────────────────────────────────────────────────────
-  async function reqMarketData(symbol,timeframe,from,to) {
-    if(!user?.id) return null
-    setEaStatus("requesting")
-    try {
-      const { data:cmd } = await supabase.from("sylledge_commands")
-        .insert({ user_id:user.id, type:"fetch_candles", symbol, timeframe, from:from||null, to:to||null, limit:1000, status:"pending" })
-        .select().single()
-      if(!cmd){ setEaStatus("idle"); return null }
-      for(let i=0;i<30;i++){
-        await new Promise(r=>setTimeout(r,1000))
-        const { data:u } = await supabase.from("sylledge_commands").select("status,response").eq("id",cmd.id).single()
-        if(u?.status==="done"){ setEaStatus("received"); setTimeout(()=>setEaStatus("idle"),3000); return u.response }
-        if(u?.status==="error"){ setEaStatus("idle"); return null }
-      }
-    } catch {}
-    setEaStatus("idle")
-    return null
-  }
-
-  // ── System prompt ─────────────────────────────────────────────────────────
-  function buildSystem() {
-    const wins   = trades.filter(x=>x.outcome==="WIN")
-    const losses = trades.filter(x=>x.outcome==="LOSS")
-    const wr     = trades.length?(wins.length/trades.length*100).toFixed(1):"0"
-    const pnl    = trades.reduce((s,x)=>s+(x.total_pnl||0),0).toFixed(2)
-    const avgQ   = trades.length?(trades.reduce((s,x)=>s+(x.quality||5),0)/trades.length).toFixed(1):"5"
-
-    const sess = {}
-    trades.forEach(x=>{ if(!x.session)return; if(!sess[x.session])sess[x.session]={w:0,n:0,p:0}; sess[x.session].n++; sess[x.session].p+=(x.total_pnl||0); if(x.outcome==="WIN")sess[x.session].w++ })
-    const sessStr = Object.entries(sess).map(([s,v])=>`${s}:${v.n}trades,${(v.w/v.n*100).toFixed(0)}%WR,$${v.p.toFixed(2)}`).join(" | ")
-
-    const hourMap = {}
-    trades.forEach(x=>{ if(!x.entry_time)return; const h=new Date(x.entry_time).getUTCHours(); if(!hourMap[h])hourMap[h]={w:0,n:0}; hourMap[h].n++; if(x.outcome==="WIN")hourMap[h].w++ })
-    const bestHours = Object.entries(hourMap).filter(([,v])=>v.n>=3).sort((a,b)=>(b[1].w/b[1].n)-(a[1].w/a[1].n)).slice(0,5).map(([h,v])=>`${h}:00UTC(${(v.w/v.n*100).toFixed(0)}%WR,${v.n}trades)`).join(", ")
-
-    const pb = selPlaybook ? playbooks.find(p=>p.id===selPlaybook) : null
-    const pbTxt = pb ? `\n\nACTIVE PLAYBOOK: "${pb.name}"\n${pb.description||""}\nRules:${JSON.stringify(pb.rules||{})}` : ""
-
-    const btTxt = backtests.length
-      ? "\n\nBACKTESTED STRATEGIES:\n"+backtests.slice(0,5).map(b=>`• ${b.name||"Strategy"}: ${b.total_trades||0}trades,${b.win_rate||0}%WR,$${b.total_pnl||0}`).join("\n")
-      : ""
-
-    const sample = trades.slice(0,20).map(t=>`${t.symbol} ${t.direction} ${t.outcome} $${(t.total_pnl||0).toFixed(2)} Q:${t.quality||5} Sess:${t.session||"?"} TF:${t.timeframe||"?"} In:${t.entry_time?new Date(t.entry_time).toISOString().slice(11,16):""} Out:${t.exit_time?new Date(t.exit_time).toISOString().slice(11,16):""}`).join("\n")
-
-    return `You are SYLLEDGE, an elite professional trading coach and quant analyst embedded in TradeSylla. You have deep knowledge of price action, market structure, risk management, and trading psychology.
-
-TRADER DATA:
-Trades: ${trades.length} | Win Rate: ${wr}% | P&L: $${pnl} | Avg Quality: ${avgQ}/10
-Sessions: ${sessStr||"none yet"}
-Best Entry Hours: ${bestHours||"not enough data"}
-${pbTxt}${btTxt}
-
-RECENT TRADES:
-${sample||"none yet"}
-
-YOUR MEMORY:
-${memory||"no memory yet"}
-
-YOUR CAPABILITIES:
-1. DEEP ANALYSIS of entry times, sessions, SL, TP, RR — use the actual data above
-2. MARKET DATA: request live candles from MT5 EA using <<<REQUEST_MARKET_DATA>>>
-3. BACKTEST COMPARISON: compare live vs backtest results
-4. FILE GENERATION: create downloadable reports, CSVs, interactive HTML charts
-5. FILE READING: read uploaded PDFs, images, CSVs
-6. STRATEGY INTEGRATION: use the active playbook in all recommendations
-7. RISK MANAGEMENT: position sizing, session exposure, max daily loss rules
-
-FILE GENERATION:
-When user wants a file/report:
-• HTML report: <<<HTML_FILE>>><!DOCTYPE html>...</html><<<END_HTML>>>
-• CSV: <<<CSV_FILE>>>header1,header2\nval1,val2<<<END_CSV>>>
-• JSON: <<<JSON_FILE>>>{...}<<<END_JSON>>>
-
-MARKET DATA REQUEST:
-<<<REQUEST_MARKET_DATA>>>{"symbol":"XAUUSD","timeframe":"H1","from":"2025-01-01","to":"2025-03-01"}<<<END_REQUEST>>>
-
-MEMORY UPDATE (end of important conversations):
-<<<MEMORY_UPDATE>>>key finding about this trader<<<END_MEMORY>>>
-
-Be specific, data-driven, and actionable. You have their actual trade data above — use it.`
-  }
-
-  // ── Parse AI response ─────────────────────────────────────────────────────
-  function parseResp(text) {
-    const files=[]; let clean=text; let mdReq=null
-
-    const htmlM=text.match(/<<<HTML_FILE>>>([\s\S]*?)<<<END_HTML>>>/)
-    if(htmlM){ files.push({type:"html",name:"sylledge_report.html",content:htmlM[1].trim()}); clean=clean.replace(htmlM[0],"") }
-
-    const csvM=text.match(/<<<CSV_FILE>>>([\s\S]*?)<<<END_CSV>>>/)
-    if(csvM){ files.push({type:"csv",name:"sylledge_data.csv",content:csvM[1].trim()}); clean=clean.replace(csvM[0],"") }
-
-    const jsonM=text.match(/<<<JSON_FILE>>>([\s\S]*?)<<<END_JSON>>>/)
-    if(jsonM){ files.push({type:"json",name:"sylledge_analysis.json",content:jsonM[1].trim()}); clean=clean.replace(jsonM[0],"") }
-
-    const mdM=text.match(/<<<REQUEST_MARKET_DATA>>>([\s\S]*?)<<<END_REQUEST>>>/)
-    if(mdM){ try{ mdReq=JSON.parse(mdM[1].trim()) }catch{} ; clean=clean.replace(mdM[0],"") }
-
-    const memM=text.match(/<<<MEMORY_UPDATE>>>([\s\S]*?)<<<END_MEMORY>>>/)
-    if(memM){ saveMemory(((memory?memory+"\n\n":"")+memM[1].trim()).slice(-4000)); clean=clean.replace(memM[0],"") }
-
-    return { clean:clean.trim(), files, mdReq }
-  }
-
-  // ── Download ───────────────────────────────────────────────────────────────
-  function download(f) {
-    const mime={html:"text/html",csv:"text/csv",json:"application/json"}
-    const blob=new Blob([f.content],{type:mime[f.type]||"text/plain"})
-    const url=URL.createObjectURL(blob)
-    const a=document.createElement("a"); a.href=url; a.download=f.name; a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  // ── Build API messages ─────────────────────────────────────────────────────
-  function buildContent(text, atts) {
-    if(!atts.length) return text
-    const parts=[]
-    atts.forEach(a=>{
-      if(a.isImage) parts.push({type:"image",source:{type:"base64",media_type:a.type,data:a.b64}})
-      else if(a.isPdf) parts.push({type:"document",source:{type:"base64",media_type:"application/pdf",data:a.b64}})
-      else parts.push({type:"text",text:`[File: ${a.name}]\n${a.text}`})
-    })
-    parts.push({type:"text",text})
-    return parts
-  }
-
-  // ── Send ───────────────────────────────────────────────────────────────────
-  async function send(override) {
-    const text=(override||input).trim()
-    if(!text&&!attachments.length) return
-
-    const atts=[...attachments]
-    const userMsg={ id:Date.now(), role:"user", content:text,
-      attachments:atts.map(a=>({name:a.name,type:a.type,size:a.size})),
-      time:new Date().toISOString() }
-    setMessages(p=>[...p,userMsg])
-    setInput(""); setAttachments([]); setLoading(true)
-
-    try {
-      const history=messages.slice(-MAX_MSGS).map(m=>({
-        role:m.role, content:m._rawContent||m.content||""
-      }))
-      history.push({role:"user",content:buildContent(text,atts)})
-
-      // Use server-side proxy — no client API key needed
-      const data = await callClaude(history, buildSystem())
-      const raw=data.content?.map(c=>c.text||"").join("")||"No response"
-      const { clean, files, mdReq } = parseResp(raw)
-
-      if(mdReq) {
-        const partialId=Date.now()+1
-        setMessages(p=>[...p,{id:partialId,role:"assistant",content:clean+"\n\n⏳ Fetching market data from your MT5 EA…",files:[],time:new Date().toISOString()}])
-        const mdData=await reqMarketData(mdReq.symbol,mdReq.timeframe,mdReq.from,mdReq.to)
-        const followHistory=[...history,{role:"assistant",content:raw},{role:"user",content:mdData
-          ? `Market data received from MT5 EA:\n${JSON.stringify(mdData,null,2)}\n\nNow complete your full analysis using this data.`
-          : "The MT5 EA is offline. Complete your analysis using only the available trade history data."}]
-        const fd = await callClaude(followHistory, buildSystem())
-        const fr=fd.content?.map(c=>c.text||"").join("")||""
-        const { clean:fc, files:ff } = parseResp(fr)
-        setMessages(p=>p.map(m=>m.id===partialId?{...m,content:fc,files:[...files,...ff]}:m))
-      } else {
-        setMessages(p=>[...p,{id:Date.now()+1,role:"assistant",content:clean,files,_rawContent:raw,time:new Date().toISOString()}])
-      }
-    } catch(err) {
-      setMessages(p=>[...p,{id:Date.now()+1,role:"assistant",content:"Error: "+err.message,files:[],time:new Date().toISOString()}])
-    }
+  const sendMessage = async (text, extraContent) => {
+    const msg = text || input.trim()
+    if(!msg||loading) return
+    setInput(""); setAttachments([])
+    const userMsg = { role:"user", content:msg, timestamp:new Date().toISOString() }
+    setMessages(prev=>[...prev,userMsg])
+    setLoading(true)
+    const raw = await callAI(msg, extraContent)
+    const { clean, files, mdReq, memUpdate } = parseResp(raw)
+    if(memUpdate) setMemory(m=>m?m+"\n"+memUpdate:memUpdate)
+    const assistantMsg = { role:"assistant", content:clean, files, timestamp:new Date().toISOString() }
+    setMessages(prev=>[...prev,assistantMsg])
+    if(mdReq) { setEaStatus("requested"); toast.info("SYLLEDGE requested market data from your MT5 EA") }
     setLoading(false)
   }
 
-  const noKey = false  // always ready — API key is server-side
+  const handleAttach = async e => {
+    const file = e.target.files?.[0]; if(!file)return
+    const content = await new Promise(r=>{ const fr=new FileReader(); fr.onload=ev=>r(ev.target.result); if(file.type.startsWith("image/")||file.type==="application/pdf") fr.readAsDataURL(file); else fr.readAsText(file) })
+    const att = { name:file.name, type:file.type, size:file.size, content }
+    setAttachments(prev=>[...prev,att])
+    let extra
+    if(file.type.startsWith("image/")||file.type==="application/pdf") {
+      extra = [{ type: file.type.startsWith("image/")?"image":"document", source:{ type:"base64", media_type:file.type, data:content.split(",")[1] } }]
+    }
+    await sendMessage(`I've uploaded ${file.name}. Please analyze it in context of my trading performance.`, extra)
+  }
+
+  const saveInsight = async (content, type="general") => {
+    const saved = await SylledgeInsight.create({ content:content.slice(0,500), type })
+    setInsights(prev=>[saved,...prev])
+    toast.success("Insight saved!")
+  }
+  const deleteInsight = async id => {
+    await SylledgeInsight.delete(id)
+    setInsights(prev=>prev.filter(i=>i.id!==id))
+  }
+  const clearChat = () => {
+    setMessages([{ role:"assistant", content:"Chat cleared. What would you like to analyze? 🎯", timestamp:new Date().toISOString() }])
+    if(user?.id) localStorage.removeItem(MEMORY_KEY(user.id))
+  }
+
+  const wins   = trades.filter(t=>t.outcome==="WIN")
+  const losses = trades.filter(t=>t.outcome==="LOSS")
+  const netPnl = trades.reduce((s,t)=>s+(t.pnl||0),0)
+  const winRate= trades.length?(wins.length/trades.length*100).toFixed(1):"0.0"
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] max-w-5xl mx-auto">
-
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+    <div className="flex flex-col" style={{ height:"calc(100vh - 80px)", minHeight:0 }}>
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))"}}>
-            <Bot size={20} className="text-white"/>
+          <div className="w-11 h-11 rounded-2xl flex items-center justify-center"
+            style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)", boxShadow:"0 4px 18px rgba(108,99,255,0.35)" }}>
+            <Brain size={22} className="text-white"/>
           </div>
           <div>
-            <h1 className="text-xl font-bold" style={{color:"var(--text-primary)"}}>SYLLEDGE AI</h1>
-            <p className="text-xs" style={{color:"var(--text-muted)"}}>
+            <h1 className="gradient-text font-black" style={{ fontFamily:"var(--font-display)", fontSize:26 }}>SYLLEDGE AI</h1>
+            <p className="mono text-xs" style={{ color:"var(--text-muted)" }}>
               {trades.length} trades · {playbooks.length} strategies · {backtests.length} backtests
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {eaStatus!=="idle"&&(
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
-              style={{background:eaStatus==="received"?"rgba(46,213,115,0.15)":"rgba(108,99,255,0.15)",
-                border:`1px solid ${eaStatus==="received"?"var(--accent-success)":"var(--accent)"}`,
-                color:eaStatus==="received"?"var(--accent-success)":"var(--accent)"}}>
-              {eaStatus==="requesting"?<><RefreshCw size={11} className="animate-spin"/> Requesting EA data…</>:<><CheckCircle size={11}/> Data received!</>}
-            </div>
-          )}
-          {playbooks.length>0&&(
-            <select value={selPlaybook} onChange={e=>setSelPlaybook(e.target.value)}
-              className="text-xs px-2 py-1.5 rounded-lg border"
-              style={{background:"var(--bg-elevated)",borderColor:"var(--border)",color:"var(--text-secondary)"}}>
-              <option value="">No playbook</option>
-              {playbooks.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* EA status pill */}
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold`}
+            style={{ background:eaStatus==="requested"?"rgba(0,212,170,0.12)":"rgba(108,99,255,0.08)", border:`1px solid ${eaStatus==="requested"?"rgba(0,212,170,0.3)":"rgba(108,99,255,0.2)"}`, color:eaStatus==="requested"?"var(--accent-secondary)":"var(--text-muted)", fontFamily:"var(--font-mono)" }}>
+            <Activity size={10} className={eaStatus==="requested"?"animate-pulse":""}/>
+            {eaStatus==="requested"?"EA data requested":"MT5 link idle"}
+          </div>
+          {/* Playbook selector */}
+          <select value={selPlaybook} onChange={e=>setSelPlaybook(e.target.value)}
+            className="h-8 rounded-xl px-3 text-xs border"
+            style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)", fontFamily:"var(--font-display)" }}>
+            <option value="">No active playbook</option>
+            {playbooks.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button onClick={clearChat} className="btn btn-secondary h-8 gap-1.5 text-xs">
+            <Trash2 size={11}/> Clear
+          </button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl mb-4 flex-shrink-0 w-fit"
-        style={{background:"var(--bg-elevated)"}}>
+      {/* ── Stats strip ──────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
+        {[
+          { label:"Win Rate",  v:`${winRate}%`,  color:parseFloat(winRate)>=50?"var(--accent-success)":"var(--accent-danger)", icon:Target },
+          { label:"Net P&L",   v:`${netPnl>=0?"+":""}$${netPnl.toFixed(0)}`, color:netPnl>=0?"var(--accent-success)":"var(--accent-danger)", icon:TrendingUp },
+          { label:"Trades",    v:trades.length,  color:"var(--accent)",        icon:Activity },
+          { label:"Insights",  v:insights.length,color:"var(--accent-secondary)", icon:Brain },
+        ].map(s => (
+          <div key={s.label} className="stat-card flex items-center gap-3 flex-none px-4 py-2.5">
+            <div className="stat-card-icon" style={{ background:`${s.color}18` }}>
+              <s.icon size={14} style={{ color:s.color }}/>
+            </div>
+            <div>
+              <p className="stat-card-value mono" style={{ color:s.color, fontSize:16 }}>{s.v}</p>
+              <p className="stat-card-label">{s.label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Tabs ─────────────────────────────────────────────────────────────── */}
+      <div className="flex gap-1 mb-4 p-1 rounded-xl w-fit flex-shrink-0" style={{ background:"var(--bg-elevated)" }}>
         {TABS.map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
-            style={{background:tab===t.id?"var(--accent)":"transparent",color:tab===t.id?"#fff":"var(--text-muted)"}}>
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+            style={{ background:tab===t.id?"var(--accent)":"transparent", color:tab===t.id?"#fff":"var(--text-secondary)", fontFamily:"var(--font-display)" }}>
             <t.Icon size={13}/>{t.label}
           </button>
         ))}
       </div>
 
-
-
-      {/* ── CHAT TAB ─────────────────────────────────────────────────────── */}
-      {tab==="chat"&&(
-        <div className="flex flex-col flex-1 min-h-0">
+      {/* ── Chat Tab ─────────────────────────────────────────────────────────── */}
+      {tab==="chat" && (
+        <div className="flex flex-col flex-1 min-h-0 gap-3">
           {/* Quick prompts */}
-          <div className="flex gap-2 overflow-x-auto pb-2 flex-shrink-0 mb-3">
-            {QUICK_PROMPTS.map(qp=>(
-              <button key={qp.label} onClick={()=>send(qp.prompt)} disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex-shrink-0 border hover:opacity-80"
-                style={{background:"var(--bg-elevated)",borderColor:"var(--border)",color:"var(--text-secondary)",opacity:loading?0.5:1}}>
-                <qp.icon size={12} style={{color:"var(--accent)"}}/>{qp.label}
+          <div className="flex flex-wrap gap-2 flex-shrink-0">
+            {QUICK_PROMPTS.map(p=>(
+              <button key={p.label} onClick={()=>sendMessage(p.prompt)} disabled={loading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-80 transition-opacity"
+                style={{ background:`${p.color}12`, border:`1px solid ${p.color}25`, color:p.color, fontFamily:"var(--font-display)" }}>
+                <p.icon size={11}/>{p.label}
               </button>
             ))}
           </div>
-
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto space-y-4 pr-1 min-h-0">
-            {messages.length===0&&(
-              <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
-                  style={{background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))"}}>
-                  <Sparkles size={28} className="text-white"/>
-                </div>
-                <h3 className="text-lg font-bold mb-2" style={{color:"var(--text-primary)"}}>SYLLEDGE is ready</h3>
-                <p className="text-sm max-w-md" style={{color:"var(--text-muted)"}}>
-                  Ask about your sessions, entry times, SL strategy, or request a full HTML report. Upload PDFs, CSVs, or screenshots to analyze.
-                </p>
-              </div>
-            )}
-
-            {messages.map(msg=>(
-              <div key={msg.id} className={`flex gap-3 ${msg.role==="user"?"flex-row-reverse":""}`}>
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{background:msg.role==="assistant"?"linear-gradient(135deg,var(--accent),var(--accent-secondary))":"var(--bg-elevated)"}}>
-                  {msg.role==="assistant"?<Bot size={15} className="text-white"/>:<User size={15} style={{color:"var(--text-muted)"}}/>}
-                </div>
-                <div className={`max-w-[80%] space-y-2 flex flex-col ${msg.role==="user"?"items-end":""}`}>
-                  {msg.attachments?.length>0&&(
-                    <div className="flex flex-wrap gap-1.5">
-                      {msg.attachments.map((a,i)=>(
-                        <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs"
-                          style={{background:"var(--bg-elevated)",border:"1px solid var(--border)",color:"var(--text-muted)"}}>
-                          <FileIcon type={a.type}/><span className="max-w-20 truncate">{a.name}</span>
-                          <span>{fmtBytes(a.size)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="px-4 py-3 rounded-2xl"
-                    style={{
-                      background:msg.role==="assistant"?"var(--bg-card)":"var(--accent)",
-                      border:msg.role==="assistant"?"1px solid var(--border)":"none",
-                      color:msg.role==="assistant"?"var(--text-primary)":"#fff",
-                      borderRadius:msg.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",
-                    }}>
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                  </div>
-                  {msg.files?.map((f,i)=>(
-                    <button key={i} onClick={()=>download(f)}
-                      className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border hover:opacity-80"
-                      style={{background:"rgba(46,213,115,0.1)",borderColor:"var(--accent-success)",color:"var(--accent-success)"}}>
-                      <Download size={14}/> Download {f.name} <span className="text-xs opacity-60 uppercase">.{f.type}</span>
-                    </button>
-                  ))}
-                  <p className="text-xs px-1" style={{color:"var(--text-muted)"}}>{fmtTime(msg.time)}</p>
-                </div>
-              </div>
-            ))}
-
-            {loading&&(
+          <div className="flex-1 overflow-y-auto rounded-2xl p-4 space-y-4 min-h-0"
+            style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+            {messages.map((m,i)=><MessageBubble key={i} msg={m} onSave={m.role==="assistant"?saveInsight:null}/>)}
+            {loading && (
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))"}}>
-                  <Bot size={15} className="text-white"/>
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background:"linear-gradient(135deg,#6c63ff,#00d4aa)" }}>
+                  <Brain size={14} className="text-white"/>
                 </div>
-                <div className="px-4 py-3 rounded-2xl flex items-center gap-2"
-                  style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-                  {[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full animate-bounce" style={{background:"var(--accent)",animationDelay:`${i*0.15}s`}}/>)}
+                <div className="px-4 py-3 rounded-2xl rounded-tl-sm" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+                  <div className="flex gap-1.5">
+                    {[0,1,2].map(i=><div key={i} className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background:"var(--accent)", animationDelay:`${i*0.15}s` }}/>)}
+                  </div>
                 </div>
               </div>
             )}
             <div ref={bottomRef}/>
           </div>
-
           {/* Input */}
-          <div className="mt-3 flex-shrink-0">
-            {attachments.length>0&&(
-              <div className="flex flex-wrap gap-2 mb-2">
-                {attachments.map((a,i)=>(
-                  <div key={i} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs"
-                    style={{background:"var(--bg-elevated)",border:"1px solid var(--accent)",color:"var(--text-secondary)"}}>
-                    <FileIcon type={a.type}/><span className="max-w-24 truncate">{a.name}</span>
-                    <button onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==i))} className="hover:opacity-70 ml-1"><X size={11}/></button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2 items-end">
-              <div className="flex-1 relative rounded-2xl overflow-hidden"
-                style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-                <textarea value={input} onChange={e=>setInput(e.target.value)}
-                  onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}}}
-                  placeholder="Ask SYLLEDGE… (Shift+Enter for new line)"
-                  rows={1} disabled={loading}
-                  className="w-full px-4 py-3 pr-10 text-sm resize-none bg-transparent outline-none"
-                  style={{color:"var(--text-primary)",maxHeight:120}}/>
-                <button onClick={()=>fileRef.current?.click()}
-                  className="absolute right-3 bottom-3 hover:opacity-70"
-                  style={{color:"var(--text-muted)"}}>
-                  <Paperclip size={16}/>
-                </button>
-                <input ref={fileRef} type="file" multiple
-                  accept=".pdf,.csv,.json,.txt,.png,.jpg,.jpeg,.webp"
-                  className="hidden" onChange={handleFiles}/>
-              </div>
-              <button onClick={()=>send()} disabled={loading||(!input.trim()&&!attachments.length)}
-                className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  background:(loading||(!input.trim()&&!attachments.length))?"var(--bg-elevated)":"linear-gradient(135deg,var(--accent),var(--accent-secondary))",
-                  opacity:(loading||(!input.trim()&&!attachments.length))?0.5:1,
-                }}>
-                <Send size={16} className="text-white"/>
-              </button>
-            </div>
+          <div className="flex-shrink-0 flex items-end gap-2">
+            <input ref={fileRef} type="file" className="hidden" accept="image/*,.pdf,.csv,.txt" onChange={handleAttach}/>
+            <button onClick={()=>fileRef.current?.click()} className="p-2.5 rounded-xl flex-shrink-0"
+              style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--text-muted)" }}>
+              <Paperclip size={16}/>
+            </button>
+            <textarea
+              value={input}
+              onChange={e=>setInput(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()} }}
+              placeholder="Ask SYLLEDGE anything about your trading…"
+              rows={1}
+              className="flex-1 rounded-xl px-4 py-3 text-sm resize-none"
+              style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)", minHeight:46, maxHeight:120 }}
+            />
+            <button onClick={()=>sendMessage()} disabled={loading||!input.trim()}
+              className="p-3 rounded-xl flex-shrink-0 transition-all"
+              style={{ background:input.trim()?"var(--accent)":"var(--bg-elevated)", color:input.trim()?"#fff":"var(--text-muted)", border:`1px solid ${input.trim()?"var(--accent)":"var(--border)"}`, opacity:loading?0.7:1 }}>
+              <Send size={16}/>
+            </button>
           </div>
         </div>
       )}
 
-      {/* ── INSIGHTS TAB ─────────────────────────────────────────────────── */}
-      {tab==="insights"&&(
-        <div className="flex-1 overflow-y-auto space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {insights.map(ins=>(
-              <div key={ins.label} className="rounded-xl p-4"
-                style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-                <p className="text-xs mb-1" style={{color:"var(--text-muted)"}}>{ins.label}</p>
-                <p className="text-xl font-bold" style={{color:ins.color}}>{ins.value}</p>
+      {/* ── Insights Tab ─────────────────────────────────────────────────────── */}
+      {tab==="insights" && (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {insights.length===0 ? (
+            <div className="card py-16 text-center">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background:"rgba(108,99,255,0.1)" }}>
+                <Brain size={22} style={{ color:"var(--accent)" }}/>
               </div>
-            ))}
-          </div>
-          {chartData.length>0&&(
-            <div className="rounded-2xl overflow-hidden" style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-              <div className="px-4 py-3" style={{borderBottom:"1px solid var(--border)"}}>
-                <h3 className="font-semibold text-sm" style={{color:"var(--text-primary)"}}>Quality Score → Avg P&L</h3>
-              </div>
-              {chartData.map(r=>(
-                <div key={r.q} className="flex items-center gap-4 px-4 py-2.5 border-b" style={{borderColor:"var(--border)"}}>
-                  <span className="w-12 text-sm font-bold" style={{color:"var(--accent)"}}>{r.q}/10</span>
-                  <div className="flex-1 h-2 rounded-full overflow-hidden" style={{background:"var(--bg-elevated)"}}>
-                    <div className="h-full rounded-full" style={{width:`${Math.min(100,Math.abs(r.avg)/3)}%`,background:r.avg>=0?"var(--accent-success)":"var(--accent-danger)"}}/>
-                  </div>
-                  <span className="text-sm font-semibold w-20 text-right" style={{color:r.avg>=0?"var(--accent-success)":"var(--accent-danger)"}}>
-                    ${r.avg.toFixed(2)}
-                  </span>
-                  <span className="text-xs w-14 text-right" style={{color:"var(--text-muted)"}}>{r.n} trades</span>
-                </div>
-              ))}
+              <p className="font-bold mb-1" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>No saved insights yet</p>
+              <p className="text-sm" style={{ color:"var(--text-muted)" }}>Click "Save insight" on any AI response to save it here.</p>
             </div>
-          )}
-          {backtests.length>0&&(
-            <div className="rounded-2xl overflow-hidden" style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-              <div className="px-4 py-3" style={{borderBottom:"1px solid var(--border)"}}>
-                <h3 className="font-semibold text-sm" style={{color:"var(--text-primary)"}}>Backtested vs Live</h3>
-              </div>
-              {backtests.slice(0,5).map(b=>(
-                <div key={b.id} className="px-4 py-3 flex justify-between border-b" style={{borderColor:"var(--border)"}}>
-                  <div><p className="text-sm font-medium" style={{color:"var(--text-primary)"}}>{b.name||"Strategy"}</p>
-                    <p className="text-xs" style={{color:"var(--text-muted)"}}>{b.total_trades||0} trades backtested</p></div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold" style={{color:(b.win_rate||0)>50?"var(--accent-success)":"var(--accent-danger)"}}>{b.win_rate||0}% WR</p>
-                    <p className="text-xs" style={{color:(b.total_pnl||0)>=0?"var(--accent-success)":"var(--accent-danger)"}}>${ (b.total_pnl||0).toFixed(2)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {insights.length===0&&<div className="text-center py-12"><Database size={32} className="mx-auto mb-3" style={{color:"var(--text-muted)"}}/><p style={{color:"var(--text-muted)"}}>Sync your MT5 EA to see insights.</p></div>}
-        </div>
-      )}
-
-      {/* ── CHARTS TAB ───────────────────────────────────────────────────── */}
-      {tab==="charts"&&(
-        <div className="flex-1 overflow-y-auto space-y-4">
-          <div className="rounded-2xl p-4" style={{background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-            <h3 className="font-semibold mb-1" style={{color:"var(--text-primary)"}}>Trade Performance by Symbol</h3>
-            <p className="text-xs mb-4" style={{color:"var(--text-muted)"}}>Showing latest {Math.min(15,trades.length)} trades</p>
-            <div className="space-y-2">
-              {trades.slice(0,15).map(t=>{
-                const p=t.total_pnl||0
-                return (
-                  <div key={t.id} className="flex items-center gap-3 py-2 border-b" style={{borderColor:"var(--border)"}}>
-                    <span className="text-xs font-bold w-14" style={{color:"var(--text-muted)"}}>{t.symbol}</span>
-                    <span className="text-xs w-8" style={{color:t.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)"}}>{t.direction}</span>
-                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{background:"var(--bg-elevated)"}}>
-                      <div className="h-full rounded-full" style={{width:`${Math.min(100,Math.abs(p)/5)}%`,background:p>=0?"var(--accent-success)":"var(--accent-danger)"}}/>
+          ) : (
+            <div className="space-y-3">
+              {insights.map(ins=>(
+                <div key={ins.id} className="card p-4">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background:"rgba(108,99,255,0.12)" }}>
+                        <Sparkles size={12} style={{ color:"var(--accent)" }}/>
+                      </div>
+                      <span className="badge badge-accent capitalize">{ins.type||"general"}</span>
+                      <span className="mono text-xs" style={{ color:"var(--text-muted)", fontSize:10 }}>
+                        {new Date(ins.created_at).toLocaleDateString()}
+                      </span>
                     </div>
-                    <span className="text-xs font-bold w-20 text-right" style={{color:p>=0?"var(--accent-success)":"var(--accent-danger)"}}>{p>=0?"+":""}{p.toFixed(2)}</span>
-                    <span className="text-xs w-10 text-right" style={{color:"var(--text-muted)"}}>{t.quality||5}/10</span>
+                    <button onClick={()=>deleteInsight(ins.id)} className="p-1 rounded hover:opacity-70" style={{ color:"var(--text-muted)" }}>
+                      <X size={13}/>
+                    </button>
                   </div>
-                )
-              })}
+                  <p className="text-sm leading-relaxed" style={{ fontFamily:"var(--font-display)", color:"var(--text-secondary)" }}>{ins.content}</p>
+                </div>
+              ))}
             </div>
-          </div>
-          <div className="text-center py-4">
-            <button onClick={()=>{ setTab("chat"); setTimeout(()=>send("Generate a full interactive HTML performance report with: session heatmap, entry time analysis, quality vs P&L chart, win/loss breakdown, SL analysis, and AI recommendations. Make it professional with inline CSS and Chart.js charts."),100) }}
-              
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white"
-              style={{background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))",opacity:1}}>
-              <Sparkles size={14}/>Generate Full HTML Report
+          )}
+        </div>
+      )}
+
+      {/* ── Charts Tab ───────────────────────────────────────────────────────── */}
+      {tab==="charts" && (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="card py-12 text-center">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background:"rgba(108,99,255,0.1)" }}>
+              <LineChart size={22} style={{ color:"var(--accent)" }}/>
+            </div>
+            <p className="font-bold mb-1" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>Market Charts</p>
+            <p className="text-sm mb-4" style={{ color:"var(--text-muted)" }}>Ask SYLLEDGE to generate a report — it will create downloadable HTML charts you can open in any browser.</p>
+            <button onClick={()=>{ setTab("chat"); sendMessage("Generate a comprehensive performance report as a downloadable HTML file with interactive charts.") }}
+              className="btn btn-primary">
+              <Sparkles size={13}/> Generate Report
             </button>
           </div>
         </div>

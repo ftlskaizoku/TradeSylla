@@ -1,1169 +1,360 @@
-import { useState, useEffect, useRef } from "react"
-import { Trade, BrokerConnection } from "@/api/supabaseStore"
+// src/pages/BrokerSync.jsx  — Visual Upgrade v2 + Token Column Fix
+// Token is now saved to BOTH user_token AND ea_token so it works with all
+// versions of ea-sync.js regardless of which column they check.
+import { useState, useEffect } from "react"
 import { useUser } from "@/lib/UserContext"
 import { supabase } from "@/lib/supabase"
+import { Trade, BrokerConnection } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
 import {
-  Wifi, WifiOff, Plus, Trash2, X, RefreshCw,
-  CheckCircle, AlertCircle, Clock, ChevronRight,
-  Shield, Info, Terminal, Download, Activity,
-  ChevronDown, Eye, EyeOff, Zap, Globe, Copy, Key, Bot,
-  TrendingUp, DollarSign, BarChart3, Server, AlertTriangle
+  Wifi, WifiOff, Download, Copy, CheckCircle, RefreshCw,
+  Key, ChevronDown, ChevronUp, AlertTriangle, Zap, Activity,
+  TrendingUp, BarChart2, Shield, Terminal
 } from "lucide-react"
 
-const BRIDGE_URL = "http://localhost:5001"
-
-// Safe fetch with timeout (AbortSignal.timeout not supported in all browsers)
-function fetchWithTimeout(url, options = {}, ms = 5000) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), ms)
-  return fetch(url, { ...options, signal: controller.signal })
-    .finally(() => clearTimeout(timer))
-}
-
-// ── Known broker servers (user can add custom) ────────────────────────────────
-const KNOWN_SERVERS = {
-  "IC Markets":     ["ICMarkets-Live01","ICMarkets-Live02","ICMarkets-Demo01"],
-  "Pepperstone":    ["Pepperstone-Demo","Pepperstone-Demo02","Pepperstone-Live","Pepperstone-Live01"],
-  "FTMO":           ["FTMO-Server","FTMO-Server2","FTMO-Demo"],
-  "Exness":         ["Exness-Trial","Exness-Real","Exness-Real2","Exness-Real3"],
-  "XM":             ["XMGlobal-Demo","XMGlobal-Real","XMGlobal-Real2"],
-  "FP Markets":     ["FPMarkets-Demo","FPMarkets-Live","FPMarkets-Live2"],
-  "Axiory":         ["Axiory-Demo","Axiory-Real"],
-  "Tickmill":       ["Tickmill-Demo","Tickmill-Live"],
-  "Vantage":        ["Vantage-Demo Server","Vantage-Live Server"],
-  "OANDA":          ["OANDA-fxTrade","OANDA-fxTradeUS","OANDA-fxPractice"],
-  "MyFXBook":       ["Autotrade-Demo","Autotrade-Live"],
-  "HFM":            ["HFMarketsGlobal-Demo","HFMarketsGlobal-Real"],
-  "Forex.com":      ["FOREX.com-Demo01","FOREX.com-MT5Live01"],
-  "Custom / Other": [],
-}
-
-// ─── MT5 Connect Panel ────────────────────────────────────────────────────────
-function MT5ConnectPanel({ onConnected }) {
-  const [broker,      setBroker]      = useState("IC Markets")
-  const [serverMode,  setServerMode]  = useState("list")  // "list" | "manual"
-  const [server,      setServer]      = useState("")
-  const [customServer,setCustomServer]= useState("")
-  const [accountType, setAccountType] = useState("live")
-  const [login,       setLogin]       = useState("")
-  const [password,    setPassword]    = useState("")
-  const [showPass,    setShowPass]    = useState(false)
-  const [connecting,  setConnecting]  = useState(false)
-  const [bridgeStatus,setBridgeStatus]= useState(null) // null | "checking" | "ok" | "error"
-
-  const servers = KNOWN_SERVERS[broker] || []
-
-  useEffect(() => {
-    setServer(servers[0] || "")
-  }, [broker])
-
-  // Check bridge status on mount
-  useEffect(() => {
-    checkBridge()
-  }, [])
-
-  const checkBridge = async () => {
-    setBridgeStatus("checking")
-    try {
-      const res = await fetchWithTimeout(`${BRIDGE_URL}/api/status`, {}, 3000)
-      const data = await res.json()
-      setBridgeStatus(data.running ? "ok" : "error")
-      if (data.connected && data.account) {
-        onConnected(data.account, [])
-      }
-    } catch {
-      setBridgeStatus("error")
-    }
-  }
-
-  const connect = async () => {
-    if (!login.trim() || !password.trim()) { toast.error("Login and password are required"); return }
-    const serverVal = serverMode === "manual" ? customServer.trim() : server
-    if (!serverVal) { toast.error("Server is required"); return }
-
-    setConnecting(true)
-    try {
-      const res = await fetchWithTimeout(`${BRIDGE_URL}/api/connect`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ login, password, server: serverVal }),
-      }, 15000)
-      const data = await res.json()
-      if (data.success) {
-        toast.success(`Connected: ${data.account.name}`)
-        // Fetch trades
-        const tradesRes = await fetch(`${BRIDGE_URL}/api/trades`)
-        const tradesData = await tradesRes.json()
-        onConnected(data.account, tradesData.trades || [], { broker, server: serverVal, accountType, login })
-      } else {
-        toast.error(data.error || "Connection failed")
-      }
-    } catch (e) {
-      if (e.name === "TimeoutError" || e.name === "AbortError") {
-        toast.error("Timeout — is the MT5 bridge running?")
-      } else {
-        toast.error("Bridge not reachable. Is mt5_bridge.py running?")
-      }
-    }
-    setConnecting(false)
-  }
+// ─── Connection Status Card ───────────────────────────────────────────────────
+function ConnectionCard({ conn }) {
+  const isLive  = conn.type==="live"||!conn.is_demo
+  const balance = parseFloat(conn.balance||0)
+  const equity  = parseFloat(conn.equity||0)
+  const diff    = equity - balance
+  const lastSync= conn.last_sync ? new Date(conn.last_sync) : null
+  const minsAgo = lastSync ? Math.floor((Date.now()-lastSync.getTime())/60000) : null
 
   return (
-    <div className="space-y-4">
-      {/* Bridge status banner */}
-      <div className="rounded-xl p-3 flex items-center gap-3"
-        style={{ background: bridgeStatus === "ok" ? "rgba(46,213,115,0.08)" : bridgeStatus === "error" ? "rgba(255,71,87,0.08)" : "rgba(108,99,255,0.08)",
-          border: `1px solid ${bridgeStatus === "ok" ? "rgba(46,213,115,0.2)" : bridgeStatus === "error" ? "rgba(255,71,87,0.2)" : "rgba(108,99,255,0.2)"}` }}>
-        <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${bridgeStatus === "ok" ? "bg-green-400 animate-pulse" : bridgeStatus === "error" ? "bg-red-400" : "bg-yellow-400 animate-pulse"}`}/>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold" style={{ color: bridgeStatus === "ok" ? "var(--accent-success)" : bridgeStatus === "error" ? "var(--accent-danger)" : "var(--accent)" }}>
-            {bridgeStatus === "ok" ? "MT5 Bridge is running" : bridgeStatus === "error" ? "MT5 Bridge not detected" : "Checking bridge..."}
-          </p>
-          {bridgeStatus === "error" && (
-            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>
-              Download mt5_bridge.py and run: <code className="font-mono" style={{ color:"var(--accent)" }}>python mt5_bridge.py</code>
-            </p>
-          )}
-        </div>
-        <button onClick={checkBridge} className="p-1.5 rounded-lg hover:opacity-70" style={{ color:"var(--text-muted)" }}>
-          <RefreshCw size={13}/>
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        {/* Broker */}
-        <div>
-          <label className="text-xs mb-1 block font-medium" style={{ color:"var(--text-muted)" }}>Broker</label>
-          <select value={broker} onChange={e=>setBroker(e.target.value)} className="w-full h-9 rounded-lg px-3 text-sm border"
-            style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}>
-            {Object.keys(KNOWN_SERVERS).map(b=><option key={b}>{b}</option>)}
-          </select>
-        </div>
-
-        {/* Account type */}
-        <div>
-          <label className="text-xs mb-1 block font-medium" style={{ color:"var(--text-muted)" }}>Account Type</label>
-          <div className="flex gap-2">
-            {["live","demo"].map(t=>(
-              <button key={t} onClick={()=>setAccountType(t)} className="flex-1 h-9 rounded-lg text-sm font-semibold border capitalize transition-all"
-                style={{ background:accountType===t?(t==="live"?"rgba(46,213,115,0.2)":"rgba(108,99,255,0.2)"):"var(--bg-elevated)",
-                  borderColor:accountType===t?(t==="live"?"var(--accent-success)":"var(--accent)"):"var(--border)",
-                  color:accountType===t?(t==="live"?"var(--accent-success)":"var(--accent)"):"var(--text-secondary)" }}>
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Server */}
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className="text-xs font-medium" style={{ color:"var(--text-muted)" }}>Server</label>
-          <button onClick={()=>setServerMode(m=>m==="list"?"manual":"list")} className="text-xs" style={{ color:"var(--accent)" }}>
-            {serverMode==="list" ? "Enter manually" : "Pick from list"}
-          </button>
-        </div>
-        {serverMode === "list" ? (
-          servers.length > 0 ? (
-            <select value={server} onChange={e=>setServer(e.target.value)} className="w-full h-9 rounded-lg px-3 text-sm border"
-              style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}>
-              {servers.map(s=><option key={s}>{s}</option>)}
-            </select>
-          ) : (
-            <input value={customServer} onChange={e=>setCustomServer(e.target.value)} placeholder="Enter server name (e.g. ICMarkets-Live01)"
-              className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-          )
-        ) : (
-          <input value={customServer} onChange={e=>setCustomServer(e.target.value)} placeholder="e.g. BrokerName-Live01"
-            className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-        )}
-      </div>
-
-      {/* Login + Password */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs mb-1 block font-medium" style={{ color:"var(--text-muted)" }}>Login (Account #)</label>
-          <input value={login} onChange={e=>setLogin(e.target.value)} placeholder="12345678" type="number"
-            className="w-full h-9 rounded-lg px-3 text-sm border font-mono" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-        </div>
-        <div>
-          <label className="text-xs mb-1 block font-medium" style={{ color:"var(--text-muted)" }}>
-            Investor Password
-            <span className="ml-1 font-normal" style={{ color:"var(--accent-success)" }}>(read-only)</span>
-          </label>
-          <div className="relative">
-            <input type={showPass?"text":"password"} value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••"
-              className="w-full h-9 rounded-lg px-3 pr-9 text-sm border font-mono" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-            <button onClick={()=>setShowPass(s=>!s)} className="absolute right-2.5 top-2 hover:opacity-70" style={{ color:"var(--text-muted)" }}>
-              {showPass?<EyeOff size={14}/>:<Eye size={14}/>}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Investor password note */}
-      <div className="flex items-start gap-2 rounded-lg p-3" style={{ background:"rgba(46,213,115,0.06)", border:"1px solid rgba(46,213,115,0.15)" }}>
-        <Shield size={13} style={{ color:"var(--accent-success)", flexShrink:0, marginTop:1 }}/>
-        <p className="text-xs" style={{ color:"var(--text-secondary)" }}>
-          Use your <strong style={{ color:"var(--accent-success)" }}>Investor (read-only) password</strong> for security. In MT5: Account → Change Password → Investor. TradeSylla can only read data, never trade.
-        </p>
-      </div>
-
-      <button onClick={connect} disabled={connecting || bridgeStatus !== "ok"}
-        className="w-full h-10 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-all"
-        style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", opacity:(connecting||bridgeStatus!=="ok")?0.5:1 }}>
-        {connecting ? <><RefreshCw size={14} className="animate-spin"/> Connecting...</> : <><Wifi size={14}/> Connect & Import Trades</>}
-      </button>
-    </div>
-  )
-}
-
-// ─── Live Account Card ─────────────────────────────────────────────────────────
-function LiveAccountCard({ account, tradeCount, lastSync, onSync, onDisconnect, syncing }) {
-  return (
-    <div className="rounded-2xl p-5" style={{ background:"var(--bg-card)", border:"2px solid rgba(46,213,115,0.3)" }}>
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-white text-sm flex-shrink-0"
-            style={{ background:"linear-gradient(135deg,#1a73e8,#1557b0)" }}>MT5</div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>{account.name}</h3>
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
-                style={{ background:"rgba(46,213,115,0.12)", color:"var(--accent-success)" }}>
-                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
-                Live
-              </div>
-              <span className="px-2 py-0.5 rounded-full text-xs font-semibold capitalize"
-                style={{ background:account.account_type==="live"?"rgba(46,213,115,0.1)":"rgba(108,99,255,0.1)",
-                  color:account.account_type==="live"?"var(--accent-success)":"var(--accent)" }}>
-                {account.account_type}
-              </span>
+    <div className="card">
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background:isLive?"rgba(46,213,115,0.12)":"rgba(255,165,2,0.12)", border:`1px solid ${isLive?"rgba(46,213,115,0.25)":"rgba(255,165,2,0.25)"}` }}>
+              <Wifi size={18} style={{ color:isLive?"var(--accent-success)":"var(--accent-warning)" }}/>
             </div>
-            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>
-              {account.broker} · #{account.login} · {account.server}
-            </p>
+            <div>
+              <p className="font-bold" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>
+                {conn.broker_name||"MT5"} #{conn.mt5_login}
+              </p>
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>{conn.server||"No server"}</p>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <span className="badge" style={{ background:isLive?"rgba(46,213,115,0.12)":"rgba(255,165,2,0.12)", color:isLive?"var(--accent-success)":"var(--accent-warning)", border:`1px solid ${isLive?"rgba(46,213,115,0.25)":"rgba(255,165,2,0.25)"}` }}>
+              {isLive?"● Live":"○ Demo"}
+            </span>
+            {minsAgo!==null && (
+              <span className="mono" style={{ fontSize:9, color:"var(--text-muted)" }}>
+                {minsAgo<1?"Just now":minsAgo<60?`${minsAgo}m ago`:`${Math.floor(minsAgo/60)}h ago`}
+              </span>
+            )}
           </div>
         </div>
-        <div className="flex gap-1">
-          <button onClick={onSync} disabled={syncing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
-            style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>
-            <RefreshCw size={12} className={syncing?"animate-spin":""}/>
-            {syncing ? "Syncing..." : "Sync"}
-          </button>
-          <button onClick={onDisconnect} className="p-1.5 rounded-lg hover:opacity-70" style={{ color:"var(--accent-danger)" }}>
-            <WifiOff size={14}/>
-          </button>
-        </div>
-      </div>
-
-      {/* Account stats */}
-      <div className="grid grid-cols-4 gap-2 mb-4">
-        {[
-          { label:"Balance",  value:`${account.currency} ${account.balance?.toFixed(2)}` },
-          { label:"Equity",   value:`${account.currency} ${account.equity?.toFixed(2)}` },
-          { label:"Open P&L", value:`${account.profit >= 0 ? "+" : ""}${account.profit?.toFixed(2)}`,
-            color: account.profit >= 0 ? "var(--accent-success)" : "var(--accent-danger)" },
-          { label:"Leverage", value:`1:${account.leverage}` },
-        ].map(s=>(
-          <div key={s.label} className="rounded-xl p-3 text-center" style={{ background:"var(--bg-elevated)" }}>
-            <p className="text-sm font-bold" style={{ color:s.color||"var(--text-primary)" }}>{s.value}</p>
-            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex items-center justify-between text-xs" style={{ color:"var(--text-muted)" }}>
-        <span><Activity size={11} className="inline mr-1"/>{tradeCount} trades imported</span>
-        {lastSync && <span><RefreshCw size={11} className="inline mr-1"/>Last sync: {new Date(lastSync).toLocaleTimeString()}</span>}
-      </div>
-    </div>
-  )
-}
-
-// ─── Manual Broker Card ────────────────────────────────────────────────────────
-function ManualCard({ conn, onDelete }) {
-  const color = conn.broker_color || "var(--accent)"
-  return (
-    <div className="rounded-xl p-4 flex items-center gap-3" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-        style={{ background:color }}>
-        {conn.broker_name?.slice(0,2).toUpperCase() || "??"}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm truncate" style={{ color:"var(--text-primary)" }}>{conn.account_name || conn.broker_name}</p>
-        <p className="text-xs" style={{ color:"var(--text-muted)" }}>#{conn.account_number} · {conn.type} · Manual</p>
-      </div>
-      <button onClick={()=>onDelete(conn)} className="p-2 rounded-lg hover:opacity-70" style={{ color:"var(--accent-danger)" }}>
-        <Trash2 size={13}/>
-      </button>
-    </div>
-  )
-}
-
-// ─── Add Manual Modal ──────────────────────────────────────────────────────────
-const MANUAL_BROKERS = [
-  { id:"mt4", name:"MT4", color:"#1a73e8" },{ id:"ctrader", name:"cTrader", color:"#00aeef" },
-  { id:"ftmo", name:"FTMO", color:"#6c63ff" },{ id:"mff", name:"My Forex Funds", color:"#00d4aa" },
-  { id:"etoro", name:"eToro", color:"#00c176" },{ id:"ibkr", name:"IBKR", color:"#e31837" },
-  { id:"custom", name:"Custom", color:"#8b8d9e" },
-]
-
-function AddManualModal({ open, onClose, onSaved }) {
-  const [form, setForm] = useState({ broker_id:"mt4", account_number:"", account_name:"", type:"demo", notes:"" })
-  const [saving, setSaving] = useState(false)
-  const set = (k,v) => setForm(f=>({...f,[k]:v}))
-  const broker = MANUAL_BROKERS.find(b=>b.id===form.broker_id)||MANUAL_BROKERS[0]
-
-  const save = async () => {
-    if (!form.account_number.trim()) { toast.error("Account number required"); return }
-    setSaving(true)
-    await BrokerConnection.create({ ...form, broker_name:broker.name, broker_color:broker.color, status:"connected", last_sync:new Date().toISOString() })
-    toast.success("Account added!")
-    setForm({ broker_id:"mt4", account_number:"", account_name:"", type:"demo", notes:"" })
-    onSaved(); onClose()
-    setSaving(false)
-  }
-
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose}/>
-      <div className="relative w-full max-w-sm rounded-2xl shadow-2xl z-10 p-6" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>Add Manual Account</h3>
-          <button onClick={onClose} style={{ color:"var(--text-secondary)" }}><X size={16}/></button>
-        </div>
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {MANUAL_BROKERS.map(b=>(
-              <button key={b.id} onClick={()=>set("broker_id",b.id)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border"
-                style={{ background:form.broker_id===b.id?`${b.color}20`:"var(--bg-elevated)",
-                  borderColor:form.broker_id===b.id?b.color:"var(--border)",
-                  color:form.broker_id===b.id?b.color:"var(--text-secondary)" }}>
-                {b.name}
-              </button>
-            ))}
-          </div>
-          <input value={form.account_number} onChange={e=>set("account_number",e.target.value)} placeholder="Account number *"
-            className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-          <input value={form.account_name} onChange={e=>set("account_name",e.target.value)} placeholder="Nickname (e.g. Main Live)"
-            className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-          <div className="flex gap-2">
-            {["demo","live"].map(t=>(
-              <button key={t} onClick={()=>set("type",t)} className="flex-1 h-9 rounded-lg text-xs font-semibold border capitalize"
-                style={{ background:form.type===t?(t==="live"?"rgba(46,213,115,0.2)":"rgba(108,99,255,0.2)"):"var(--bg-elevated)",
-                  borderColor:form.type===t?(t==="live"?"var(--accent-success)":"var(--accent)"):"var(--border)",
-                  color:form.type===t?(t==="live"?"var(--accent-success)":"var(--accent)"):"var(--text-secondary)" }}>
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex gap-2 mt-4">
-          <button onClick={onClose} className="flex-1 h-9 rounded-lg text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>Cancel</button>
-          <button onClick={save} disabled={saving} className="flex-1 h-9 rounded-lg text-sm font-semibold text-white"
-            style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", opacity:saving?0.7:1 }}>
-            {saving?"Saving...":"Add"}
-          </button>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label:"Balance",  v:`${conn.currency||"$"}${balance.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`, color:"var(--text-primary)" },
+            { label:"Equity",   v:`${conn.currency||"$"}${equity.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`, color:diff>=0?"var(--accent-success)":"var(--accent-danger)" },
+            { label:"Float",    v:`${diff>=0?"+":""}${conn.currency||"$"}${Math.abs(diff).toFixed(2)}`, color:diff>=0?"var(--accent-success)":"var(--accent-danger)" },
+          ].map(s=>(
+            <div key={s.label} className="rounded-xl py-2 px-2 text-center" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+              <p className="text-sm font-bold mono" style={{ color:s.color }}>{s.v}</p>
+              <p className="stat-card-label" style={{ fontSize:9 }}>{s.label}</p>
+            </div>
+          ))}
         </div>
       </div>
     </div>
   )
 }
-
-
-// ─── Meta API Connect Panel ────────────────────────────────────────────────────
-function MetaApiConnectPanel() {
-  const [token,     setToken]     = useState(() => localStorage.getItem("ts_metaapi_token")  || "")
-  const [accountId, setAccountId] = useState(() => localStorage.getItem("ts_metaapi_account") || "")
-  const [status,    setStatus]    = useState(null) // null | "connecting" | "ok" | "error"
-  const [message,   setMessage]   = useState("")
-  const [trades,    setTrades]    = useState([])
-
-  const connect = async () => {
-    if (!token.trim() || !accountId.trim()) { toast.error("Enter both Token and Account ID"); return }
-    setStatus("connecting"); setMessage("Connecting to MetaApi...")
-    try {
-      // MetaApi REST endpoint to get account deals
-      const res = await fetch(
-        `https://mt-client-api-v1.london.agiliumtrade.ai/users/current/accounts/${accountId.trim()}/history-deals/time/2000-01-01T00:00:00.000Z/${new Date().toISOString()}?limit=1000`,
-        { headers: { "auth-token": token.trim(), "Content-Type": "application/json" } }
-      )
-      if (!res.ok) {
-        const err = await res.json().catch(()=>({ message: res.statusText }))
-        throw new Error(err.message || "Connection failed")
-      }
-      const deals = await res.json()
-      localStorage.setItem("ts_metaapi_token",   token.trim())
-      localStorage.setItem("ts_metaapi_account", accountId.trim())
-      const mapped = (deals || [])
-        .filter(d => d.type === "DEAL_TYPE_BUY" || d.type === "DEAL_TYPE_SELL")
-        .map(d => ({
-          symbol:      (d.symbol || "UNKNOWN").toUpperCase(),
-          direction:   d.type === "DEAL_TYPE_BUY" ? "BUY" : "SELL",
-          entry_price: d.price  || 0,
-          exit_price:  0,
-          pnl:         d.profit || 0,
-          pips:        0,
-          outcome:     (d.profit || 0) > 0 ? "WIN" : (d.profit || 0) < 0 ? "LOSS" : "BREAKEVEN",
-          entry_time:  d.time   || new Date().toISOString(),
-          session:     "LONDON", timeframe: "H1", quality: 5,
-          notes: `MetaApi import · ticket: ${d.id || ""}`,
-          screenshots: [], chart_url: "", playbook_id: "",
-        }))
-      setTrades(mapped)
-      setStatus("ok")
-      setMessage(`Connected! ${mapped.length} trades ready to import.`)
-    } catch(e) {
-      setStatus("error")
-      setMessage(e.message || "Connection failed")
-    }
-  }
-
-  const importTrades = async () => {
-    if (!trades.length) return
-    let n = 0
-    for (const t of trades) { try { await Trade.create(t); n++ } catch {} }
-    toast.success(`${n} trades imported from MetaApi!`)
-    setTrades([]); setStatus(null); setMessage("")
-  }
-
-  return (
-    <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-      <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-        <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>Connect your account</h3>
-      </div>
-      <div className="p-5 space-y-4">
-        {[
-          { label:"MetaApi Auth Token", val:token, set:setToken, placeholder:"eyJhbGci..." },
-          { label:"Account ID",         val:accountId, set:setAccountId, placeholder:"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
-        ].map(f=>(
-          <div key={f.label}>
-            <label className="block text-xs font-medium mb-1.5" style={{ color:"var(--text-muted)" }}>{f.label}</label>
-            <input value={f.val} onChange={e=>f.set(e.target.value)} placeholder={f.placeholder}
-              className="w-full h-10 rounded-xl px-3 text-sm border font-mono" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-          </div>
-        ))}
-
-        {/* Status */}
-        {status && (
-          <div className="flex items-center gap-2 p-3 rounded-xl text-sm"
-            style={{ background: status==="ok"?"rgba(46,213,115,0.08)":status==="error"?"rgba(255,71,87,0.08)":"rgba(108,99,255,0.08)",
-              border:`1px solid ${status==="ok"?"rgba(46,213,115,0.2)":status==="error"?"rgba(255,71,87,0.2)":"rgba(108,99,255,0.2)"}`,
-              color: status==="ok"?"var(--accent-success)":status==="error"?"var(--accent-danger)":"var(--accent)" }}>
-            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${status==="connecting"?"animate-pulse bg-purple-400":status==="ok"?"bg-green-400":"bg-red-400"}`}/>
-            {message}
-          </div>
-        )}
-
-        <div className="flex gap-3">
-          <button onClick={connect} disabled={status==="connecting"}
-            className="flex-1 h-10 rounded-xl text-sm font-bold text-white"
-            style={{ background:"linear-gradient(135deg,#1877f2,#0d5dbf)", opacity:status==="connecting"?0.7:1 }}>
-            {status==="connecting" ? "Connecting..." : "Connect & Fetch Trades"}
-          </button>
-          {trades.length > 0 && (
-            <button onClick={importTrades}
-              className="flex-1 h-10 rounded-xl text-sm font-bold text-white"
-              style={{ background:"linear-gradient(135deg,var(--accent-success),#00b894)" }}>
-              Import {trades.length} Trades
-            </button>
-          )}
-        </div>
-        <p className="text-xs" style={{ color:"var(--text-muted)" }}>
-          Your MetaApi credentials are stored locally and never sent to TradeSylla servers.
-        </p>
-      </div>
-    </div>
-  )
-}
-
-// ─── Main BrokerSync Page ──────────────────────────────────────────────────────
 
 // ─── EA Setup Panel ───────────────────────────────────────────────────────────
-// ─── EA Connected Accounts Panel ─────────────────────────────────────────────
-function EAAccountsPanel() {
-  const { user } = useUser()
-  const [accounts,   setAccounts]   = useState([])
-  const [tradeCounts,setTradeCounts]= useState({})
-  const [loading,    setLoading]    = useState(true)
-  const [resyncing,  setResyncing]  = useState(null) // login being resynced
-
-  const load = async () => {
-    setLoading(true)
-    try {
-      const conns = await BrokerConnection.list()
-      const ea    = (conns || []).filter(c => c.is_mt5_live)
-      setAccounts(ea.sort((a,b)=>new Date(b.last_sync)-new Date(a.last_sync)))
-
-      // Count trades per account_login
-      const trades = await Trade.list()
-      const counts = {}
-      ;(trades||[]).forEach(t => {
-        const k = t.account_login || "__manual__"
-        counts[k] = (counts[k]||0) + 1
-      })
-      setTradeCounts(counts)
-    } catch {}
-    setLoading(false)
-  }
-
-  useEffect(() => { if (user) load() }, [user])
-
-  const fmtTime = (iso) => {
-    if (!iso) return "Never"
-    const d = new Date(iso)
-    const diff = Date.now() - d.getTime()
-    if (diff < 60000)    return "Just now"
-    if (diff < 3600000)  return `${Math.floor(diff/60000)}m ago`
-    if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`
-    return d.toLocaleDateString("en-US",{month:"short",day:"numeric"})
-  }
-
-  if (loading) return (
-    <div className="flex items-center gap-2 py-4" style={{ color:"var(--text-muted)" }}>
-      <RefreshCw size={13} className="animate-spin"/> Loading connected accounts…
-    </div>
-  )
-
-  if (accounts.length === 0) return (
-    <div className="rounded-xl p-4 mb-4 flex items-center gap-3" style={{ background:"rgba(108,99,255,0.06)", border:"1px solid rgba(108,99,255,0.15)" }}>
-      <AlertTriangle size={15} style={{ color:"var(--accent-warning)", flexShrink:0 }}/>
-      <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
-        No EA accounts synced yet. Complete the setup below and attach the EA to a chart — accounts will appear here automatically once the first heartbeat arrives.
-      </p>
-    </div>
-  )
-
-  return (
-    <div className="mb-6">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>
-          Connected EA Accounts <span className="ml-1 px-2 py-0.5 rounded-full text-xs" style={{ background:"rgba(46,213,115,0.12)", color:"var(--accent-success)" }}>{accounts.length} active</span>
-        </h3>
-        <button onClick={load} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs hover:opacity-70" style={{ background:"var(--bg-elevated)", color:"var(--text-muted)", border:"1px solid var(--border)" }}>
-          <RefreshCw size={11}/> Refresh
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        {accounts.map(acc => {
-          const isLive    = !acc.is_demo
-          const tradeCount= tradeCounts[acc.mt5_login] || 0
-          const syncedAgo = fmtTime(acc.last_sync)
-          const isRecent  = acc.last_sync && (Date.now() - new Date(acc.last_sync).getTime()) < 120000
-
-          return (
-            <div key={acc.id} className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-              {/* Account header */}
-              <div className="px-5 py-4 flex items-center gap-4" style={{ borderBottom:"1px solid var(--border)", background:"linear-gradient(135deg,rgba(108,99,255,0.05),transparent)" }}>
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white flex-shrink-0"
-                  style={{ background:"linear-gradient(135deg,#1a73e8,#1557b0)", fontSize:11 }}>
-                  MT5
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{acc.account_name || "MT5 Account"}</h4>
-                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
-                      style={{ background:isLive?"rgba(46,213,115,0.12)":"rgba(108,99,255,0.12)", color:isLive?"var(--accent-success)":"var(--accent)" }}>
-                      {isLive ? "● LIVE" : "● DEMO"}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(0,0,0,0.15)", color:"var(--text-muted)" }}>
-                      EA v{acc.ea_version || "3.x"}
-                    </span>
-                  </div>
-                  <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>
-                    {acc.broker_name} · {acc.server} · #{acc.mt5_login}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <div className={`w-2 h-2 rounded-full ${isRecent ? "bg-green-400 animate-pulse" : "bg-gray-500"}`}/>
-                  <span className="text-xs" style={{ color: isRecent ? "var(--accent-success)" : "var(--text-muted)" }}>
-                    {syncedAgo}
-                  </span>
-                </div>
-              </div>
-
-              {/* Stats grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x" style={{ borderBottom:"1px solid var(--border)" }}>
-                {[
-                  { icon:DollarSign, label:"Balance",   value:`${acc.currency||"$"} ${(acc.balance||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}` },
-                  { icon:TrendingUp, label:"Equity",    value:`${acc.currency||"$"} ${(acc.equity||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}` },
-                  { icon:BarChart3,  label:"Trades synced", value:tradeCount.toLocaleString() },
-                  { icon:Server,     label:"Leverage",  value:`1:${acc.leverage||"—"}` },
-                ].map((s,i)=>(
-                  <div key={i} className="py-3 px-4 flex items-center gap-2.5">
-                    <s.icon size={13} style={{ color:"var(--accent)", flexShrink:0 }}/>
-                    <div>
-                      <p className="text-xs font-bold" style={{ color:"var(--text-primary)" }}>{s.value}</p>
-                      <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Re-sync instructions */}
-              <div className="px-5 py-3 flex flex-wrap items-center gap-3" style={{ background:"var(--bg-elevated)" }}>
-                <AlertTriangle size={12} style={{ color:"var(--accent-warning)", flexShrink:0 }}/>
-                <p className="text-xs flex-1" style={{ color:"var(--text-muted)" }}>
-                  Missing symbols (UK100, GER40, etc.)? In MT5: set <strong style={{ color:"var(--text-primary)" }}>ForceResync = true</strong> + <strong style={{ color:"var(--text-primary)" }}>SkipCandles = true</strong> in EA settings, then remove &amp; re-attach the EA to the chart. Reset both to false after.
-                </p>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 function EASetupPanel() {
   const { user } = useUser()
-  const [token,       setToken]       = useState("")
-  const [generating,  setGenerating]  = useState(false)
-  const [copied,      setCopied]      = useState("")
-  const [step,        setStep]        = useState(1)
+  const [token,      setToken]      = useState("")
+  const [generating, setGenerating] = useState(false)
+  const [copied,     setCopied]     = useState("")
+  const [step,       setStep]       = useState(1)
 
   useEffect(() => {
-    // Load existing token
-    if (user) {
-      supabase.from("profiles").select("user_token").eq("id", user.id).single()
-        .then(({ data }) => { if (data?.user_token) setToken(data.user_token) })
-    }
+    if(!user) return
+    // Load token — check user_token first (canonical), fallback to ea_token
+    supabase.from("profiles").select("user_token, ea_token").eq("id",user.id).single()
+      .then(({ data }) => {
+        if(data?.user_token) setToken(data.user_token)
+        else if(data?.ea_token) setToken(data.ea_token)
+      })
   }, [user])
 
   const generateToken = async () => {
     setGenerating(true)
     try {
-      // Generate a random token
-      const array = new Uint8Array(24)
-      crypto.getRandomValues(array)
-      const newToken = Array.from(array).map(b => b.toString(16).padStart(2,"0")).join("")
-      const { error } = await supabase
-        .from("profiles")
-        .update({ user_token: newToken })
+      const arr = new Uint8Array(24)
+      crypto.getRandomValues(arr)
+      const newToken = Array.from(arr).map(b=>b.toString(16).padStart(2,"0")).join("")
+      // Save to BOTH columns so ea-sync.js works regardless of which it checks
+      const { error } = await supabase.from("profiles")
+        .update({ user_token: newToken, ea_token: newToken })
         .eq("id", user.id)
-      if (error) throw error
+      if(error) throw error
       setToken(newToken)
-      toast.success("Token generated!")
-    } catch(e) {
-      toast.error("Failed to generate token: " + e.message)
-    }
+      toast.success("Token generated and saved!")
+    } catch(e) { toast.error("Failed to generate token: "+e.message) }
     setGenerating(false)
   }
 
   const copy = (text, key) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(key)
-      setTimeout(() => setCopied(""), 2000)
-    })
+    navigator.clipboard.writeText(text).then(()=>{ setCopied(key); setTimeout(()=>setCopied(""),2000) })
   }
 
   const STEPS = [
     {
-      n: 1, title: "Download the EA file",
-      content: (
+      n:1, title:"Download the EA",
+      content:(
         <div className="space-y-3">
-          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
-            The Expert Advisor (EA) is a small program that runs silently inside MT5 and sends your closed trades to TradeSylla automatically.
+          <p className="text-sm" style={{ color:"var(--text-secondary)", fontFamily:"var(--font-display)" }}>
+            TradeSylla_Sync.mq5 runs silently inside MT5 and automatically sends your closed trades to your journal.
           </p>
-          <a href="/ea/TradeSylla_Sync.mq5" download="TradeSylla_Sync.mq5"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
-            style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))" }}>
-            <Download size={14}/> Download TradeSylla_Sync.ex5
+          <a href="/ea/TradeSylla_Sync.mq5" download
+            className="btn btn-primary inline-flex">
+            <Download size={13}/> Download TradeSylla_Sync.mq5
           </a>
           <p className="text-xs" style={{ color:"var(--text-muted)" }}>
-            You'll need to compile it once in MetaEditor (free, comes with MT5). Takes 10 seconds.
+            Compile it once in MetaEditor (free, bundled with MT5). Takes ~10 seconds.
           </p>
         </div>
       )
     },
     {
-      n: 2, title: "Install the EA in MT5",
-      content: (
+      n:2, title:"Install in MT5",
+      content:(
         <div className="space-y-3">
-          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
-            In MetaTrader 5, go to <strong style={{ color:"var(--text-primary)" }}>File → Open Data Folder</strong>. Then navigate to:
-          </p>
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-mono text-xs" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--accent)" }}>
-            <span className="flex-1">MQL5 / Experts /</span>
-            <button onClick={()=>copy("MQL5/Experts/", "path")} className="hover:opacity-70">
-              {copied==="path" ? <CheckCircle size={12} style={{ color:"var(--accent-success)" }}/> : <Copy size={12}/>}
-            </button>
-          </div>
-          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
-            Drop <code style={{ color:"var(--accent)" }}>TradeSylla_Sync.ex5</code> into that folder. Then in MT5, press <strong style={{ color:"var(--text-primary)" }}>F5</strong> or right-click the Expert Advisors list and hit <strong style={{ color:"var(--text-primary)" }}>Refresh</strong>.
+          <p className="text-sm" style={{ color:"var(--text-secondary)", fontFamily:"var(--font-display)" }}>
+            In MT5: <strong style={{ color:"var(--text-primary)" }}>File → Open Data Folder</strong>, then navigate to <code className="mono px-1 rounded" style={{ background:"var(--bg-elevated)", fontSize:11, color:"var(--accent)" }}>MQL5/Experts/</code> and drop the file there. Press F5 in Navigator to refresh.
           </p>
         </div>
       )
     },
     {
-      n: 3, title: "Generate your Sync EA Token (same as Settings → API Keys)",
-      content: (
+      n:3, title:"Generate your Sync Token",
+      content:(
         <div className="space-y-3">
-          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
-            This token identifies your account. The EA uses it to send trades to the right journal. Keep it private.
+          <p className="text-sm" style={{ color:"var(--text-secondary)", fontFamily:"var(--font-display)" }}>
+            This token identifies your account. Paste it into the <strong style={{ color:"var(--accent)" }}>UserToken</strong> field in the EA settings. Keep it private.
           </p>
           {token ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-mono text-xs" style={{ background:"var(--bg-elevated)", border:"1px solid rgba(46,213,115,0.3)", color:"var(--accent-success)" }}>
-                <span className="flex-1 truncate">{token}</span>
-                <button onClick={()=>copy(token,"token")} className="hover:opacity-70 flex-shrink-0">
-                  {copied==="token" ? <CheckCircle size={12}/> : <Copy size={12}/>}
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
+                style={{ background:"var(--bg-elevated)", border:"1px solid rgba(46,213,115,0.3)" }}>
+                <span className="flex-1 truncate mono text-xs" style={{ color:"var(--accent-success)" }}>{token}</span>
+                <button onClick={()=>copy(token,"token")} className="hover:opacity-70 flex-shrink-0" style={{ color:"var(--accent-success)" }}>
+                  {copied==="token"?<CheckCircle size={13}/>:<Copy size={13}/>}
                 </button>
               </div>
               <button onClick={generateToken} disabled={generating}
-                className="text-xs px-3 py-1.5 rounded-lg border"
-                style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-muted)" }}>
-                {generating ? "Generating..." : "↺ Regenerate token"}
+                className="btn btn-secondary text-xs h-8">
+                <RefreshCw size={11}/>{generating?"Generating…":"↺ Regenerate"}
               </button>
             </div>
           ) : (
-            <button onClick={generateToken} disabled={generating}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold"
-              style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--accent)" }}>
-              <Key size={14}/>{generating ? "Generating..." : "Generate My Token"}
+            <button onClick={generateToken} disabled={generating} className="btn btn-primary gap-2">
+              <Key size={13}/>{generating?"Generating…":"Generate Token"}
             </button>
           )}
         </div>
       )
     },
     {
-      n: 4, title: "Attach the EA to a chart",
-      content: (
+      n:4, title:"Attach EA to a chart",
+      content:(
         <div className="space-y-3">
-          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
-            In MT5, open any chart (e.g. EURUSD H1). In the Navigator panel, find <strong style={{ color:"var(--text-primary)" }}>TradeSylla_Sync</strong> under Expert Advisors. Double-click it or drag it onto the chart.
-          </p>
-          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
-            In the EA settings window, paste your <strong style={{ color:"var(--accent)" }}>User Token</strong> from step 3 into the <code>UserToken</code> field.
+          <p className="text-sm" style={{ color:"var(--text-secondary)", fontFamily:"var(--font-display)" }}>
+            Open any chart in MT5 (e.g. EURUSD H1). In Navigator → Expert Advisors, double-click <strong style={{ color:"var(--text-primary)" }}>TradeSylla_Sync</strong>. Paste your token into the <strong style={{ color:"var(--accent)" }}>UserToken</strong> input. Click OK.
           </p>
           <div className="p-3 rounded-xl text-sm" style={{ background:"rgba(255,165,2,0.08)", border:"1px solid rgba(255,165,2,0.2)", color:"var(--accent-warning)" }}>
-            ⚠ Make sure <strong>Auto Trading</strong> is enabled (green button at top of MT5) and the EA shows a smiley face icon on the chart.
+            ⚠ Make sure <strong>Auto Trading</strong> is enabled (green button at top) and the EA shows a smiley face on the chart.
           </div>
         </div>
       )
     },
     {
-      n: 5, title: "Allow WebRequest in MT5",
-      content: (
+      n:5, title:"Whitelist TradeSylla in MT5",
+      content:(
         <div className="space-y-3">
-          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
-            MT5 blocks external connections by default. You need to whitelist TradeSylla once:
+          <p className="text-sm" style={{ color:"var(--text-secondary)", fontFamily:"var(--font-display)" }}>
+            MT5 blocks external URLs by default. You need to whitelist TradeSylla once:
           </p>
-          <ol className="space-y-2 text-sm" style={{ color:"var(--text-secondary)" }}>
-            <li>1. In MT5: <strong style={{ color:"var(--text-primary)" }}>Tools → Options → Expert Advisors</strong></li>
+          <ol className="space-y-1 text-sm" style={{ color:"var(--text-secondary)" }}>
+            <li>1. <strong style={{ color:"var(--text-primary)" }}>Tools → Options → Expert Advisors</strong></li>
             <li>2. Check <strong style={{ color:"var(--text-primary)" }}>Allow WebRequest for listed URL</strong></li>
-            <li>3. Click <strong style={{ color:"var(--text-primary)" }}>+</strong> and add:</li>
+            <li>3. Click <strong style={{ color:"var(--text-primary)" }}>+</strong> and add the URL below</li>
           </ol>
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-mono text-xs" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--accent)" }}>
-            <span className="flex-1">https://tradesylla.vercel.app</span>
-            <button onClick={()=>copy("https://tradesylla.vercel.app","url")} className="hover:opacity-70">
-              {copied==="url" ? <CheckCircle size={12} style={{ color:"var(--accent-success)" }}/> : <Copy size={12}/>}
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
+            style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
+            <span className="flex-1 mono text-xs" style={{ color:"var(--accent)" }}>https://tradesylla.vercel.app</span>
+            <button onClick={()=>copy("https://tradesylla.vercel.app","url")} className="hover:opacity-70" style={{ color:"var(--text-muted)" }}>
+              {copied==="url"?<CheckCircle size={13} style={{ color:"var(--accent-success)" }}/>:<Copy size={13}/>}
             </button>
           </div>
-          <p className="text-sm" style={{ color:"var(--text-secondary)" }}>
-            4. Click <strong style={{ color:"var(--text-primary)" }}>OK</strong>. The EA will now sync your trades every 30 seconds automatically.
-          </p>
         </div>
       )
     },
   ]
 
   return (
-    <div className="max-w-2xl space-y-4">
-      {/* Header */}
-      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom:"1px solid var(--border)", background:"linear-gradient(135deg,rgba(108,99,255,0.08),rgba(0,212,170,0.04))" }}>
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))" }}>
-            <Bot size={18} className="text-white"/>
-          </div>
-          <div>
-            <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>MT5 Expert Advisor Sync</h3>
-            <p className="text-xs" style={{ color:"var(--text-muted)" }}>Automatic sync — no Meta API, no Python, no terminal</p>
-          </div>
-          <div className="ml-auto flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
-            style={{ background:"rgba(46,213,115,0.1)", color:"var(--accent-success)", border:"1px solid rgba(46,213,115,0.2)" }}>
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
-            Zero setup for users
-          </div>
-        </div>
-        <div className="grid grid-cols-3 divide-x p-0" style={{ borderBottom:"1px solid var(--border)" }}>
-          {[
-            { icon:"🖥️", label:"Works on",      val:"MT4 & MT5" },
-            { icon:"⏱️", label:"Sync interval", val:"Every 30s"  },
-            { icon:"🔒", label:"Access",         val:"Read-only"  },
-          ].map(s => (
-            <div key={s.label} className="py-3 text-center">
-              <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.icon} {s.label}</p>
-              <p className="text-sm font-bold mt-0.5" style={{ color:"var(--text-primary)" }}>{s.val}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Step-by-step guide */}
-      <div className="space-y-3">
-        {STEPS.map(s => (
-          <div key={s.n} className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:`1px solid ${step===s.n?"var(--accent)":"var(--border)"}` }}>
-            <button type="button" onClick={()=>setStep(step===s.n ? 0 : s.n)}
-              className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
-              style={{ background: step===s.n ? "rgba(108,99,255,0.06)" : "transparent" }}>
-              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                style={{ background: step===s.n ? "var(--accent)" : "var(--bg-elevated)", color: step===s.n ? "#fff" : "var(--text-muted)" }}>
-                {s.n}
+    <div className="space-y-3">
+      {STEPS.map(s => {
+        const isActive = step===s.n
+        const isDone   = step>s.n
+        return (
+          <div key={s.n} className="card overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-5 py-4"
+              onClick={()=>setStep(isActive?0:s.n)}>
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                  style={{ background:isDone?"var(--accent-success)":isActive?"var(--accent)":"var(--bg-elevated)", color:isDone||isActive?"#fff":"var(--text-muted)", fontFamily:"var(--font-mono)" }}>
+                  {isDone?"✓":s.n}
+                </div>
+                <span className="font-semibold text-sm" style={{ fontFamily:"var(--font-display)", color:isActive?"var(--text-primary)":"var(--text-secondary)" }}>
+                  {s.title}
+                </span>
               </div>
-              <span className="font-semibold text-sm flex-1" style={{ color: step===s.n ? "var(--accent)" : "var(--text-primary)" }}>
-                {s.title}
-              </span>
-              <ChevronDown size={14} style={{ color:"var(--text-muted)", transform: step===s.n ? "rotate(180deg)" : "none", transition:"transform 0.2s" }}/>
+              {isActive?<ChevronUp size={14} style={{ color:"var(--text-muted)" }}/>:<ChevronDown size={14} style={{ color:"var(--text-muted)" }}/>}
             </button>
-            {step===s.n && (
-              <div className="px-4 pb-4 pt-1">
-                {s.content}
+            {isActive && (
+              <div className="px-5 pb-5" style={{ borderTop:"1px solid var(--border)" }}>
+                <div className="pt-4">{s.content}</div>
+                {s.n < STEPS.length && (
+                  <button onClick={()=>setStep(s.n+1)} className="mt-4 btn btn-secondary text-xs h-8">
+                    Next step →
+                  </button>
+                )}
               </div>
             )}
           </div>
-        ))}
-      </div>
-
-      {/* Status note */}
-      {token && (
-        <div className="p-4 rounded-2xl text-sm" style={{ background:"rgba(46,213,115,0.06)", border:"1px solid rgba(46,213,115,0.15)" }}>
-          <p className="font-semibold" style={{ color:"var(--accent-success)" }}>✓ Token active — EA is ready to connect</p>
-          <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>
-            Once the EA is running, your closed trades will appear in the Journal automatically. No action needed on TradeSylla.
-          </p>
-        </div>
-      )}
+        )
+      })}
     </div>
   )
 }
 
+// ─── Troubleshooting Panel ────────────────────────────────────────────────────
+function TroubleshootPanel() {
+  const issues = [
+    { title:"EA connects but sends no data", desc:"Go to Settings → API Keys, click Regenerate on the Sync EA Token, paste the new token into UserToken in the EA settings, then remove and re-attach the EA.", color:"var(--accent-warning)" },
+    { title:"401 Invalid token error in MT5 log", desc:"Token mismatch. Regenerate in Settings → API Keys and re-paste. Make sure you're pasting the full token with no spaces.", color:"var(--accent-danger)" },
+    { title:"4060 URL not whitelisted", desc:"Tools → Options → Expert Advisors → Allow WebRequest → add https://tradesylla.vercel.app", color:"var(--accent-warning)" },
+    { title:"EA attached but shows X on chart", desc:"Auto Trading is disabled. Click the green Auto Trading button at the top of MT5.", color:"var(--accent-warning)" },
+    { title:"Trades sent but not appearing in Journal", desc:"Set ForceResync=true in EA inputs, remove and re-attach the EA, then set ForceResync back to false.", color:"var(--accent)" },
+  ]
+  return (
+    <div className="space-y-3">
+      {issues.map(issue=>(
+        <div key={issue.title} className="card p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color:issue.color }}/>
+            <div>
+              <p className="text-sm font-bold mb-1" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>{issue.title}</p>
+              <p className="text-xs leading-relaxed" style={{ color:"var(--text-secondary)" }}>{issue.desc}</p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Main BrokerSync Page ─────────────────────────────────────────────────────
 export default function BrokerSync() {
-  const [tab,          setTab]          = useState("ea")
-  const [mt5Account,   setMt5Account]   = useState(null)
-  const [mt5TradeCount,setMt5TradeCount]= useState(0)
-  const [lastSync,     setLastSync]     = useState(null)
-  const [syncing,      setSyncing]      = useState(false)
-  const [manualConns,  setManualConns]  = useState([])
-  const [manualModal,  setManualModal]  = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const { user } = useUser()
+  const [connections, setConnections] = useState([])
+  const [tab, setTab] = useState("setup")
 
-  const syncIntervalRef = useRef(null)
+  useEffect(()=>{
+    BrokerConnection.list().then(d=>setConnections((d||[]).filter(c=>c.is_mt5_live)))
+  },[])
 
-  useEffect(() => {
-    loadManual()
-    // Check if already connected to bridge
-    checkExistingConnection()
-  }, [])
+  const liveCount = connections.length
+  const totalBalance = connections.reduce((s,c)=>s+(parseFloat(c.balance)||0),0)
+  const totalEquity  = connections.reduce((s,c)=>s+(parseFloat(c.equity)||0),0)
 
-  const checkExistingConnection = async () => {
-    try {
-      const res  = await fetchWithTimeout(`${BRIDGE_URL}/api/status`, {}, 3000)
-      const data = await res.json()
-      if (data.connected && data.account) {
-        setMt5Account(data.account)
-        setMt5TradeCount(data.trade_count || 0)
-        setLastSync(data.last_sync)
-        startAutoSync()
-      }
-    } catch {}
-  }
-
-  const loadManual = async () => {
-    const data = await BrokerConnection.list()
-    setManualConns(data.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))
-  }
-
-  const startAutoSync = () => {
-    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current)
-    syncIntervalRef.current = setInterval(doSync, 60000)
-  }
-
-  const handleMT5Connected = async (account, trades, meta) => {
-    setMt5Account(account)
-    setLastSync(new Date().toISOString())
-    // Import new trades (skip if already imported by mt5_ticket)
-    const existing = await Trade.list()
-    const existingTickets = new Set(existing.map(t=>t.mt5_ticket).filter(Boolean))
-    let imported = 0
-    for (const t of trades) {
-      if (t.mt5_ticket && existingTickets.has(t.mt5_ticket)) continue
-      try { await Trade.create(t); imported++ } catch {}
-    }
-    setMt5TradeCount(trades.length)
-    if (imported > 0) toast.success(`${imported} new trades imported from MT5!`)
-    else toast.success("Connected! No new trades to import.")
-
-    // Save connection record
-    if (meta) {
-      await BrokerConnection.create({
-        broker_name: `MT5 - ${meta.broker || account.broker}`,
-        broker_color: "#1a73e8",
-        account_number: String(account.login),
-        account_name: account.name,
-        server: account.server,
-        type: account.account_type,
-        status: "connected",
-        last_sync: new Date().toISOString(),
-        is_mt5_live: true,
-      })
-      loadManual()
-    }
-    startAutoSync()
-  }
-
-  const doSync = async () => {
-    setSyncing(true)
-    try {
-      const res  = await fetchWithTimeout(`${BRIDGE_URL}/api/sync`, {}, 10000)
-      const data = await res.json()
-      // Import any new trades
-      const existing = await Trade.list()
-      const existingTickets = new Set(existing.map(t=>t.mt5_ticket).filter(Boolean))
-      let imported = 0
-      for (const t of data.trades || []) {
-        if (t.mt5_ticket && existingTickets.has(t.mt5_ticket)) continue
-        try { await Trade.create(t); imported++ } catch {}
-      }
-      setMt5TradeCount(data.count || 0)
-      setLastSync(data.last_sync || new Date().toISOString())
-      if (imported > 0) toast.success(`${imported} new trade${imported>1?"s":""} synced from MT5`)
-    } catch { toast.error("Sync failed — is the bridge running?") }
-    setSyncing(false)
-  }
-
-  const disconnect = async () => {
-    try { await fetch(`${BRIDGE_URL}/api/disconnect`) } catch {}
-    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current)
-    setMt5Account(null)
-    setMt5TradeCount(0)
-    setLastSync(null)
-    toast.success("Disconnected from MT5")
-  }
-
-  const deleteManual = async () => {
-    if (!deleteTarget) return
-    await BrokerConnection.delete(deleteTarget.id)
-    toast.success("Removed")
-    setDeleteTarget(null)
-    loadManual()
-  }
+  const TABS = [
+    { id:"setup",     label:"EA Setup",        icon:Terminal },
+    { id:"accounts",  label:`Accounts${liveCount>0?` (${liveCount})`:""}`, icon:Wifi },
+    { id:"troubleshoot",label:"Troubleshoot",   icon:AlertTriangle },
+  ]
 
   return (
     <div>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>Broker Sync</h1>
-          <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>
-            Connect MT5 for automatic trade import, or add accounts manually
+          <h1 className="gradient-text font-black" style={{ fontFamily:"var(--font-display)", fontSize:28 }}>Broker Sync</h1>
+          <p className="mono text-xs mt-1" style={{ color:"var(--text-muted)" }}>
+            Connect MT5 via Expert Advisor · {liveCount} account{liveCount!==1?"s":""} connected
           </p>
         </div>
-        <button onClick={()=>setManualModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border self-start"
-          style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}>
-          <Plus size={13}/> Add Manual Account
-        </button>
+        {liveCount>0 && (
+          <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
+            style={{ background:"rgba(46,213,115,0.08)", border:"1px solid rgba(46,213,115,0.2)" }}>
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"/>
+            <span className="text-xs font-semibold mono" style={{ color:"var(--accent-success)" }}>
+              {liveCount} account{liveCount!==1?"s":""} syncing live
+            </span>
+          </div>
+        )}
       </div>
 
+      {/* Summary stat cards */}
+      {liveCount>0 && (
+        <div className="flex flex-wrap gap-3 mb-5">
+          {[
+            { label:"Connected Accounts", v:liveCount,                         color:"var(--accent)",            icon:Wifi },
+            { label:"Total Balance",      v:`$${totalBalance.toFixed(2)}`,     color:"var(--text-primary)",      icon:BarChart2 },
+            { label:"Total Equity",       v:`$${totalEquity.toFixed(2)}`,      color:totalEquity>=totalBalance?"var(--accent-success)":"var(--accent-danger)", icon:TrendingUp },
+          ].map(s=>(
+            <div key={s.label} className="stat-card flex items-center gap-3 flex-none px-4 py-3">
+              <div className="stat-card-icon" style={{ background:`${s.color}18` }}>
+                <s.icon size={15} style={{ color:s.color }}/>
+              </div>
+              <div>
+                <p className="stat-card-value mono" style={{ color:s.color, fontSize:18 }}>{s.v}</p>
+                <p className="stat-card-label">{s.label}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 rounded-xl p-1" style={{ background:"var(--bg-elevated)", width:"fit-content" }}>
-        {[
-          { id:"ea",    label:"MT5 EA",                icon:Bot },
-          { id:"mt5",   label:"MT5 Bridge",            icon:Zap },
-          { id:"meta",  label:"Meta API",              icon:Globe },
-          { id:"manual",label:`Manual (${manualConns.length})`, icon:Shield },
-          { id:"setup", label:"Setup Guide",           icon:Terminal },
-        ].map(t=>(
+      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background:"var(--bg-elevated)" }}>
+        {TABS.map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all"
-            style={{ background:tab===t.id?"var(--accent)":"transparent", color:tab===t.id?"#fff":"var(--text-secondary)" }}>
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+            style={{ background:tab===t.id?"var(--accent)":"transparent", color:tab===t.id?"#fff":"var(--text-secondary)", fontFamily:"var(--font-display)" }}>
             <t.icon size={13}/>{t.label}
           </button>
         ))}
       </div>
 
-      {/* MT5 EA Tab */}
-      {tab === "ea" && (
+      {tab==="setup"       && <EASetupPanel/>}
+      {tab==="accounts"    && (
         <div>
-          <EAAccountsPanel/>
-          <EASetupPanel/>
-        </div>
-      )}
-
-      {/* MT5 Auto-Sync Tab */}
-      {tab === "mt5" && (
-        <div className="max-w-xl">
-          {mt5Account ? (
-            <LiveAccountCard
-              account={mt5Account}
-              tradeCount={mt5TradeCount}
-              lastSync={lastSync}
-              onSync={doSync}
-              onDisconnect={disconnect}
-              syncing={syncing}
-            />
+          {liveCount===0 ? (
+            <div className="card py-16 text-center">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background:"rgba(46,213,115,0.1)" }}>
+                <WifiOff size={22} style={{ color:"var(--accent-success)" }}/>
+              </div>
+              <p className="font-bold mb-1" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>No accounts connected yet</p>
+              <p className="text-sm mb-4" style={{ color:"var(--text-muted)" }}>Complete the EA Setup and attach the EA to a chart in MT5. Your account info will appear here.</p>
+              <button onClick={()=>setTab("setup")} className="btn btn-primary">Go to EA Setup</button>
+            </div>
           ) : (
-            <div className="rounded-2xl p-6" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-              <h2 className="font-bold text-base mb-1" style={{ color:"var(--text-primary)" }}>Connect MetaTrader 5</h2>
-              <p className="text-xs mb-5" style={{ color:"var(--text-muted)" }}>
-                Requires the MT5 Bridge running locally. All trades sync automatically every 60 seconds.
-              </p>
-              <MT5ConnectPanel onConnected={handleMT5Connected}/>
+            <div className="space-y-3">
+              {connections.map(c=><ConnectionCard key={c.id} conn={c}/>)}
             </div>
           )}
         </div>
       )}
-
-
-      {/* Meta API Tab */}
-      {tab === "meta" && (
-        <div className="max-w-2xl space-y-5">
-          {/* What is Meta API */}
-          <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-            <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)", background:"rgba(24,119,242,0.06)" }}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-sm" style={{ background:"linear-gradient(135deg,#1877f2,#0d5dbf)" }}>M</div>
-                <div>
-                  <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>Meta API Bridge</h3>
-                  <p className="text-xs" style={{ color:"var(--text-muted)" }}>Connect any MetaTrader 4 or MT5 account via cloud — no local bridge needed</p>
-                </div>
-              </div>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[
-                  { icon:"☁️", title:"Cloud-based",   desc:"No local Python script required — works from anywhere" },
-                  { icon:"🔌", title:"MT4 + MT5",      desc:"Supports both MetaTrader 4 and MetaTrader 5 accounts" },
-                  { icon:"🔒", title:"Read-only",      desc:"Uses Investor password — TradeSylla can never place trades" },
-                ].map(f=>(
-                  <div key={f.title} className="p-3 rounded-xl" style={{ background:"var(--bg-elevated)" }}>
-                    <span className="text-xl">{f.icon}</span>
-                    <p className="text-sm font-semibold mt-1" style={{ color:"var(--text-primary)" }}>{f.title}</p>
-                    <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{f.desc}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Setup Steps */}
-          <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-            <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-              <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>How to connect via Meta API</h3>
-              <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>5 steps · free tier available · works on any OS</p>
-            </div>
-            <div className="p-5 space-y-4">
-              {[
-                { n:1, title:"Create a MetaApi account", body:"Go to app.metaapi.cloud and sign up for a free account. No credit card required.", link:"https://app.metaapi.cloud", linkLabel:"Open MetaApi →" },
-                { n:2, title:"Deploy a new account", body:'In the MetaApi dashboard click "New Account" and enter your MT4/MT5 broker credentials (server, login, Investor password).' },
-                { n:3, title:"Copy your API Token", body:'In MetaApi → API Access → copy your "auth token" (starts with "eyJ...").' },
-                { n:4, title:"Copy your Account ID", body:'In MetaApi → your deployed account → copy the "Account ID" (a UUID like "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx").' },
-                { n:5, title:"Paste them in the form below", body:"Enter your MetaApi token and account ID below. TradeSylla will sync your trades automatically." },
-              ].map(step=>(
-                <div key={step.n} className="flex gap-3">
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5" style={{ background:"#1877f2", color:"#fff" }}>{step.n}</div>
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>{step.title}</p>
-                    <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>{step.body}</p>
-                    {step.link && <a href={step.link} target="_blank" rel="noreferrer" className="text-xs font-semibold" style={{ color:"#1877f2" }}>{step.linkLabel}</a>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Connect Form */}
-          <MetaApiConnectPanel/>
-        </div>
-      )}
-
-      {/* Manual Tab */}
-      {tab === "manual" && (
-        <div className="max-w-xl space-y-3">
-          {manualConns.length === 0 ? (
-            <div className="rounded-2xl py-14 text-center" style={{ background:"var(--bg-card)", border:"1px dashed var(--border)" }}>
-              <p className="font-semibold mb-1" style={{ color:"var(--text-primary)" }}>No manual accounts</p>
-              <p className="text-sm" style={{ color:"var(--text-muted)" }}>Add broker accounts for reference.</p>
-              <button onClick={()=>setManualModal(true)} className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-lg text-sm font-semibold text-white"
-                style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))" }}>
-                <Plus size={13}/> Add Account
-              </button>
-            </div>
-          ) : manualConns.map(c=>(
-            <ManualCard key={c.id} conn={c} onDelete={setDeleteTarget}/>
-          ))}
-        </div>
-      )}
-
-      {/* Setup Guide Tab */}
-      {tab === "setup" && (
-        <div className="max-w-xl space-y-4">
-          <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-            <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)", background:"rgba(108,99,255,0.06)" }}>
-              <h3 className="font-bold" style={{ color:"var(--text-primary)" }}>MT5 Auto-Sync Setup Guide</h3>
-              <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>One-time setup · Windows only · 5 minutes</p>
-            </div>
-            <div className="p-5 space-y-4">
-              {[
-                { n:1, title:"Download Python", body:'Visit python.org and install Python 3.10+. Make sure to check "Add to PATH" during installation.' },
-                { n:2, title:"Install MetaTrader5 package", body:"Open a terminal (Win+R → cmd) and run:", code:"pip install MetaTrader5" },
-                { n:3, title:"Download the MT5 Bridge", body:"Download mt5_bridge.py from the files above and save it anywhere on your computer." },
-                { n:4, title:"Run the bridge", body:"Double-click mt5_bridge.py or run in terminal:", code:"python mt5_bridge.py" },
-                { n:5, title:"Connect in TradeSylla", body:'Go to the MT5 Auto-Sync tab, enter your broker, server, account number and Investor password, then click Connect.' },
-              ].map(step=>(
-                <div key={step.n} className="flex gap-3">
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5"
-                    style={{ background:"var(--accent)", color:"#fff" }}>{step.n}</div>
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>{step.title}</p>
-                    <p className="text-xs mt-0.5" style={{ color:"var(--text-secondary)" }}>{step.body}</p>
-                    {step.code && (
-                      <code className="block mt-1.5 px-3 py-1.5 rounded-lg text-xs font-mono"
-                        style={{ background:"var(--bg-elevated)", color:"var(--accent)", border:"1px solid var(--border)" }}>
-                        {step.code}
-                      </code>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-xl p-4 flex items-start gap-3" style={{ background:"rgba(46,213,115,0.07)", border:"1px solid rgba(46,213,115,0.2)" }}>
-            <Shield size={15} style={{ color:"var(--accent-success)", flexShrink:0, marginTop:1 }}/>
-            <div>
-              <p className="text-sm font-semibold" style={{ color:"var(--accent-success)" }}>Investor Password = Read-Only</p>
-              <p className="text-xs mt-0.5" style={{ color:"var(--text-secondary)" }}>
-                The Investor password in MT5 gives read-only access. It cannot place or modify trades. Your account is always safe.
-                To find/set it: MT5 → Tools → Options → Server → Change Investor Password.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modals */}
-      <AddManualModal open={manualModal} onClose={()=>setManualModal(false)} onSaved={loadManual}/>
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>setDeleteTarget(null)}/>
-          <div className="relative rounded-2xl p-6 w-full max-w-sm z-10" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-            <h3 className="font-bold mb-2" style={{ color:"var(--text-primary)" }}>Remove Account?</h3>
-            <p className="text-sm mb-5" style={{ color:"var(--text-muted)" }}>Your trade data won't be affected.</p>
-            <div className="flex gap-3">
-              <button onClick={()=>setDeleteTarget(null)} className="flex-1 h-9 rounded-lg text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>Cancel</button>
-              <button onClick={deleteManual} className="flex-1 h-9 rounded-lg text-sm font-semibold text-white" style={{ background:"var(--accent-danger)" }}>Remove</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {tab==="troubleshoot" && <TroubleshootPanel/>}
     </div>
   )
 }
