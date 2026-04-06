@@ -1,26 +1,32 @@
 //+------------------------------------------------------------------+
-//| TradeSylla_Sync.mq5   v4.4                                       |
-//| ROOT FIX: ServerURL now defaults to the stable production URL    |
-//| + auto-fallback to deployment URL if production fails            |
-//| + detailed Experts tab logging for every failure                 |
+//| TradeSylla_Sync.mq5   v5.1                                       |
+//|                                                                    |
+//| FIXES vs v4.4:                                                     |
+//|  1. ASYNC HISTORY BUG: waits for full broker history download      |
+//|     before counting positions (was only seeing 748 of 1347)        |
+//|  2. SMART SYNC STATUS: only marks trades as synced when the        |
+//|     server actually confirms inserts — not just HTTP 200           |
+//|     (was marking all as synced even when "inserted":0 errors)      |
+//|  3. v5.1: Removed CharToStr() — MQL4 only, not in MQL5            |
+//|     ParseSyncOK now uses StringSubstr for number extraction        |
 //+------------------------------------------------------------------+
 #property copyright "TradeSylla"
-#property version   "4.40"
+#property version   "5.10"
 
-input string UserToken       = "";
-input string ServerURL       = "https://tradesylla.vercel.app";
-input string FallbackURL     = "";   // paste your current Vercel deploy URL here as backup
-input bool   ForceResync     = false;
-input int    SyncInterval    = 5;
+input string UserToken    = "";
+input string ServerURL    = "https://tradesylla.vercel.app";
+input string FallbackURL  = "";
+input bool   ForceResync  = false;
+input int    SyncInterval = 5;
 
 datetime g_lastSync   = 0;
-string   g_syncedFile = "ts_synced_v44.txt";
+string   g_syncedFile = "ts_synced_v51.txt";
 string   g_activeURL  = "";
 
 //+------------------------------------------------------------------+
 int OnInit() {
    Print("========================================");
-   Print("TradeSylla Sync v4.4 starting...");
+   Print("TradeSylla Sync v5.1 starting...");
    Print("Primary URL:  ", ServerURL);
    Print("Fallback URL: ", FallbackURL != "" ? FallbackURL : "(none set)");
    Print("Token length: ", StringLen(UserToken), " chars");
@@ -29,37 +35,29 @@ int OnInit() {
    Print("========================================");
 
    if(UserToken == "") {
-      Print("FATAL: UserToken is empty.");
-      Print("  → Go to TradeSylla Settings → API Keys");
-      Print("  → Generate your Sync EA Token");
-      Print("  → Paste it into UserToken input of this EA");
+      Print("FATAL: UserToken is empty. Go to TradeSylla Settings → API Keys → copy Sync EA Token");
       Alert("TradeSylla: Set UserToken first. See Experts tab.");
       return INIT_FAILED;
    }
 
-   if(!TerminalInfoInteger(TERMINAL_CONNECTED)) {
-      Print("WARNING: Terminal not connected to broker. Sync will retry on timer.");
-   }
-
-   // Find a working URL
    g_activeURL = FindWorkingURL();
    if(g_activeURL == "") {
       Print("FATAL: Cannot reach TradeSylla server.");
-      Print("  → In MT5: Tools → Options → Expert Advisors → Allow WebRequest");
-      Print("  → Make sure BOTH these URLs are whitelisted:");
-      Print("    ", ServerURL);
-      if(FallbackURL != "") Print("    ", FallbackURL);
-      Print("  → After whitelisting, remove and re-attach this EA");
-      Alert("TradeSylla: Server unreachable. See Experts tab for whitelist instructions.");
+      Print("  → Tools → Options → Expert Advisors → Allow WebRequest → add:");
+      Print("    https://tradesylla.vercel.app");
+      Alert("TradeSylla: Server unreachable. See Experts tab.");
       return INIT_FAILED;
    }
-
    Print("Active URL: ", g_activeURL);
 
    if(ForceResync) {
       FileDelete(g_syncedFile);
-      Print("ForceResync=true: cache cleared, will resync all history");
+      Print("ForceResync=true: local cache cleared — will resync all history");
    }
+
+   // FIX 1: Wait for broker history download to finish before processing
+   Print("Waiting for full history download from broker...");
+   WaitForHistory();
 
    Print("Starting history sync...");
    SyncAllHistory();
@@ -78,42 +76,152 @@ void OnTimer() {
 }
 
 //+------------------------------------------------------------------+
-// Try primary URL first, then fallback URL
+// FIX 1: Wait for MT5 to finish async history download from broker
+// MT5 loads history asynchronously. HistoryDealsTotal() counts only
+// what's already in memory. We wait until the count stabilises.
 //+------------------------------------------------------------------+
-string FindWorkingURL() {
-   Print("Testing URL: ", ServerURL, " ...");
-   if(TestURL(ServerURL)) return ServerURL;
-
-   if(FallbackURL != "") {
-      Print("Primary failed. Testing fallback: ", FallbackURL, " ...");
-      if(TestURL(FallbackURL)) return FallbackURL;
+void WaitForHistory() {
+   if(!HistorySelect(D'2000.01.01', TimeCurrent())) {
+      Print("HistorySelect failed — broker may not have responded yet");
+      return;
    }
 
-   return "";
+   int prevCount = -1;
+   int stableFor = 0;
+
+   for(int i = 0; i < 60; i++) {   // max 30 seconds (60 x 500ms)
+      int count = HistoryDealsTotal();
+      if(count == prevCount) {
+         stableFor++;
+         if(stableFor >= 6) {       // stable for 3 seconds
+            Print("History download complete: ", count, " deals loaded");
+            return;
+         }
+      } else {
+         stableFor = 0;
+         Print("History loading... deals so far: ", count);
+      }
+      prevCount = count;
+      Sleep(500);
+   }
+   Print("History wait timed out — proceeding with ", HistoryDealsTotal(), " deals");
+   Print("  Tip: right-click MT5 History tab → All History to load more");
 }
 
-bool TestURL(string url) {
-   string hdr  = "Content-Type: application/json\r\nAuthorization: Bearer " + UserToken;
-   char   post[]; char res[]; string resH;
-   string body = "{}";
-   StringToCharArray(body, post, 0, StringLen(body));
+//+------------------------------------------------------------------+
+// FIX 2: Parse server response to decide whether to mark as synced
+// Uses StringSubstr to extract numbers — pure MQL5, no CharToStr
+//+------------------------------------------------------------------+
+int ExtractJSONInt(string resp, string key) {
+   string search = "\"" + key + "\":";
+   int pos = StringFind(resp, search);
+   if(pos == -1) return -1;
+   int start = pos + StringLen(search);
+   // Skip spaces
+   while(start < StringLen(resp) && StringGetCharacter(resp, start) == ' ') start++;
+   // Find end of number
+   int end = start;
+   while(end < StringLen(resp)) {
+      ushort c = StringGetCharacter(resp, end);
+      if(c < '0' || c > '9') break;
+      end++;
+   }
+   if(end == start) return -1;
+   return (int)StringToInteger(StringSubstr(resp, start, end - start));
+}
 
-   int code = WebRequest("POST", url + "/api/ea-sync", hdr, 5000, post, res, resH);
+bool ParseSyncOK(string resp) {
+   int inserted = ExtractJSONInt(resp, "inserted");
+   int updated  = ExtractJSONInt(resp, "updated");
+   int skipped  = ExtractJSONInt(resp, "skipped");
+
+   // If we couldn't parse the response at all, trust HTTP 200
+   if(inserted == -1 && updated == -1 && skipped == -1) return true;
+
+   int ins = (inserted > 0 ? inserted : 0);
+   int upd = (updated  > 0 ? updated  : 0);
+   int skp = (skipped  > 0 ? skipped  : 0);
+   int processed = ins + upd + skp;
+
+   // Non-empty errors array = something went wrong
+   bool hasErrors = (StringFind(resp, "\"errors\":[\"") != -1);
+
+   if(hasErrors && processed == 0) {
+      Print("  Server returned errors with 0 processed — NOT marking as synced");
+      Print("  Response: ", StringSubstr(resp, 0, 200));
+      return false;
+   }
+
+   Print("  Server confirmed: inserted=", ins, " updated=", upd, " skipped=", skp);
+   return true;
+}
+
+//+------------------------------------------------------------------+
+bool SendBatch(string &items[], int n) {
+   if(n == 0) return true;
+   if(g_activeURL == "") { Print("No active URL — skipping batch"); return false; }
+
+   string body = "[";
+   for(int i = 0; i < n; i++) { body += items[i]; if(i < n-1) body += ","; }
+   body += "]";
+
+   string hdr = "Content-Type: application/json\r\nAuthorization: Bearer " + UserToken;
+   char   post[]; StringToCharArray(body, post, 0, StringLen(body));
+   char   res[];  string resH;
+
+   int code = WebRequest("POST", g_activeURL + "/api/ea-sync", hdr, 15000, post, res, resH);
 
    if(code == -1) {
       int err = GetLastError();
-      if(err == 4060)
-         Print("  ERROR 4060 — URL not whitelisted: ", url);
-      else if(err == 5203)
-         Print("  ERROR 5203 — SSL error for: ", url);
-      else
-         Print("  ERROR ", err, " — cannot reach: ", url);
+      Print("SendBatch network error=", err);
+      if(err == 4060) Print("  URL not whitelisted — add it in Tools → Options → Expert Advisors");
+      if(FallbackURL != "" && g_activeURL != FallbackURL) {
+         Print("  Trying fallback URL...");
+         if(TestURL(FallbackURL)) { g_activeURL = FallbackURL; return SendBatch(items, n); }
+      }
       return false;
    }
 
    string resp = CharArrayToString(res);
-   Print("  HTTP ", code, " — server responded: ", StringSubstr(resp,0,80));
-   // Any HTTP response (even 400/401) = server reachable
+   Print("Sync HTTP ", code, ": ", StringSubstr(resp, 0, 150));
+
+   if(code == 401) {
+      Print("AUTH FAILED (401) — go to Settings → API Keys → regenerate Sync Token → update UserToken in EA");
+      return false;
+   }
+   if(code != 200) {
+      Print("HTTP ", code, " error — not marking as synced");
+      return false;
+   }
+
+   // FIX 2: Only mark as synced when server confirms it
+   return ParseSyncOK(resp);
+}
+
+//+------------------------------------------------------------------+
+string FindWorkingURL() {
+   Print("Testing URL: ", ServerURL, " ...");
+   if(TestURL(ServerURL)) return ServerURL;
+   if(FallbackURL != "") {
+      Print("Primary failed. Testing fallback: ", FallbackURL, " ...");
+      if(TestURL(FallbackURL)) return FallbackURL;
+   }
+   return "";
+}
+
+bool TestURL(string url) {
+   string hdr = "Content-Type: application/json\r\nAuthorization: Bearer " + UserToken;
+   char   post[]; char res[]; string resH;
+   string body = "{}";
+   StringToCharArray(body, post, 0, StringLen(body));
+   int code = WebRequest("POST", url + "/api/ea-sync", hdr, 5000, post, res, resH);
+   if(code == -1) {
+      int err = GetLastError();
+      if(err == 4060) Print("  ERROR 4060 — not whitelisted: ", url);
+      else            Print("  ERROR ", err, " — cannot reach: ", url);
+      return false;
+   }
+   Print("  HTTP ", code, " — server reachable: ", url);
    return true;
 }
 
@@ -145,7 +253,130 @@ bool IsSynced(ulong &arr[], ulong t) {
 }
 
 //+------------------------------------------------------------------+
-// Helpers
+void SyncAllHistory() {
+   ulong synced[]; LoadSynced(synced);
+   ulong posIds[]; int n = CollectPositions(posIds, synced, !ForceResync);
+
+   if(n == 0) {
+      int cached = ArraySize(synced);
+      Print("History sync: nothing new (", cached, " already confirmed by server)");
+      if(cached > 0) Print("  → To re-send all: ForceResync=true, re-attach EA, set back to false");
+      return;
+   }
+
+   Print("History sync: sending ", n, " positions (", ArraySize(synced), " already synced)...");
+   string batch[50]; int bSize = 0;
+
+   for(int i = 0; i < n; i++) {
+      string sym; long type; double ep, xp, lots, pnl, swp, comm; datetime et, xt;
+      if(!AggregatePos(posIds[i], sym, type, ep, xp, lots, pnl, swp, comm, et, xt)) continue;
+      batch[bSize++] = BuildJSON(posIds[i], sym, type, ep, xp, lots, pnl, swp, comm,
+                                 Pips(sym, type, ep, xp), et, xt);
+      if(bSize == 50 || i == n-1) {
+         if(SendBatch(batch, bSize))
+            for(int j = i-bSize+1; j <= i; j++) SaveSynced(posIds[j]);
+         else
+            Print("  Batch not confirmed — will retry on next sync");
+         bSize = 0;
+      }
+   }
+   Print("History sync complete");
+}
+
+void SyncRecentTrades() {
+   if(!HistorySelect(TimeCurrent() - 86400*7, TimeCurrent())) return;
+   ulong synced[]; LoadSynced(synced);
+   ulong posIds[]; int n = CollectPositions(posIds, synced, true);
+   if(n == 0) return;
+
+   string batch[]; ArrayResize(batch, n); int bSize = 0;
+   for(int i = 0; i < n; i++) {
+      string sym; long type; double ep, xp, lots, pnl, swp, comm; datetime et, xt;
+      if(!AggregatePos(posIds[i], sym, type, ep, xp, lots, pnl, swp, comm, et, xt)) continue;
+      batch[bSize++] = BuildJSON(posIds[i], sym, type, ep, xp, lots, pnl, swp, comm,
+                                 Pips(sym, type, ep, xp), et, xt);
+   }
+   if(SendBatch(batch, bSize)) {
+      for(int i = 0; i < n; i++) SaveSynced(posIds[i]);
+      Print("Live sync: +", bSize, " new trade(s) sent");
+   }
+}
+
+//+------------------------------------------------------------------+
+int CollectPositions(ulong &posIds[], ulong &synced[], bool respectCache) {
+   int count = 0, total = HistoryDealsTotal();
+   for(int i = 0; i < total; i++) {
+      ulong t = HistoryDealGetTicket(i);
+      if(t == 0) continue;
+      ENUM_DEAL_ENTRY e = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(t, DEAL_ENTRY);
+      if(e != DEAL_ENTRY_OUT && e != DEAL_ENTRY_INOUT) continue;
+      ulong posId = (ulong)HistoryDealGetInteger(t, DEAL_POSITION_ID);
+      if(respectCache && IsSynced(synced, posId)) continue;
+      bool dup = false;
+      for(int j = 0; j < count; j++) if(posIds[j] == posId) { dup = true; break; }
+      if(!dup) { ArrayResize(posIds, count+1); posIds[count++] = posId; }
+   }
+   return count;
+}
+
+bool AggregatePos(ulong posId, string &sym, long &type,
+                  double &ep, double &xp, double &lots,
+                  double &pnl, double &swp, double &comm,
+                  datetime &et, datetime &xt) {
+   sym = ""; type = POSITION_TYPE_BUY;
+   ep=0; xp=0; lots=0; pnl=0; swp=0; comm=0; et=0; xt=0;
+   bool found = false;
+   int  total = HistoryDealsTotal();
+
+   for(int i = 0; i < total; i++) {
+      ulong t = HistoryDealGetTicket(i);
+      if(t == 0) continue;
+      if(HistoryDealGetInteger(t, DEAL_POSITION_ID) != (long)posId) continue;
+      found = true;
+      if(sym == "") sym = HistoryDealGetString(t, DEAL_SYMBOL);
+      ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(t, DEAL_ENTRY);
+      double price = HistoryDealGetDouble(t,  DEAL_PRICE);
+      double vol   = HistoryDealGetDouble(t,  DEAL_VOLUME);
+      datetime tm  = (datetime)HistoryDealGetInteger(t, DEAL_TIME);
+      long dir     = HistoryDealGetInteger(t, DEAL_TYPE);
+      pnl  += HistoryDealGetDouble(t, DEAL_PROFIT);
+      swp  += HistoryDealGetDouble(t, DEAL_SWAP);
+      comm += HistoryDealGetDouble(t, DEAL_COMMISSION);
+      if(entry == DEAL_ENTRY_IN) {
+         ep = price; lots = vol;
+         type = (dir == DEAL_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
+         et = tm;
+      }
+      if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_INOUT) { xp = price; xt = tm; }
+   }
+   if(found && xt == 0) xt = et;
+   return found;
+}
+
+//+------------------------------------------------------------------+
+string BuildJSON(ulong posId, string sym, long type,
+                 double ep, double xp, double lots,
+                 double pnl, double swp, double comm,
+                 double pips, datetime et, datetime xt) {
+   return StringFormat(
+      "{\"ticket\":\"%I64u\",\"account_login\":\"%s\","
+      "\"symbol\":\"%s\",\"direction\":\"%s\","
+      "\"entry_price\":%.5f,\"exit_price\":%.5f,"
+      "\"lot_size\":%.2f,\"pnl\":%.2f,\"swap\":%.2f,"
+      "\"commission\":%.2f,\"total_pnl\":%.2f,\"pips\":%.1f,"
+      "\"session\":\"%s\",\"timeframe\":\"%s\","
+      "\"entry_time\":\"%s\",\"exit_time\":\"%s\"}",
+      posId,
+      IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)),
+      sym,
+      (type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
+      ep, xp, lots, pnl, swp, comm,
+      pnl + swp + comm, pips,
+      GetSession(et), GetTF(et, xt),
+      ISO(et), ISO(xt)
+   );
+}
+
 //+------------------------------------------------------------------+
 string GetSession(datetime t) {
    MqlDateTime d; TimeToStruct(t, d); int h = d.hour;
@@ -179,192 +410,4 @@ double Pips(string sym, long type, double ep, double xp) {
    double m  = (dg == 3 || dg == 5) ? 10.0 : 1.0;
    double raw = (type == POSITION_TYPE_BUY) ? (xp - ep) : (ep - xp);
    return raw / pt / m;
-}
-
-//+------------------------------------------------------------------+
-// Build JSON payload for one position (NO quality field)
-//+------------------------------------------------------------------+
-string BuildJSON(ulong posId, string sym, long type,
-                 double ep, double xp, double lots,
-                 double pnl, double swp, double comm,
-                 double pips, datetime et, datetime xt) {
-   return StringFormat(
-      "{\"ticket\":\"%I64u\",\"account_login\":\"%s\","
-      "\"symbol\":\"%s\",\"direction\":\"%s\","
-      "\"entry_price\":%.5f,\"exit_price\":%.5f,"
-      "\"lot_size\":%.2f,\"pnl\":%.2f,\"swap\":%.2f,"
-      "\"commission\":%.2f,\"total_pnl\":%.2f,\"pips\":%.1f,"
-      "\"session\":\"%s\",\"timeframe\":\"%s\","
-      "\"entry_time\":\"%s\",\"exit_time\":\"%s\"}",
-      posId,
-      IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)),
-      sym,
-      (type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
-      ep, xp, lots, pnl, swp, comm,
-      pnl + swp + comm, pips,
-      GetSession(et), GetTF(et, xt),
-      ISO(et), ISO(xt)
-   );
-}
-
-//+------------------------------------------------------------------+
-// Send batch to server
-//+------------------------------------------------------------------+
-bool SendBatch(string &items[], int n) {
-   if(n == 0) return true;
-   if(g_activeURL == "") { Print("No active URL — skipping batch"); return false; }
-
-   string body = "[";
-   for(int i = 0; i < n; i++) { body += items[i]; if(i < n-1) body += ","; }
-   body += "]";
-
-   string hdr = "Content-Type: application/json\r\nAuthorization: Bearer " + UserToken;
-   char   post[]; StringToCharArray(body, post, 0, StringLen(body));
-   char   res[];  string resH;
-
-   int code = WebRequest("POST", g_activeURL + "/api/ea-sync", hdr, 15000, post, res, resH);
-
-   if(code == -1) {
-      int err = GetLastError();
-      Print("SendBatch failed. Error=", err);
-      if(err == 4060) Print("  URL not whitelisted: ", g_activeURL);
-      // Try switching to fallback
-      if(FallbackURL != "" && g_activeURL != FallbackURL) {
-         Print("  Retrying with fallback URL...");
-         if(TestURL(FallbackURL)) {
-            g_activeURL = FallbackURL;
-            return SendBatch(items, n); // retry once
-         }
-      }
-      return false;
-   }
-
-   string resp = CharArrayToString(res);
-   Print("Sync HTTP ", code, ": ", resp);
-
-   if(code == 401) {
-      Print("AUTH FAILED (401) — token is wrong or expired");
-      Print("  → Go to Settings → API Keys → Regenerate Sync Token");
-      Print("  → Update UserToken in this EA's inputs");
-      return false;
-   }
-   if(code == 404) {
-      Print("NOT FOUND (404) — wrong URL or API not deployed");
-      return false;
-   }
-
-   return (code == 200);
-}
-
-//+------------------------------------------------------------------+
-// Aggregate all deals for a position ID
-//+------------------------------------------------------------------+
-bool AggregatePos(ulong posId, string &sym, long &type,
-                  double &ep, double &xp, double &lots,
-                  double &pnl, double &swp, double &comm,
-                  datetime &et, datetime &xt) {
-   sym = ""; type = POSITION_TYPE_BUY;
-   ep = 0; xp = 0; lots = 0; pnl = 0; swp = 0; comm = 0; et = 0; xt = 0;
-   bool found = false;
-   int  total = HistoryDealsTotal();
-
-   for(int i = 0; i < total; i++) {
-      ulong t = HistoryDealGetTicket(i);
-      if(t == 0) continue;
-      if(HistoryDealGetInteger(t, DEAL_POSITION_ID) != (long)posId) continue;
-      found = true;
-      if(sym == "") sym = HistoryDealGetString(t, DEAL_SYMBOL);
-      ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(t, DEAL_ENTRY);
-      double price  = HistoryDealGetDouble(t,  DEAL_PRICE);
-      double vol    = HistoryDealGetDouble(t,  DEAL_VOLUME);
-      datetime tm   = (datetime)HistoryDealGetInteger(t, DEAL_TIME);
-      long dir      = HistoryDealGetInteger(t, DEAL_TYPE);
-      pnl  += HistoryDealGetDouble(t, DEAL_PROFIT);
-      swp  += HistoryDealGetDouble(t, DEAL_SWAP);
-      comm += HistoryDealGetDouble(t, DEAL_COMMISSION);
-      if(entry == DEAL_ENTRY_IN) {
-         ep = price; lots = vol;
-         type = (dir == DEAL_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
-         et = tm;
-      }
-      if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_INOUT) { xp = price; xt = tm; }
-   }
-   if(found && xt == 0) xt = et;
-   return found;
-}
-
-//+------------------------------------------------------------------+
-// Collect unique closed position IDs
-//+------------------------------------------------------------------+
-int CollectPositions(ulong &posIds[], ulong &synced[], bool respectCache) {
-   int count = 0, total = HistoryDealsTotal();
-   for(int i = 0; i < total; i++) {
-      ulong t = HistoryDealGetTicket(i);
-      if(t == 0) continue;
-      ENUM_DEAL_ENTRY e = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(t, DEAL_ENTRY);
-      if(e != DEAL_ENTRY_OUT && e != DEAL_ENTRY_INOUT) continue;
-      ulong posId = (ulong)HistoryDealGetInteger(t, DEAL_POSITION_ID);
-      if(respectCache && IsSynced(synced, posId)) continue;
-      bool dup = false;
-      for(int j = 0; j < count; j++) if(posIds[j] == posId) { dup = true; break; }
-      if(!dup) { ArrayResize(posIds, count+1); posIds[count++] = posId; }
-   }
-   return count;
-}
-
-//+------------------------------------------------------------------+
-// Full history sync
-//+------------------------------------------------------------------+
-void SyncAllHistory() {
-   if(!HistorySelect(D'2000.01.01', TimeCurrent())) {
-      Print("HistorySelect failed — no history available");
-      return;
-   }
-   ulong synced[]; LoadSynced(synced);
-   ulong posIds[]; int n = CollectPositions(posIds, synced, !ForceResync);
-
-   if(n == 0) {
-      Print("History sync: nothing new to send (", ArraySize(synced), " already synced)");
-      Print("  → If you expect trades, set ForceResync=true, re-attach EA, then set back to false");
-      return;
-   }
-
-   Print("History sync: sending ", n, " positions...");
-   string batch[50]; int bSize = 0;
-
-   for(int i = 0; i < n; i++) {
-      string sym; long type; double ep, xp, lots, pnl, swp, comm; datetime et, xt;
-      if(!AggregatePos(posIds[i], sym, type, ep, xp, lots, pnl, swp, comm, et, xt)) continue;
-      batch[bSize++] = BuildJSON(posIds[i], sym, type, ep, xp, lots, pnl, swp, comm,
-                                 Pips(sym, type, ep, xp), et, xt);
-      if(bSize == 50 || i == n-1) {
-         if(SendBatch(batch, bSize))
-            for(int j = i-bSize+1; j <= i; j++) SaveSynced(posIds[j]);
-         bSize = 0;
-      }
-   }
-   Print("History sync complete");
-}
-
-//+------------------------------------------------------------------+
-// Live sync (timer)
-//+------------------------------------------------------------------+
-void SyncRecentTrades() {
-   if(!HistorySelect(TimeCurrent() - 86400*7, TimeCurrent())) return;
-   ulong synced[]; LoadSynced(synced);
-   ulong posIds[]; int n = CollectPositions(posIds, synced, true);
-   if(n == 0) return;
-
-   string batch[]; ArrayResize(batch, n); int bSize = 0;
-   for(int i = 0; i < n; i++) {
-      string sym; long type; double ep, xp, lots, pnl, swp, comm; datetime et, xt;
-      if(!AggregatePos(posIds[i], sym, type, ep, xp, lots, pnl, swp, comm, et, xt)) continue;
-      batch[bSize++] = BuildJSON(posIds[i], sym, type, ep, xp, lots, pnl, swp, comm,
-                                 Pips(sym, type, ep, xp), et, xt);
-   }
-
-   if(SendBatch(batch, bSize)) {
-      for(int i = 0; i < n; i++) SaveSynced(posIds[i]);
-      Print("Live sync: +", bSize, " new trades sent");
-   }
 }
