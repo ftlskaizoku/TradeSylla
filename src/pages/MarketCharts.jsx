@@ -248,9 +248,8 @@ export default function MarketCharts() {
   // ── Load symbols ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isAdmin) return
-    supabase.from("sylledge_market_data").select("symbol").limit(2000).then(({ data }) => {
-      if (!data) return
-      const unique = [...new Set(data.map(r => r.symbol))].sort()
+    supabase.rpc("get_market_symbols").then(({ data }) => {
+      const unique = (data || []).filter(Boolean).sort()
       setSymbols(unique)
       if (unique.length) setSelSym(prev => prev || unique[0])
     })
