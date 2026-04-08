@@ -248,16 +248,39 @@ export default function MarketCharts() {
   // ── Load symbols ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isAdmin) return
-    supabase.rpc("get_market_symbols").then(({ data }) => {
-      const unique = (data || []).filter(Boolean).sort()
-      setSymbols(unique)
-      if (unique.length) setSelSym(prev => prev || unique[0])
-    })
+    const fetch = async () => {
+      // Try RPC first (bypasses RLS, returns distinct symbols)
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("get_market_symbols")
+      if (!rpcErr && rpcData?.length) {
+        const unique = rpcData.filter(Boolean).sort()
+        setSymbols(unique)
+        setSelSym(unique[0])
+        return
+      }
+      // Fallback: query by timeframe D1 (fewest rows) to get symbol list
+      const { data } = await supabase
+        .from("sylledge_market_data")
+        .select("symbol")
+        .eq("timeframe", "D1")
+        .limit(500)
+      if (data?.length) {
+        const unique = [...new Set(data.map(r => r.symbol))].filter(Boolean).sort()
+        setSymbols(unique)
+        if (unique.length) setSelSym(unique[0])
+      }
+    }
+    fetch()
   }, [isAdmin])
 
   // ── Load candles ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (selSym && isAdmin && candleSeriesRef.current) loadCandles()
+    if (!selSym || !isAdmin) return
+    // Wait for chart to be ready, then load
+    const attempt = () => {
+      if (candleSeriesRef.current) { loadCandles(); return }
+      setTimeout(attempt, 100)
+    }
+    attempt()
   }, [selSym, selTF]) // eslint-disable-line
 
   async function loadCandles() {
