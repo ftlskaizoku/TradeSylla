@@ -562,127 +562,144 @@ function CandlestickChart({ candles, entryPrice, exitPrice, entryTime, exitTime,
 }
 
 // ─── Running P&L Chart (SVG) ─────────────────────────────────────────────────
+// No SVG defs/clipPath/gradients — avoids ID conflicts when multiple rows expand
 function RunningPnLChart({ candles, entryTime, exitTime, entryPrice, direction, finalPnl }) {
-  if (!candles || candles.length === 0) return null
+  if (!Array.isArray(candles) || candles.length === 0) return null
 
-  const entryMs = entryTime ? new Date(entryTime).getTime() : 0
-  const exitMs  = exitTime  ? new Date(exitTime).getTime()  : null
+  try {
+    const entryMs = entryTime ? new Date(entryTime).getTime() : 0
+    const exitMs  = exitTime  ? new Date(exitTime).getTime()  : null
 
-  // Filter candles within the trade window (entry → exit)
-  let tradeCandles = candles.filter(c => {
-    const t = new Date(c.t).getTime()
-    if (t < entryMs) return false
-    if (exitMs && t > exitMs) return false
-    return true
-  })
-  // Fallback if no candles in window (e.g. trade has no exit_time)
-  if (tradeCandles.length < 2) tradeCandles = candles
+    // Filter to candles within the trade window (entry → exit)
+    let tradeCandles = candles.filter(c => {
+      const t = new Date(c.t).getTime()
+      if (t < entryMs) return false
+      if (exitMs && t > exitMs) return false
+      return true
+    })
+    if (tradeCandles.length < 2) tradeCandles = candles
 
-  const sign = direction === "SELL" ? -1 : 1
-  const ep   = parseFloat(entryPrice) || 0
-  const rawPoints = tradeCandles.map(c => sign * (parseFloat(c.c) - ep))
+    const sign      = direction === "SELL" ? -1 : 1
+    const ep        = parseFloat(entryPrice) || 0
+    const rawPoints = tradeCandles.map(c => sign * (parseFloat(c.c) - ep))
+    const lastRaw   = rawPoints[rawPoints.length - 1] || 0
+    const scale     = (lastRaw !== 0 && finalPnl !== 0) ? finalPnl / lastRaw : 1
+    const points    = [0, ...rawPoints.map(r => r * scale)]
 
-  // Scale so the last point lands exactly on the real final P&L
-  const lastRaw = rawPoints[rawPoints.length - 1]
-  const scale   = (lastRaw !== 0 && finalPnl !== 0) ? finalPnl / lastRaw : 1
-  const points  = [0, ...rawPoints.map(r => r * scale)]
+    const n   = points.length
+    if (n < 2) return null
 
-  const n = points.length
-  const W = 700, H = 100
-  const PAD = { top: 12, bottom: 18, left: 58, right: 12 }
-  const cW  = W - PAD.left - PAD.right
-  const cH  = H - PAD.top  - PAD.bottom
+    const W = 700, H = 110
+    const PAD = { top: 14, bottom: 20, left: 58, right: 12 }
+    const cW  = W - PAD.left - PAD.right
+    const cH  = H - PAD.top  - PAD.bottom
 
-  const minV  = Math.min(0, ...points)
-  const maxV  = Math.max(0, ...points)
-  const range = (maxV - minV) || 1
+    const minV  = Math.min(0, ...points)
+    const maxV  = Math.max(0, ...points)
+    const range = (maxV - minV) || 1
 
-  const toX   = i => PAD.left + (i / (n - 1 || 1)) * cW
-  const toY   = v => PAD.top + cH - ((v - minV) / range) * cH
-  const zeroY = toY(0)
+    const toX   = i  => PAD.left + (i / (n - 1)) * cW
+    const toY   = v  => PAD.top + cH - ((v - minV) / range) * cH
+    const zeroY = toY(0)
 
-  const linePath = points.map((v,i) => `${i===0?"M":"L"}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(" ")
-  // Closed area path — same line, return along zero baseline
-  const areaPath = `${linePath} L${toX(n-1).toFixed(1)},${zeroY.toFixed(1)} L${toX(0).toFixed(1)},${zeroY.toFixed(1)} Z`
+    const fmtPnl  = v => `${v >= 0 ? "+" : ""}$${Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.abs(v).toFixed(0)}`
+    const fmtTime = d => d ? new Date(d).toLocaleTimeString("en-US", { hour:"2-digit", minute:"2-digit", hour12:false }) : ""
 
-  const firstTime = tradeCandles[0] ? new Date(tradeCandles[0].t) : null
-  const lastTime  = tradeCandles[tradeCandles.length-1] ? new Date(tradeCandles[tradeCandles.length-1].t) : null
-  const fmtTime   = d => d ? d.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",hour12:false}) : ""
-  const fmtPnl    = v => `${v>=0?"+":""}$${Math.abs(v)>=1000?(v/1000).toFixed(1)+"k":Math.abs(v).toFixed(0)}`
+    // Build polygon segments: green above zero, red below zero
+    // Walk through points, detect zero-crossings, emit separate filled polygons
+    const greenSegs = [] // arrays of {x,y} for above-zero fills
+    const redSegs   = [] // arrays of {x,y} for below-zero fills
 
-  // Unique id suffix to avoid conflicting defs across multiple expanded rows
-  const uid = (entryTime||"").replace(/\W/g,"").slice(-8)
+    let cur = null
+    let curSign = null
 
-  return (
-    <div className="rounded-xl p-2 mt-3" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-      <div className="flex items-center gap-2 mb-1.5 px-1">
-        <Activity size={11} style={{ color:"var(--accent)" }}/>
-        <span className="text-xs font-semibold" style={{ color:"var(--text-primary)" }}>Running P&L</span>
-        <span className="ml-auto text-xs font-bold" style={{ color: finalPnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
-          {fmtPnl(finalPnl)}
-        </span>
+    const lerp = (i, v1, v2) => {
+      // find x where line from (i-1,v1) to (i,v2) crosses zero
+      const t = Math.abs(v1) / (Math.abs(v1) + Math.abs(v2))
+      return toX(i - 1 + t)
+    }
+
+    for (let i = 0; i < n; i++) {
+      const v  = points[i]
+      const sg = v >= 0 ? "green" : "red"
+      if (curSign === null) {
+        cur = [{ x: toX(i), y: zeroY }, { x: toX(i), y: toY(v) }]
+        curSign = sg
+      } else if (sg !== curSign) {
+        // zero crossing between i-1 and i
+        const cx = lerp(i, points[i-1], v)
+        cur.push({ x: cx, y: zeroY })
+        if (curSign === "green") greenSegs.push(cur)
+        else redSegs.push(cur)
+        cur = [{ x: cx, y: zeroY }, { x: toX(i), y: toY(v) }]
+        curSign = sg
+      } else {
+        cur.push({ x: toX(i), y: toY(v) })
+      }
+    }
+    if (cur && cur.length > 1) {
+      cur.push({ x: toX(n - 1), y: zeroY })
+      if (curSign === "green") greenSegs.push(cur)
+      else redSegs.push(cur)
+    }
+
+    const toD = pts => pts.map((p,i) => `${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") + " Z"
+
+    // Full line path
+    const linePath = points.map((v,i) => `${i===0?"M":"L"}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(" ")
+
+    return (
+      <div className="rounded-xl p-2 mt-3" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+        <div className="flex items-center gap-2 mb-1.5 px-1">
+          <Activity size={11} style={{ color:"var(--accent)" }}/>
+          <span className="text-xs font-semibold" style={{ color:"var(--text-primary)" }}>Running P&amp;L</span>
+          <span className="ml-auto text-xs font-bold" style={{ color: finalPnl >= 0 ? "var(--accent-success)" : "var(--accent-danger)" }}>
+            {fmtPnl(finalPnl)}
+          </span>
+        </div>
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 110 }}>
+          {/* Zero baseline */}
+          <line x1={PAD.left} x2={W - PAD.right} y1={zeroY} y2={zeroY}
+            stroke="var(--border)" strokeWidth="1"/>
+          <text x={PAD.left - 3} y={zeroY + 3} textAnchor="end" fontSize="8" fill="var(--text-muted)">$0</text>
+
+          {/* Y-axis labels */}
+          {minV < -0.01 && (
+            <text x={PAD.left - 3} y={toY(minV) + 3} textAnchor="end" fontSize="8" fill="#ff4757">{fmtPnl(minV)}</text>
+          )}
+          {maxV > 0.01 && (
+            <text x={PAD.left - 3} y={toY(maxV) + 3} textAnchor="end" fontSize="8" fill="#2ed573">{fmtPnl(maxV)}</text>
+          )}
+
+          {/* Filled area segments — no SVG defs needed */}
+          {greenSegs.map((seg, i) => (
+            <path key={`g${i}`} d={toD(seg)} fill="rgba(46,213,115,0.18)" stroke="none"/>
+          ))}
+          {redSegs.map((seg, i) => (
+            <path key={`r${i}`} d={toD(seg)} fill="rgba(255,71,87,0.18)" stroke="none"/>
+          ))}
+
+          {/* P&L line */}
+          <path d={linePath} fill="none" stroke="#6c63ff" strokeWidth="1.5" strokeLinejoin="round"/>
+
+          {/* Entry dot (always at $0) */}
+          <circle cx={toX(0)} cy={zeroY} r="3.5" fill="var(--bg-card)" stroke="#2ed573" strokeWidth="1.5"/>
+
+          {/* Exit dot */}
+          <circle cx={toX(n - 1)} cy={toY(points[n - 1])} r="3.5" fill="var(--bg-card)"
+            stroke={finalPnl >= 0 ? "#2ed573" : "#ff4757"} strokeWidth="1.5"/>
+
+          {/* Time axis */}
+          <text x={PAD.left} y={H - 4} fontSize="8" fill="var(--text-muted)">{fmtTime(entryTime)}</text>
+          <text x={W - PAD.right} y={H - 4} fontSize="8" fill="var(--text-muted)" textAnchor="end">
+            {fmtTime(exitTime || tradeCandles[tradeCandles.length - 1]?.t)}
+          </text>
+        </svg>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight:100 }}>
-        <defs>
-          <clipPath id={`above-${uid}`}>
-            <rect x={PAD.left} y={PAD.top} width={cW} height={Math.max(0, zeroY - PAD.top)}/>
-          </clipPath>
-          <clipPath id={`below-${uid}`}>
-            <rect x={PAD.left} y={zeroY} width={cW} height={Math.max(0, PAD.top + cH - zeroY)}/>
-          </clipPath>
-          <linearGradient id={`gg-${uid}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#2ed573" stopOpacity="0.4"/>
-            <stop offset="100%" stopColor="#2ed573" stopOpacity="0.02"/>
-          </linearGradient>
-          <linearGradient id={`rg-${uid}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#ff4757" stopOpacity="0.02"/>
-            <stop offset="100%" stopColor="#ff4757" stopOpacity="0.4"/>
-          </linearGradient>
-        </defs>
-
-        {/* Zero line */}
-        <line x1={PAD.left} x2={W-PAD.right} y1={zeroY} y2={zeroY}
-          stroke="var(--border)" strokeWidth="1"/>
-        <text x={PAD.left-3} y={zeroY+3} textAnchor="end" fontSize="8" fill="var(--text-muted)">$0</text>
-
-        {/* Min/max labels */}
-        {minV < 0 && (
-          <text x={PAD.left-3} y={toY(minV)+3} textAnchor="end" fontSize="8" fill="var(--accent-danger)">
-            {fmtPnl(minV)}
-          </text>
-        )}
-        {maxV > 0 && (
-          <text x={PAD.left-3} y={toY(maxV)+3} textAnchor="end" fontSize="8" fill="var(--accent-success)">
-            {fmtPnl(maxV)}
-          </text>
-        )}
-
-        {/* Green fill (above zero) */}
-        <path d={areaPath} fill={`url(#gg-${uid})`} clipPath={`url(#above-${uid})`}/>
-        {/* Red fill (below zero) */}
-        <path d={areaPath} fill={`url(#rg-${uid})`} clipPath={`url(#below-${uid})`}/>
-
-        {/* P&L line */}
-        <path d={linePath} fill="none" stroke="#6c63ff" strokeWidth="1.5" strokeLinejoin="round"/>
-
-        {/* Entry dot */}
-        <circle cx={toX(0)} cy={zeroY} r="3.5" fill="none" stroke="#2ed573" strokeWidth="1.5"/>
-        <text x={toX(0)} y={zeroY-7} textAnchor="middle" fontSize="8" fill="#2ed573">●</text>
-
-        {/* Exit dot */}
-        <circle cx={toX(n-1)} cy={toY(points[n-1])} r="3.5" fill="none"
-          stroke={finalPnl>=0?"#2ed573":"#ff4757"} strokeWidth="1.5"/>
-
-        {/* Time axis */}
-        {firstTime && (
-          <text x={PAD.left} y={H-3} fontSize="8" fill="var(--text-muted)">{fmtTime(firstTime)}</text>
-        )}
-        {lastTime && (
-          <text x={W-PAD.right} y={H-3} fontSize="8" fill="var(--text-muted)" textAnchor="end">{fmtTime(lastTime)}</text>
-        )}
-      </svg>
-    </div>
-  )
+    )
+  } catch {
+    return null
+  }
 }
 
 // ─── Inline Trade Detail Row ──────────────────────────────────────────────────
