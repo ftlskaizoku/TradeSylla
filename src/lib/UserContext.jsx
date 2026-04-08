@@ -79,8 +79,8 @@ export const UserProvider = ({ children }) => {
   const signOut = () => authHelpers.signOut()
 
   // Plan helpers
-  const ADMIN_EMAIL = "khalifadylla@gmail.com"
-  const isAdmin = user?.email === ADMIN_EMAIL
+  const ADMIN_EMAILS = ["khalifadylla@gmail.com", "zoumxyz@gmail.com"]
+  const isAdmin = ADMIN_EMAILS.includes(user?.email)
   const isPro   = isAdmin || user?.plan === "pro" || user?.plan === "elite"
   const isElite = isAdmin || user?.plan === "elite"
 

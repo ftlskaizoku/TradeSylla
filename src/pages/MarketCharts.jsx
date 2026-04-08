@@ -14,7 +14,6 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TIMEFRAMES = ["M1","M5","M15","H1","H4","D1"]
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL
 
 const FIB_LEVELS  = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
 const FIB_COLORS  = ["#ff4757","#ff6348","#ffa502","#ffffff","#2ed573","#1e90ff","#ff4757"]
@@ -88,8 +87,7 @@ function fmtChange(c) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function MarketCharts() {
-  const { user } = useUser()
-  const isAdmin = user?.email === ADMIN_EMAIL
+  const { user, isAdmin } = useUser()
 
   // Data state
   const [symbols,  setSymbols]  = useState([])
