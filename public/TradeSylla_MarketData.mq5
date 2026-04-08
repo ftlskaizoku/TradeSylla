@@ -27,13 +27,35 @@ ENUM_TIMEFRAMES TFS[]    = { PERIOD_M1, PERIOD_M5, PERIOD_M15, PERIOD_H1, PERIOD
 string          TFNAMES[]= { "M1","M5","M15","H1","H4","D1" };
 int HIST_WINDOW[] = { 604800, 2592000, 7776000, 31536000, 94608000, 0 };
 
+// ── Target symbols: canonical name + broker alias candidates ─────────────────
+// The EA tries each alias until one resolves in Market Watch.
+// Data is always sent using the CANONICAL name so the DB stays consistent.
+#define TARGET_COUNT 9
+string TARGET_CANONICAL[TARGET_COUNT] = {
+   "EURUSD","GBPUSD","XAUUSD","BTCUSD","ETHUSD",
+   "US30","US100","UK100","GER30"
+};
+string TARGET_ALIASES[TARGET_COUNT][8] = {
+   { "EURUSD","EURUSDm","EURUSD.","EURUSD+","","","","" },
+   { "GBPUSD","GBPUSDm","GBPUSD.","GBPUSD+","","","","" },
+   { "XAUUSD","XAUUSDm","GOLD","GOLDm","XAUUSD.","","","" },
+   { "BTCUSD","BTCUSDm","BTCUSD.","BTC/USD","BTCUSDT","","","" },
+   { "ETHUSD","ETHUSDm","ETHUSD.","ETH/USD","ETHUSDT","","","" },
+   { "US30","DJ30","DJIA","WS30","USA30","US30m","DJI","" },
+   { "US100","NAS100","NASDAQ","USTEC","NAS100m","NDX","US100m","USTECH" },
+   { "UK100","FTSE100","UK100m","FTSE","GBR100","UK100.","","" },
+   { "GER30","GER40","DAX","DAX40","DAX30","GER30m","GER40m","DE30" }
+};
+
+// Resolved broker names — filled at OnInit
+string g_brokerSym[TARGET_COUNT];
+int    g_symCount    = 0;
+
 datetime g_lastLive    = 0;
 datetime g_lastPoll    = 0;
 bool     g_histDone    = false;
 int      g_symIdx      = 0;
 int      g_tfIdx       = 0;
-string   g_syms[];
-int      g_symCount    = 0;
 MqlRates g_rates[];
 int      g_ratesLoaded = 0;
 int      g_batchStart  = 0;
@@ -42,14 +64,33 @@ int      MAX_RETRIES   = 3;
 
 int OnInit() {
    if(AdminToken == "") { Alert("TradeSylla MarketData: Set AdminToken"); return INIT_FAILED; }
-   Print("TradeSylla MarketData v3.2 starting...");
+   Print("TradeSylla MarketData v3.3 starting...");
    Print("ServerURL: ", ServerURL);
    Print("FullHistorySync: ", FullHistorySync ? "YES" : "NO");
-   g_symCount = GetSymbols(g_syms);
-   Print("Market Watch symbols found: ", g_symCount);
-   if(FullHistorySync && g_symCount > 0) {
+
+   // Resolve each target symbol to its broker-specific Market Watch name
+   g_symCount = 0;
+   for(int i = 0; i < TARGET_COUNT; i++) {
+      g_brokerSym[i] = "";
+      for(int a = 0; a < 8; a++) {
+         string alias = TARGET_ALIASES[i][a];
+         if(alias == "") break;
+         if(SymbolSelect(alias, true)) {
+            g_brokerSym[i] = alias;
+            Print("  Resolved: ", TARGET_CANONICAL[i], " -> ", alias);
+            g_symCount++;
+            break;
+         }
+      }
+      if(g_brokerSym[i] == "")
+         Print("  WARNING: Could not resolve ", TARGET_CANONICAL[i], " — not in Market Watch");
+   }
+
+   Print("Resolved ", g_symCount, "/", TARGET_COUNT, " target symbols");
+   if(g_symCount == 0) { Alert("No target symbols found in Market Watch"); return INIT_FAILED; }
+
+   if(FullHistorySync) {
       Print("One-batch-per-tick sync will start on first timer tick.");
-      Print("  -> ", g_symCount, " symbols x ", ArraySize(TFS), " TFs");
       g_histDone = false; g_symIdx = 0; g_tfIdx = 0;
       g_ratesLoaded = 0;  g_batchStart = 0; g_retryCount = 0;
    } else { g_histDone = true; }
@@ -71,49 +112,49 @@ void OnTimer() {
 }
 
 void ProgressiveSyncStep() {
-   if(g_symIdx >= g_symCount) {
+   // Skip unresolved symbols
+   while(g_symIdx < TARGET_COUNT && g_brokerSym[g_symIdx] == "") g_symIdx++;
+
+   if(g_symIdx >= TARGET_COUNT) {
       g_histDone = true;
-      Print("=== History sync COMPLETE: all ", g_symCount, " symbols x ", ArraySize(TFS), " TFs ===");
+      Print("=== History sync COMPLETE: ", TARGET_COUNT, " symbols x ", ArraySize(TFS), " TFs ===");
       return;
    }
-   string sym = g_syms[g_symIdx];
+
+   string brokerSym    = g_brokerSym[g_symIdx];
+   string canonicalSym = TARGET_CANONICAL[g_symIdx];
 
    // Phase A: load bars once per sym/tf
    if(g_ratesLoaded == 0) {
-      if(!SymbolSelect(sym, true)) {
-         Print("SymbolSelect failed: ", sym, " — skipping");
-         AdvanceSyncIndex(true); return;
-      }
       datetime fromDt = (HIST_WINDOW[g_tfIdx] == 0)
          ? D'2015.01.01'
          : TimeCurrent() - HIST_WINDOW[g_tfIdx];
       ArrayResize(g_rates, 0);
-      g_ratesLoaded = CopyRates(sym, TFS[g_tfIdx], fromDt, TimeCurrent(), g_rates);
+      g_ratesLoaded = CopyRates(brokerSym, TFS[g_tfIdx], fromDt, TimeCurrent(), g_rates);
       if(g_ratesLoaded <= 0) {
          g_retryCount++;
          if(g_retryCount <= MAX_RETRIES) {
-            Print("No data yet: ", sym, " ", TFNAMES[g_tfIdx], " retry ", g_retryCount);
+            Print("No data yet: ", canonicalSym, "(", brokerSym, ") ",
+                  TFNAMES[g_tfIdx], " retry ", g_retryCount);
             Sleep(300); return;
          }
-         Print("Skip ", sym, " ", TFNAMES[g_tfIdx], " after ", MAX_RETRIES, " retries");
+         Print("Skip ", canonicalSym, " ", TFNAMES[g_tfIdx], " after ", MAX_RETRIES, " retries");
          g_ratesLoaded = 0; g_retryCount = 0;
          AdvanceSyncIndex(false); return;
       }
       g_batchStart = 0; g_retryCount = 0;
-      if(g_symIdx % 5 == 0 && g_tfIdx == 0)
-         Print("Sync progress: ", g_symIdx, "/", g_symCount,
-               " (", (int)((double)g_symIdx/g_symCount*100), "%)  ",
-               sym, " ", TFNAMES[g_tfIdx], " = ", g_ratesLoaded, " bars");
+      Print("Syncing: ", canonicalSym, " ", TFNAMES[g_tfIdx],
+            " = ", g_ratesLoaded, " bars  [", g_symIdx+1, "/", TARGET_COUNT, "]");
    }
 
-   // Phase B: send exactly one batch of up to 500 bars
+   // Phase B: send exactly one batch — always use canonical symbol name
    int n = MathMin(500, g_ratesLoaded - g_batchStart);
    MqlRates batch[]; ArrayResize(batch, n);
    ArrayCopy(batch, g_rates, 0, g_batchStart, n);
-   string resp = POST("/api/sylledge-market", CandlesJSON(sym, TFNAMES[g_tfIdx], batch, n));
+   string resp = POST("/api/sylledge-market", CandlesJSON(canonicalSym, TFNAMES[g_tfIdx], batch, n));
    if(StringFind(resp, "\"success\":true") == -1 && resp != "")
-      Print("Batch warn: ", sym, " ", TFNAMES[g_tfIdx], "@", g_batchStart,
-            " -> ", StringSubstr(resp, 0, 80));
+      Print("Batch warn: ", canonicalSym, " ", TFNAMES[g_tfIdx], "@", g_batchStart,
+            " -> ", StringSubstr(resp, 0, 120));
    g_batchStart += n;
    Sleep(SyncDelay);
 
@@ -131,25 +172,30 @@ void AdvanceSyncIndex(bool skipAll) {
 }
 
 void PushLive() {
-   for(int s = 0; s < g_symCount; s++) {
+   for(int i = 0; i < TARGET_COUNT; i++) {
+      if(g_brokerSym[i] == "") continue;
       for(int t = 0; t < ArraySize(TFS); t++) {
          MqlRates r[2];
-         if(CopyRates(g_syms[s], TFS[t], 0, 2, r) < 2) continue;
+         if(CopyRates(g_brokerSym[i], TFS[t], 0, 2, r) < 2) continue;
          MqlRates bar[1]; bar[0] = r[1];
-         POST("/api/sylledge-market", CandlesJSON(g_syms[s], TFNAMES[t], bar, 1));
+         // Always send with canonical name
+         POST("/api/sylledge-market", CandlesJSON(TARGET_CANONICAL[i], TFNAMES[t], bar, 1));
          Sleep(10);
       }
    }
 }
 
-int GetSymbols(string &syms[]) {
-   int total = SymbolsTotal(true), n = 0;
-   for(int i = 0; i < total; i++) {
-      string name = SymbolName(i, true);
-      if(name == "" || StringGetCharacter(name, 0) == '#') continue;
-      ArrayResize(syms, n+1); syms[n++] = name;
+// CmdFetchSymbols now returns canonical names
+void CmdFetchSymbolsInner(string id) {
+   string body="{\"command_id\":\""+id+"\",\"type\":\"symbols\",\"symbols\":[";
+   int first = 1;
+   for(int i = 0; i < TARGET_COUNT; i++) {
+      if(g_brokerSym[i] == "") continue;
+      if(!first) body += ",";
+      body += "\"" + TARGET_CANONICAL[i] + "\"";
+      first = 0;
    }
-   return n;
+   POST("/api/sylledge-commands/response", body + "]}");
 }
 
 string POST(string path, string body) {
@@ -219,7 +265,7 @@ void ExecCommand(string cmd) {
    if(lim<=0) lim=500;
    if(id=="" || type=="") return;
    if(type=="fetch_candles")     CmdFetchCandles(id,sym,tf,from,to,lim);
-   else if(type=="fetch_symbols") CmdFetchSymbols(id);
+   else if(type=="fetch_symbols") CmdFetchSymbolsInner(id);
    else if(type=="overview")     CmdOverview(id,sym,tf==""?"H1":tf);
 }
 

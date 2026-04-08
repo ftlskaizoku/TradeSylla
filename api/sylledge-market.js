@@ -12,6 +12,34 @@ import { createClient } from "@supabase/supabase-js"
 const SUPA_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
+// Server-side normalization: any broker alias → canonical name
+// Keeps the DB clean even if older EA versions send broker-specific names
+const SYMBOL_ALIASES = {
+  // EURUSD
+  "EURUSDm":"EURUSD","EURUSD.":"EURUSD","EURUSD+":"EURUSD",
+  // GBPUSD
+  "GBPUSDm":"GBPUSD","GBPUSD.":"GBPUSD","GBPUSD+":"GBPUSD",
+  // XAUUSD
+  "XAUUSDm":"XAUUSD","GOLD":"XAUUSD","GOLDm":"XAUUSD","XAUUSD.":"XAUUSD",
+  // BTCUSD
+  "BTCUSDm":"BTCUSD","BTCUSD.":"BTCUSD","BTC/USD":"BTCUSD","BTCUSDT":"BTCUSD","BTCKPY":"BTCUSD",
+  // ETHUSD
+  "ETHUSDm":"ETHUSD","ETHUSD.":"ETHUSD","ETH/USD":"ETHUSD","ETHUSDT":"ETHUSD",
+  // US30
+  "DJ30":"US30","DJIA":"US30","WS30":"US30","USA30":"US30","US30m":"US30","DJI":"US30","Wall Street 30":"US30",
+  // US100
+  "NAS100":"US100","NASDAQ":"US100","USTEC":"US100","NAS100m":"US100","NDX":"US100","US100m":"US100","USTECH":"US100",
+  // UK100
+  "FTSE100":"UK100","UK100m":"UK100","FTSE":"UK100","GBR100":"UK100","UK100.":"UK100",
+  // GER30 / DAX
+  "GER40":"GER30","DAX":"GER30","DAX40":"GER30","DAX30":"GER30","GER30m":"GER30","GER40m":"GER30","DE30":"GER30","DE40":"GER30",
+}
+
+function normalizeSymbol(raw) {
+  const s = (raw || "").toUpperCase().trim()
+  return SYMBOL_ALIASES[s] || s
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin",  "*")
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -55,12 +83,13 @@ export default async function handler(req, res) {
     })
 
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body
-    const { symbol, timeframe, candles } = body
+    const { timeframe, candles } = body
+    const symbol = normalizeSymbol(body.symbol)
     if (!symbol || !timeframe || !candles?.length)
       return res.status(400).json({ error: "symbol, timeframe, and candles[] required" })
 
     const rows = candles.map(c => ({
-      symbol:      symbol.toUpperCase(),
+      symbol,   // always canonical
       timeframe,
       candle_time: c.t,
       open_price:  c.o,
