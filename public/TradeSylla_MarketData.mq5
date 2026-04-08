@@ -1,37 +1,44 @@
 //+------------------------------------------------------------------+
-//| TradeSylla_MarketData.mq5   v3.0                                 |
+//| TradeSylla_MarketData.mq5   v3.1                                 |
 //|                                                                    |
-//| FIX vs v2.0:                                                       |
-//|  SyncAllHistory() was called in OnInit() synchronously.           |
-//|  308 symbols × 6 TFs = 1848 HTTP calls blocked the main thread.  |
-//|  MT5 terminates EAs whose OnInit() runs too long → "Abnormal      |
-//|  termination" after only ~1 symbol synced.                        |
+//| FIX vs v3.0:                                                       |
+//|  GetSymbols() was using SymbolsTotal(false) / SymbolName(i,false) |
+//|  which returns ALL server symbols, not just Market Watch.         |
+//|  CopyRates() only succeeds for symbols whose data MT5 has loaded  |
+//|  in memory — typically only the chart symbol (BTCJPY etc).        |
+//|  This caused only 1 symbol to ever sync.                          |
 //|                                                                    |
-//|  NEW: OnInit() returns immediately. A progressive timer-based     |
-//|  sync processes one symbol per timer tick, cycling through all    |
-//|  symbols until every one has been synced for every timeframe.     |
-//|  Live candle updates continue in the background.                  |
+//|  FIXES:                                                            |
+//|  1. GetSymbols now uses true (Market Watch only — all 308 symbols |
+//|     selected at your broker are in Market Watch and subscribable). |
+//|  2. SyncSymbol calls SymbolSelect(sym,true) before CopyRates to   |
+//|     force MT5 to load/subscribe that symbol's data.               |
+//|  3. ProgressiveSyncStep no longer blindly advances on empty data. |
+//|     If CopyRates returns 0 bars, it retries up to 3 times (with  |
+//|     a 300ms pause) before skipping the symbol permanently.        |
 //+------------------------------------------------------------------+
 #property copyright "TradeSylla"
-#property version   "3.00"
+#property version   "3.10"
 
 input string AdminToken      = "";
 input string ServerURL       = "https://tradesylla.vercel.app";
-input bool   FullHistorySync = true;   // sync all symbols on start
-input int    PollInterval    = 10;     // SYLLEDGE command poll (seconds)
-input int    LiveInterval    = 60;     // live candle push interval (seconds)
-input int    SyncDelay       = 100;    // ms between HTTP calls (be gentle on broker)
+input bool   FullHistorySync = true;
+input int    PollInterval    = 10;
+input int    LiveInterval    = 60;
+input int    SyncDelay       = 100;
 
 ENUM_TIMEFRAMES TFS[]    = { PERIOD_M1, PERIOD_M5, PERIOD_M15, PERIOD_H1, PERIOD_H4, PERIOD_D1 };
 string          TFNAMES[]= { "M1","M5","M15","H1","H4","D1" };
 
 datetime g_lastLive    = 0;
 datetime g_lastPoll    = 0;
-bool     g_histDone    = false;   // full history sync complete flag
-int      g_symIdx      = 0;       // which symbol we're currently syncing
-int      g_tfIdx       = 0;       // which timeframe we're currently syncing
-string   g_syms[];               // all symbols
+bool     g_histDone    = false;
+int      g_symIdx      = 0;
+int      g_tfIdx       = 0;
+string   g_syms[];
 int      g_symCount    = 0;
+int      g_retryCount  = 0;     // retry counter for current sym/tf pair
+int      MAX_RETRIES   = 3;     // max retries before skipping a sym/tf
 
 //+------------------------------------------------------------------+
 int OnInit() {
@@ -39,27 +46,27 @@ int OnInit() {
       Alert("TradeSylla MarketData: Set AdminToken in EA inputs");
       return INIT_FAILED;
    }
-   Print("TradeSylla MarketData v3.0 starting...");
+   Print("TradeSylla MarketData v3.1 starting...");
    Print("ServerURL: ", ServerURL);
    Print("FullHistorySync: ", FullHistorySync ? "YES" : "NO");
 
-   // Load symbol list ONCE
    g_symCount = GetSymbols(g_syms);
-   Print("Symbols found: ", g_symCount);
+   Print("Market Watch symbols found: ", g_symCount);
 
    if(FullHistorySync && g_symCount > 0) {
       Print("Progressive history sync will start on first timer tick.");
       Print("  → ", g_symCount, " symbols × ", ArraySize(TFS), " TFs = ",
             g_symCount * ArraySize(TFS), " batches total");
       Print("  → Progress shown in Experts tab. Do NOT remove EA until complete.");
-      g_histDone = false;
-      g_symIdx   = 0;
-      g_tfIdx    = 0;
+      g_histDone    = false;
+      g_symIdx      = 0;
+      g_tfIdx       = 0;
+      g_retryCount  = 0;
    } else {
       g_histDone = true;
    }
 
-   EventSetTimer(1);  // 1-second timer — fast enough for both tasks
+   EventSetTimer(1);
    Print("MarketData EA ready.");
    return INIT_SUCCEEDED;
 }
@@ -73,19 +80,16 @@ void OnDeinit(const int r) {
 void OnTimer() {
    datetime now = TimeCurrent();
 
-   // ── Task 1: Progressive history sync (one TF per tick) ──────────
    if(!g_histDone && FullHistorySync) {
       ProgressiveSyncStep();
-      return;  // don't do live/poll during history sync — focus bandwidth
+      return;
    }
 
-   // ── Task 2: Poll SYLLEDGE commands ──────────────────────────────
    if(now - g_lastPoll >= PollInterval) {
       g_lastPoll = now;
       PollCommands();
    }
 
-   // ── Task 3: Push latest candle for each symbol ───────────────────
    if(now - g_lastLive >= LiveInterval) {
       g_lastLive = now;
       PushLive();
@@ -93,8 +97,7 @@ void OnTimer() {
 }
 
 //+------------------------------------------------------------------+
-// Progressive sync — advances one timeframe per call
-// Full cycle: g_symCount × ArraySize(TFS) calls
+// Progressive sync — one timeframe per call, with retry on empty data
 //+------------------------------------------------------------------+
 void ProgressiveSyncStep() {
    if(g_symIdx >= g_symCount) {
@@ -103,19 +106,40 @@ void ProgressiveSyncStep() {
       return;
    }
 
-   string sym   = g_syms[g_symIdx];
-   int    tfIdx = g_tfIdx;
+   string sym = g_syms[g_symIdx];
 
-   // Print progress every 10 symbols
    if(g_tfIdx == 0 && g_symIdx % 10 == 0) {
       Print("History sync progress: ", g_symIdx, "/", g_symCount,
-            " (", (int)((double)g_symIdx/g_symCount*100), "%)");
+            " (", (int)((double)g_symIdx / g_symCount * 100), "%)  sym=", sym);
    }
 
-   SyncSymbol(sym, TFS[tfIdx], TFNAMES[tfIdx]);
-   Sleep(SyncDelay);
+   // Ensure symbol is selected in Market Watch so MT5 loads its data
+   if(!SymbolSelect(sym, true)) {
+      Print("SymbolSelect failed for: ", sym, " — skipping");
+      AdvanceSyncIndex();
+      return;
+   }
 
-   // Advance to next TF, or next symbol
+   bool pushed = SyncSymbol(sym, TFS[g_tfIdx], TFNAMES[g_tfIdx]);
+
+   if(!pushed) {
+      // Data not yet loaded for this sym/tf — retry up to MAX_RETRIES
+      g_retryCount++;
+      if(g_retryCount <= MAX_RETRIES) {
+         Print("No data for ", sym, " ", TFNAMES[g_tfIdx],
+               " — retry ", g_retryCount, "/", MAX_RETRIES);
+         Sleep(300);  // give MT5 time to download
+         return;      // don't advance; same sym/tf retried next tick
+      } else {
+         Print("Giving up on ", sym, " ", TFNAMES[g_tfIdx], " after ", MAX_RETRIES, " retries");
+      }
+   }
+
+   g_retryCount = 0;
+   AdvanceSyncIndex();
+}
+
+void AdvanceSyncIndex() {
    g_tfIdx++;
    if(g_tfIdx >= ArraySize(TFS)) {
       g_tfIdx = 0;
@@ -124,12 +148,12 @@ void ProgressiveSyncStep() {
 }
 
 //+------------------------------------------------------------------+
-// Sync one symbol/TF: all candles from 2015 to now in 500-bar batches
+// Sync one symbol/TF — returns true if any candles were pushed
 //+------------------------------------------------------------------+
-void SyncSymbol(string sym, ENUM_TIMEFRAMES tf, string tfName) {
+bool SyncSymbol(string sym, ENUM_TIMEFRAMES tf, string tfName) {
    MqlRates rates[];
    int loaded = CopyRates(sym, tf, D'2015.01.01', TimeCurrent(), rates);
-   if(loaded <= 0) return;
+   if(loaded <= 0) return false;
 
    for(int start = 0; start < loaded; start += 500) {
       int n = MathMin(500, loaded - start);
@@ -142,10 +166,9 @@ void SyncSymbol(string sym, ENUM_TIMEFRAMES tf, string tfName) {
       }
       Sleep(SyncDelay);
    }
+   return true;
 }
 
-//+------------------------------------------------------------------+
-// Push latest 2 candles for every symbol (keeps charts live)
 //+------------------------------------------------------------------+
 void PushLive() {
    for(int s = 0; s < g_symCount; s++) {
@@ -160,10 +183,15 @@ void PushLive() {
 }
 
 //+------------------------------------------------------------------+
+// FIX: use true (Market Watch only) instead of false (all server symbols)
+// false returns every symbol on the broker's server, but CopyRates only
+// works for symbols whose data MT5 has actively loaded. Market Watch
+// symbols are subscribed and their data can be downloaded on demand.
+//+------------------------------------------------------------------+
 int GetSymbols(string &syms[]) {
-   int total = SymbolsTotal(false), n = 0;
+   int total = SymbolsTotal(true), n = 0;    // true = Market Watch only
    for(int i = 0; i < total; i++) {
-      string name = SymbolName(i, false);
+      string name = SymbolName(i, true);     // true = Market Watch only
       if(name == "" || StringGetCharacter(name, 0) == '#') continue;
       ArrayResize(syms, n+1);
       syms[n++] = name;
@@ -197,8 +225,6 @@ string HTTGET(string path) {
 }
 
 //+------------------------------------------------------------------+
-// JSON builders
-//+------------------------------------------------------------------+
 string CandlesJSON(string sym, string tf, MqlRates &r[], int n) {
    string s = "{\"symbol\":\"" + sym + "\",\"timeframe\":\"" + tf + "\",\"candles\":[";
    for(int i = 0; i < n; i++) {
@@ -217,8 +243,6 @@ string ISO(datetime t) {
       d.year, d.mon, d.day, d.hour, d.min, d.sec);
 }
 
-//+------------------------------------------------------------------+
-// SYLLEDGE command system
 //+------------------------------------------------------------------+
 void PollCommands() {
    string resp = HTTGET("/api/sylledge-commands/pending");
@@ -255,9 +279,9 @@ void ExecCommand(string cmd) {
    if(lim <= 0) lim = 500;
    if(id == "" || type == "") return;
 
-   if(type == "fetch_candles")    CmdFetchCandles(id, sym, tf, from, to, lim);
-   else if(type == "fetch_symbols")CmdFetchSymbols(id);
-   else if(type == "overview")    CmdOverview(id, sym, tf == "" ? "H1" : tf);
+   if(type == "fetch_candles")     CmdFetchCandles(id, sym, tf, from, to, lim);
+   else if(type == "fetch_symbols") CmdFetchSymbols(id);
+   else if(type == "overview")     CmdOverview(id, sym, tf == "" ? "H1" : tf);
 }
 
 void CmdFetchCandles(string id, string sym, string tfName, string fromS, string toS, int lim) {
