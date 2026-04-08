@@ -1,432 +1,341 @@
-// src/pages/BrokerSync.jsx  — Token Source-of-Truth Fix
-// 
-// KEY CHANGE: EASetupPanel Step 3 no longer generates tokens.
-// It only reads + displays the token from Settings → API Keys (user_token column).
-// Generation is ONLY in Settings → API Keys — one place, no conflicts.
-//
-// If a user regenerates in Settings, the new token is reflected here too on next load.
-// This prevents the silent "401 forever" bug caused by two generate buttons
-// producing different tokens that overwrite each other.
+import { useState } from 'react';
 
-import { useState, useEffect } from "react"
-import { useUser } from "@/lib/UserContext"
-import { supabase } from "@/lib/supabase"
-import { BrokerConnection } from "@/api/supabaseStore"
-import { toast } from "@/components/ui/toast"
-import { Link } from "react-router-dom"
-import { createPageUrl } from "@/utils"
-import {
-  Wifi, WifiOff, Download, Copy, CheckCircle,
-  Key, ChevronDown, ChevronUp, AlertTriangle,
-  Activity, TrendingUp, BarChart2, Terminal,
-  ExternalLink, Lock, ArrowRight
-} from "lucide-react"
+const connectedAccounts = [
+  {
+    id: 1,
+    broker: 'Exness',
+    account: '12345678',
+    type: 'MT5',
+    market: 'Forex',
+    status: 'active',
+    lastSync: '2 min ago',
+    trades: 142,
+  },
+];
 
-// ─── Connection Card ──────────────────────────────────────────────────────────
-function ConnectionCard({ conn }) {
-  const isLive  = !conn.is_demo
-  const balance = parseFloat(conn.balance || 0)
-  const equity  = parseFloat(conn.equity  || 0)
-  const diff    = equity - balance
-  const lastSync= conn.last_sync ? new Date(conn.last_sync) : null
-  const minsAgo = lastSync ? Math.floor((Date.now() - lastSync.getTime()) / 60000) : null
-
-  return (
-    <div className="card">
-      <div className="p-5">
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: isLive ? "rgba(46,213,115,0.12)" : "rgba(255,165,2,0.12)", border: `1px solid ${isLive ? "rgba(46,213,115,0.25)" : "rgba(255,165,2,0.25)"}` }}>
-              <Wifi size={18} style={{ color: isLive ? "var(--accent-success)" : "var(--accent-warning)" }}/>
-            </div>
-            <div>
-              <p className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
-                {conn.broker_name || "MT5"} #{conn.mt5_login}
-              </p>
-              <p className="text-xs" style={{ color: "var(--text-muted)" }}>{conn.server || "No server"}</p>
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <span className="badge" style={{
-              background: isLive ? "rgba(46,213,115,0.12)" : "rgba(255,165,2,0.12)",
-              color:      isLive ? "var(--accent-success)" : "var(--accent-warning)",
-              border:     `1px solid ${isLive ? "rgba(46,213,115,0.25)" : "rgba(255,165,2,0.25)"}`,
-            }}>
-              {isLive ? "● Live" : "○ Demo"}
-            </span>
-            {minsAgo !== null && (
-              <span className="mono" style={{ fontSize: 9, color: "var(--text-muted)" }}>
-                {minsAgo < 1 ? "Just now" : minsAgo < 60 ? `${minsAgo}m ago` : `${Math.floor(minsAgo / 60)}h ago`}
-              </span>
-            )}
-          </div>
+const STEPS = [
+  {
+    id: 1,
+    icon: (
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      </svg>
+    ),
+    label: 'Download the EA',
+    content: (
+      <div>
+        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1rem', lineHeight: 1.6 }}>
+          Download the two TradeSylla Expert Advisor files. You need both — one syncs your trades, the other fetches market data.
+        </p>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            TradeSylla_Sync.mq5
+          </button>
+          <button className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            TradeSylla_MarketData.mq5
+          </button>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { label: "Balance", v: `${conn.currency || "$"}${balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: "var(--text-primary)" },
-            { label: "Equity",  v: `${conn.currency || "$"}${equity.toLocaleString("en-US",  { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: diff >= 0 ? "var(--accent-success)" : "var(--accent-danger)" },
-            { label: "Float",   v: `${diff >= 0 ? "+" : ""}${conn.currency || "$"}${Math.abs(diff).toFixed(2)}`,                                          color: diff >= 0 ? "var(--accent-success)" : "var(--accent-danger)" },
-          ].map(s => (
-            <div key={s.label} className="rounded-xl py-2 px-2 text-center" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
-              <p className="text-sm font-bold mono" style={{ color: s.color }}>{s.v}</p>
-              <p className="stat-card-label" style={{ fontSize: 9 }}>{s.label}</p>
+      </div>
+    ),
+  },
+  {
+    id: 2,
+    icon: (
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+      </svg>
+    ),
+    label: 'Install in MT5',
+    content: (
+      <div>
+        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1rem', lineHeight: 1.6 }}>
+          In MetaTrader 5, open the data folder and place both <code className="mono" style={{ fontSize: '0.8rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(139,92,246,0.12)', color: 'var(--color-accent, #8b5cf6)' }}>.mq5</code> files inside the <code className="mono" style={{ fontSize: '0.8rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(139,92,246,0.12)', color: 'var(--color-accent, #8b5cf6)' }}>MQL5/Experts/</code> folder.
+        </p>
+        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {['Open MT5 → File → Open Data Folder', 'Navigate to MQL5 → Experts', 'Paste both .mq5 files here', 'Restart MetaTrader 5'].map((step, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ minWidth: '22px', height: '22px', borderRadius: '50%', background: 'rgba(139,92,246,0.2)', color: 'var(--color-accent, #8b5cf6)', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
+              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{step}</span>
             </div>
           ))}
         </div>
       </div>
-    </div>
-  )
-}
-
-// ─── EA Setup Panel ───────────────────────────────────────────────────────────
-function EASetupPanel() {
-  const { user } = useUser()
-  const [token,   setToken]   = useState("")
-  const [loading, setLoading] = useState(true)
-  const [copied,  setCopied]  = useState("")
-  const [step,    setStep]    = useState(1)
-
-  useEffect(() => {
-    if (!user?.id) return
-    // Read-only: fetch existing token from the canonical column (user_token)
-    // This is the same token shown in Settings → API Keys.
-    // DO NOT generate here — generation is handled exclusively in Settings → API Keys.
-    supabase.from("profiles")
-      .select("user_token, ea_token")
-      .eq("id", user.id)
-      .single()
-      .then(({ data }) => {
-        // Prefer user_token (canonical), fallback to ea_token (legacy)
-        setToken(data?.user_token || data?.ea_token || "")
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
-  }, [user?.id])
-
-  const copy = (text, key) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(key)
-      setTimeout(() => setCopied(""), 2000)
-    })
-  }
-
-  const STEPS = [
-    {
-      n: 1,
-      title: "Download the EA",
-      content: (
-        <div className="space-y-3">
-          <p className="text-sm" style={{ fontFamily: "var(--font-display)", color: "var(--text-secondary)" }}>
-            TradeSylla_Sync.mq5 runs silently inside MT5 and automatically sends your closed trades to your journal. No manual exports needed.
-          </p>
-          <a href="/ea/TradeSylla_Sync.mq5" download className="btn btn-primary inline-flex">
-            <Download size={13}/> Download TradeSylla_Sync.mq5
-          </a>
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Compile it once in MetaEditor (free, bundled with MT5). Takes ~10 seconds.
-          </p>
+    ),
+  },
+  {
+    id: 3,
+    icon: (
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      </svg>
+    ),
+    label: 'Attach EA to a chart',
+    content: (
+      <div>
+        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1rem', lineHeight: 1.6 }}>
+          Open any chart in MT5 (the symbol and timeframe don't matter). Drag <strong style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>TradeSylla_Sync</strong> from the Navigator panel onto the chart. Repeat for <strong style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>TradeSylla_MarketData</strong>.
+        </p>
+        <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)', borderRadius: '10px', padding: '0.75rem 1rem', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="2" style={{ marginTop: '2px', flexShrink: 0 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <span style={{ fontSize: '12px', color: 'rgba(234,179,8,0.9)', lineHeight: 1.5 }}>Make sure "Allow live trading" is checked in the EA settings when attaching.</span>
         </div>
-      ),
-    },
-    {
-      n: 2,
-      title: "Install in MT5",
-      content: (
-        <div className="space-y-3">
-          <p className="text-sm" style={{ fontFamily: "var(--font-display)", color: "var(--text-secondary)" }}>
-            In MT5: <strong style={{ color: "var(--text-primary)" }}>File → Open Data Folder</strong>, navigate to{" "}
-            <code className="mono px-1 rounded" style={{ background: "var(--bg-elevated)", fontSize: 11, color: "var(--accent)" }}>MQL5/Experts/</code>,
-            drop the file in. Press <strong style={{ color: "var(--text-primary)" }}>F5</strong> in Navigator to refresh.
-          </p>
-          <button onClick={() => { copy("MQL5/Experts/", "path"); toast.success("Path copied!") }}
-            className="btn btn-secondary gap-1.5 text-xs">
-            <Copy size={11}/> Copy path
-            {copied === "path" && <CheckCircle size={11} style={{ color: "var(--accent-success)" }}/>}
+      </div>
+    ),
+  },
+  {
+    id: 4,
+    icon: (
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+      </svg>
+    ),
+    label: 'Whitelist TradeSylla URL',
+    content: (
+      <div>
+        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1rem', lineHeight: 1.6 }}>
+          MT5 requires you to explicitly allow external connections. Add the TradeSylla endpoint to your allowed URLs list.
+        </p>
+        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1rem' }}>
+          {['Go to Tools → Options → Expert Advisors', 'Check "Allow WebRequest for listed URL"', 'Add the URL below to the list', 'Click OK and restart'].map((step, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ minWidth: '22px', height: '22px', borderRadius: '50%', background: 'rgba(139,92,246,0.2)', color: 'var(--color-accent, #8b5cf6)', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
+              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{step}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px 14px' }}>
+          <code className="mono" style={{ fontSize: '12px', color: 'var(--color-accent, #8b5cf6)', flex: 1, wordBreak: 'break-all' }}>https://tradesylla.vercel.app/api/ea-sync</code>
+          <button
+            className="btn btn-secondary"
+            style={{ padding: '4px 10px', fontSize: '11px', flexShrink: 0 }}
+            onClick={() => navigator.clipboard?.writeText('https://tradesylla.vercel.app/api/ea-sync')}
+          >
+            Copy
           </button>
         </div>
-      ),
-    },
-    {
-      n: 3,
-      title: "Copy your Sync Token",
-      content: (
-        <div className="space-y-3">
-          {/* ─── THE KEY CHANGE: read-only display, no generate button ─── */}
-          <div className="rounded-xl p-3 flex items-start gap-2.5"
-            style={{ background: "rgba(108,99,255,0.06)", border: "1px solid rgba(108,99,255,0.2)" }}>
-            <Lock size={13} className="flex-shrink-0 mt-0.5" style={{ color: "var(--accent)" }}/>
-            <p className="text-xs leading-relaxed" style={{ fontFamily: "var(--font-display)", color: "var(--text-secondary)" }}>
-              Your Sync Token is generated in{" "}
-              <Link to={createPageUrl("Settings")} className="font-bold underline" style={{ color: "var(--accent)" }}>
-                Settings → API Keys
-              </Link>{" "}
-              and displayed here for convenience. <strong style={{ color: "var(--text-primary)" }}>Never regenerate from two places</strong> — it invalidates your working EA token.
-            </p>
-          </div>
-
-          {loading ? (
-            <div className="h-10 rounded-xl animate-pulse" style={{ background: "var(--bg-elevated)" }}/>
-          ) : token ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
-                style={{ background: "var(--bg-elevated)", border: "1px solid rgba(46,213,115,0.3)" }}>
-                <span className="flex-1 truncate mono text-xs" style={{ color: "var(--accent-success)" }}>
-                  {"●".repeat(12)}...{token.slice(-6)}
-                </span>
-                <button onClick={() => copy(token, "token")} className="hover:opacity-70 flex-shrink-0 flex items-center gap-1.5 text-xs font-semibold"
-                  style={{ color: "var(--accent-success)", fontFamily: "var(--font-display)" }}>
-                  {copied === "token" ? <><CheckCircle size={12}/> Copied!</> : <><Copy size={12}/> Copy</>}
-                </button>
-              </div>
-              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                Paste this into the <strong>UserToken</strong> field of <strong>TradeSylla_Sync.mq5</strong>
-              </p>
+      </div>
+    ),
+  },
+  {
+    id: 5,
+    icon: (
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    label: 'You\'re live — trades sync automatically',
+    content: (
+      <div>
+        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1rem', lineHeight: 1.6 }}>
+          Once the EA is running, every closed trade is pushed to TradeSylla within seconds. No manual imports, no CSV files.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          {[
+            { label: 'Sync frequency', value: 'Real-time' },
+            { label: 'Trade data', value: 'Full history' },
+            { label: 'Market data', value: 'OHLCV candles' },
+            { label: 'Manual input needed', value: 'None' },
+          ].map(({ label, value }) => (
+            <div key={label} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '10px 12px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '3px' }}>{label}</div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-primary)' }}>{value}</div>
             </div>
-          ) : (
-            // No token yet — redirect to Settings to generate
-            <div className="rounded-xl p-4 space-y-3" style={{ background: "rgba(255,165,2,0.06)", border: "1px solid rgba(255,165,2,0.25)" }}>
-              <p className="text-sm font-semibold" style={{ fontFamily: "var(--font-display)", color: "var(--accent-warning)" }}>
-                ⚠ No token generated yet
-              </p>
-              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                Generate your Sync EA Token in Settings → API Keys first, then come back here to copy it.
-              </p>
-              <Link to={createPageUrl("Settings")}
-                className="btn btn-primary gap-1.5 inline-flex text-xs"
-                onClick={() => {
-                  // Deep-link to the apikeys tab
-                  localStorage.setItem("ts_settings_page", "apikeys")
-                }}>
-                <Key size={12}/> Go to Settings → API Keys <ArrowRight size={11}/>
-              </Link>
-            </div>
-          )}
+          ))}
         </div>
-      ),
-    },
-    {
-      n: 4,
-      title: "Attach EA to a chart",
-      content: (
-        <div className="space-y-3">
-          <p className="text-sm" style={{ fontFamily: "var(--font-display)", color: "var(--text-secondary)" }}>
-            Open any chart in MT5 (e.g. EURUSD H1). In Navigator → Expert Advisors, double-click{" "}
-            <strong style={{ color: "var(--text-primary)" }}>TradeSylla_Sync</strong>. Paste your token into{" "}
-            <strong style={{ color: "var(--accent)" }}>UserToken</strong>. Click OK.
-          </p>
-          <div className="p-3 rounded-xl text-sm" style={{ background: "rgba(255,165,2,0.08)", border: "1px solid rgba(255,165,2,0.2)", color: "var(--accent-warning)" }}>
-            ⚠ Make sure <strong>Auto Trading</strong> is enabled (green button at top of MT5) and the EA shows a <strong>smiley face</strong> on the chart.
-          </div>
-        </div>
-      ),
-    },
-    {
-      n: 5,
-      title: "Whitelist TradeSylla in MT5",
-      content: (
-        <div className="space-y-3">
-          <p className="text-sm" style={{ fontFamily: "var(--font-display)", color: "var(--text-secondary)" }}>
-            MT5 blocks external URLs by default. Add TradeSylla once:
-          </p>
-          <ol className="space-y-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-            <li>1. <strong style={{ color: "var(--text-primary)" }}>Tools → Options → Expert Advisors</strong></li>
-            <li>2. Check <strong style={{ color: "var(--text-primary)" }}>Allow WebRequest for listed URL</strong></li>
-            <li>3. Click <strong style={{ color: "var(--text-primary)" }}>+</strong> and add the URL below</li>
-          </ol>
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
-            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
-            <span className="flex-1 mono text-xs" style={{ color: "var(--accent)" }}>
-              https://tradesylla.vercel.app
-            </span>
-            <button onClick={() => copy("https://tradesylla.vercel.app", "url")} className="hover:opacity-70" style={{ color: "var(--text-muted)" }}>
-              {copied === "url" ? <CheckCircle size={13} style={{ color: "var(--accent-success)" }}/> : <Copy size={13}/>}
-            </button>
-          </div>
-        </div>
-      ),
-    },
-  ]
+      </div>
+    ),
+  },
+];
 
-  return (
-    <div className="space-y-3">
-      {STEPS.map(s => {
-        const isActive = step === s.n
-        const isDone   = step > s.n
-        return (
-          <div key={s.n} className="card overflow-hidden">
-            <button
-              className="w-full flex items-center justify-between px-5 py-4"
-              onClick={() => setStep(isActive ? 0 : s.n)}>
-              <div className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                  style={{
-                    background: isDone ? "var(--accent-success)" : isActive ? "var(--accent)" : "var(--bg-elevated)",
-                    color:      isDone || isActive ? "#fff" : "var(--text-muted)",
-                    fontFamily: "var(--font-mono)",
-                  }}>
-                  {isDone ? "✓" : s.n}
-                </div>
-                <span className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)", color: isActive ? "var(--text-primary)" : "var(--text-secondary)" }}>
-                  {s.title}
-                </span>
-              </div>
-              {isActive ? <ChevronUp size={14} style={{ color: "var(--text-muted)" }}/> : <ChevronDown size={14} style={{ color: "var(--text-muted)" }}/>}
-            </button>
-            {isActive && (
-              <div className="px-5 pb-5" style={{ borderTop: "1px solid var(--border)" }}>
-                <div className="pt-4">{s.content}</div>
-                {s.n < STEPS.length && (
-                  <button onClick={() => setStep(s.n + 1)} className="mt-4 btn btn-secondary text-xs h-8">
-                    Next step →
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
+const MARKET_TYPES = [
+  { icon: '💱', label: 'Forex', desc: 'All major, minor & exotic pairs' },
+  { icon: '📈', label: 'Futures', desc: 'Indices, commodities & rates' },
+  { icon: '🪙', label: 'Crypto', desc: 'Spot & derivatives markets' },
+  { icon: '🏦', label: 'CFDs', desc: 'Stocks, metals & energy' },
+];
 
-// ─── Troubleshoot Panel ───────────────────────────────────────────────────────
-function TroubleshootPanel() {
-  const issues = [
-    {
-      title: "EA connects but sends no data",
-      desc:  "Go to Settings → API Keys → regenerate the Sync EA Token → update UserToken in the EA → remove and re-attach the EA to the chart.",
-      color: "var(--accent-warning)",
-    },
-    {
-      title: "401 Invalid token in MT5 Experts log",
-      desc:  "Token mismatch. Always regenerate in Settings → API Keys — never from BrokerSync. Paste the fresh token into the EA.",
-      color: "var(--accent-danger)",
-    },
-    {
-      title: "Error 4060 — URL not whitelisted",
-      desc:  "Tools → Options → Expert Advisors → Allow WebRequest → add https://tradesylla.vercel.app",
-      color: "var(--accent-warning)",
-    },
-    {
-      title: "EA shows ✕ (red X) on the chart",
-      desc:  "Auto Trading is disabled. Click the green Auto Trading button at the top of MT5.",
-      color: "var(--accent-warning)",
-    },
-    {
-      title: "Trades sent but not in Journal",
-      desc:  "Set ForceResync=true in the EA inputs, remove and re-attach the EA, then set ForceResync back to false.",
-      color: "var(--accent)",
-    },
-  ]
-
-  return (
-    <div className="space-y-3">
-      {issues.map(issue => (
-        <div key={issue.title} className="card p-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: issue.color }}/>
-            <div>
-              <p className="text-sm font-bold mb-1" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>{issue.title}</p>
-              <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>{issue.desc}</p>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function BrokerSync() {
-  const [connections, setConnections] = useState([])
-  const [tab, setTab] = useState("setup")
-
-  useEffect(() => {
-    BrokerConnection.list().then(d => setConnections((d || []).filter(c => c.is_mt5_live)))
-  }, [])
-
-  const liveCount    = connections.length
-  const totalBalance = connections.reduce((s, c) => s + (parseFloat(c.balance) || 0), 0)
-  const totalEquity  = connections.reduce((s, c) => s + (parseFloat(c.equity)  || 0), 0)
-
-  const TABS = [
-    { id: "setup",       label: "EA Setup",    icon: Terminal },
-    { id: "accounts",    label: `Accounts${liveCount > 0 ? ` (${liveCount})` : ""}`, icon: Wifi },
-    { id: "troubleshoot",label: "Troubleshoot",icon: AlertTriangle },
-  ]
+  const [openStep, setOpenStep] = useState(null);
+  const [showSetup, setShowSetup] = useState(connectedAccounts.length === 0);
 
   return (
-    <div>
+    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h1 className="gradient-text font-black" style={{ fontFamily: "var(--font-display)", fontSize: 28 }}>Broker Sync</h1>
-          <p className="mono text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-            Connect MT5 via Expert Advisor · {liveCount} account{liveCount !== 1 ? "s" : ""} connected
+          <h1 style={{ fontFamily: 'var(--font-display, Syne, sans-serif)', fontSize: '1.75rem', fontWeight: 700, margin: '0 0 6px' }}>
+            <span className="gradient-text">BrokerSync</span>
+          </h1>
+          <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '0.9rem' }}>
+            Connect your MT5 account and let trades flow in automatically.
           </p>
         </div>
-        {liveCount > 0 && (
-          <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
-            style={{ background: "rgba(46,213,115,0.08)", border: "1px solid rgba(46,213,115,0.2)" }}>
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"/>
-            <span className="text-xs font-semibold mono" style={{ color: "var(--accent-success)" }}>
-              {liveCount} account{liveCount !== 1 ? "s" : ""} syncing live
-            </span>
+        <button
+          className="btn btn-primary"
+          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+          onClick={() => setShowSetup(true)}
+        >
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          Add connection
+        </button>
+      </div>
+
+      {/* Stat cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '2rem' }}>
+        {[
+          { label: 'Connected accounts', value: connectedAccounts.length },
+          { label: 'Synced trades', value: '142' },
+          { label: 'Last sync', value: '2 min ago' },
+          { label: 'Sync status', value: 'Live', accent: true },
+        ].map(({ label, value, accent }) => (
+          <div key={label} className="stat-card">
+            <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{label}</div>
+            <div className={accent ? 'gradient-text' : ''} style={{ fontSize: '1.25rem', fontFamily: 'var(--font-display, Syne, sans-serif)', fontWeight: 700 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Connected accounts */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2 style={{ fontFamily: 'var(--font-display, Syne, sans-serif)', fontSize: '1rem', fontWeight: 600, margin: 0 }}>Connected accounts</h2>
+          <span className="badge">{connectedAccounts.length} active</span>
+        </div>
+
+        {connectedAccounts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '2.5rem 1rem', border: '1px dashed rgba(255,255,255,0.12)', borderRadius: '10px' }}>
+            <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,0.2)" strokeWidth="1.2" style={{ margin: '0 auto 1rem', display: 'block' }}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            <p style={{ color: 'var(--color-text-secondary)', margin: '0 0 1rem', fontSize: '0.875rem' }}>No accounts connected yet</p>
+            <button className="btn btn-primary" onClick={() => setShowSetup(true)}>Connect your first account</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {connectedAccounts.map((acc) => (
+              <div key={acc.id} className="card-hover" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="rgba(139,92,246,0.9)" strokeWidth="1.8">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                  </svg>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '2px' }}>{acc.broker} · {acc.type}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                    Account <span className="mono">{acc.account}</span> · {acc.trades} trades · Last sync: {acc.lastSync}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                  <span className="badge">{acc.market}</span>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: acc.status === 'active' ? '#22c55e' : '#ef4444', display: 'inline-block' }} />
+                  <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }}>Manage</button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Stat cards */}
-      {liveCount > 0 && (
-        <div className="flex flex-wrap gap-3 mb-5">
-          {[
-            { label: "Connected",    v: liveCount,                     color: "var(--accent)",            icon: Wifi },
-            { label: "Total Balance",v: `$${totalBalance.toFixed(2)}`, color: "var(--text-primary)",      icon: BarChart2 },
-            { label: "Total Equity", v: `$${totalEquity.toFixed(2)}`,  color: totalEquity >= totalBalance ? "var(--accent-success)" : "var(--accent-danger)", icon: TrendingUp },
-          ].map(s => (
-            <div key={s.label} className="stat-card flex items-center gap-3 flex-none px-4 py-3">
-              <div className="stat-card-icon" style={{ background: `${s.color}18` }}>
-                <s.icon size={15} style={{ color: s.color }}/>
-              </div>
-              <div>
-                <p className="stat-card-value mono" style={{ color: s.color, fontSize: 18 }}>{s.v}</p>
-                <p className="stat-card-label">{s.label}</p>
-              </div>
+      {/* EA Setup Accordion */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: showSetup ? '1.25rem' : 0 }}
+          onClick={() => setShowSetup(v => !v)}
+        >
+          <div>
+            <h2 style={{ fontFamily: 'var(--font-display, Syne, sans-serif)', fontSize: '1rem', fontWeight: 600, margin: '0 0 3px' }}>How to connect MT5</h2>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px', margin: 0 }}>Step-by-step EA installation guide</p>
+          </div>
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" style={{ transform: showSetup ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', opacity: 0.5, flexShrink: 0 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+
+        {showSetup && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {STEPS.map((step, idx) => {
+              const isOpen = openStep === step.id;
+              const isDone = connectedAccounts.length > 0 && step.id < 5;
+              return (
+                <div
+                  key={step.id}
+                  style={{
+                    border: `1px solid ${isOpen ? 'rgba(139,92,246,0.35)' : 'rgba(255,255,255,0.07)'}`,
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    transition: 'border-color 0.2s',
+                  }}
+                >
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', cursor: 'pointer', userSelect: 'none' }}
+                    onClick={() => setOpenStep(isOpen ? null : step.id)}
+                  >
+                    <div style={{
+                      width: '32px', height: '32px', borderRadius: '8px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: isDone ? 'rgba(34,197,94,0.12)' : isOpen ? 'rgba(139,92,246,0.15)' : 'rgba(255,255,255,0.05)',
+                      color: isDone ? '#22c55e' : isOpen ? 'rgba(139,92,246,0.9)' : 'var(--color-text-secondary)',
+                      transition: 'background 0.2s, color 0.2s',
+                    }}>
+                      {isDone ? (
+                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : step.icon}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>Step {idx + 1}</span>
+                        {idx === 0 && <span className="badge" style={{ fontSize: '10px' }}>Start here</span>}
+                      </div>
+                      <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{step.label}</div>
+                    </div>
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', opacity: 0.4, flexShrink: 0 }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+
+                  {isOpen && (
+                    <div style={{ padding: '0 14px 14px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ paddingTop: '12px' }}>{step.content}</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Supported market types */}
+      <div className="card">
+        <h2 style={{ fontFamily: 'var(--font-display, Syne, sans-serif)', fontSize: '1rem', fontWeight: 600, margin: '0 0 1rem' }}>
+          Supported markets
+        </h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+          {MARKET_TYPES.map(({ icon, label, desc }) => (
+            <div key={label} className="card-hover" style={{ padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div style={{ fontSize: '22px', marginBottom: '8px' }}>{icon}</div>
+              <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '3px' }}>{label}</div>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{desc}</div>
             </div>
           ))}
         </div>
-      )}
-
-      {/* Tabs */}
-      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ background: "var(--bg-elevated)" }}>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-            style={{ background: tab === t.id ? "var(--accent)" : "transparent", color: tab === t.id ? "#fff" : "var(--text-secondary)", fontFamily: "var(--font-display)" }}>
-            <t.icon size={13}/>{t.label}
-          </button>
-        ))}
+        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '1rem', marginBottom: 0 }}>
+          Any broker running MT5 is supported. The EA works with all instruments available on your account.
+        </p>
       </div>
 
-      {tab === "setup"        && <EASetupPanel/>}
-      {tab === "accounts"     && (
-        liveCount === 0 ? (
-          <div className="card py-16 text-center">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background: "rgba(46,213,115,0.1)" }}>
-              <WifiOff size={22} style={{ color: "var(--accent-success)" }}/>
-            </div>
-            <p className="font-bold mb-1" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>No accounts connected yet</p>
-            <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>Complete the EA Setup and attach it to a chart in MT5.</p>
-            <button onClick={() => setTab("setup")} className="btn btn-primary">Go to EA Setup</button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {connections.map(c => <ConnectionCard key={c.id} conn={c}/>)}
-          </div>
-        )
-      )}
-      {tab === "troubleshoot" && <TroubleshootPanel/>}
     </div>
-  )
+  );
 }
