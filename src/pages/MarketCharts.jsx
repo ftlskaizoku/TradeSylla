@@ -105,22 +105,71 @@ export default function MarketCharts() {
   const [drawings,      setDrawings]      = useState([])
   const [pendingDraw,   setPendingDraw]   = useState(null)
 
+  // Chart appearance
+  const [bullColor,   setBullColor]   = useState(() => localStorage.getItem("ts_bull_color") || "#2ed573")
+  const [bearColor,   setBearColor]   = useState(() => localStorage.getItem("ts_bear_color") || "#ff4757")
+  const [showVolume,  setShowVolume]  = useState(() => localStorage.getItem("ts_show_volume") !== "false")
+  const [showColors,  setShowColors]  = useState(false)
+
   // Refs
   const containerRef     = useRef(null)
   const chartRef         = useRef(null)
   const candleSeriesRef  = useRef(null)
   const volumeSeriesRef  = useRef(null)
   const overlayRef       = useRef(null)
-  const candlesRef       = useRef([])       // raw data for coord lookup
+  const candlesRef       = useRef([])
   const drawingsRef      = useRef([])
   const pendingRef       = useRef(null)
   const activeToolRef    = useRef("cursor")
   const roRef            = useRef(null)
+  const bullColorRef     = useRef(bullColor)
+  const bearColorRef     = useRef(bearColor)
+  const showVolumeRef    = useRef(showVolume)
 
   // Keep refs synced
   useEffect(() => { drawingsRef.current  = drawings },   [drawings])
   useEffect(() => { pendingRef.current   = pendingDraw }, [pendingDraw])
   useEffect(() => { activeToolRef.current = activeTool }, [activeTool])
+
+  // Live-update candle colors without reinitializing chart
+  useEffect(() => {
+    bullColorRef.current = bullColor
+    bearColorRef.current = bearColor
+    localStorage.setItem("ts_bull_color", bullColor)
+    localStorage.setItem("ts_bear_color", bearColor)
+    if (!candleSeriesRef.current) return
+    candleSeriesRef.current.applyOptions({
+      upColor: bullColor, downColor: bearColor,
+      borderUpColor: bullColor, borderDownColor: bearColor,
+      wickUpColor: bullColor, wickDownColor: bearColor,
+    })
+    // Re-color volume bars
+    if (candlesRef.current.length && volumeSeriesRef.current) {
+      const vols = candlesRef.current.map((c, i) => ({
+        time: c.time,
+        value: c.volume || 0,
+        color: c.close >= c.open
+          ? bullColor + "40"
+          : bearColor + "40",
+      }))
+      // We don't have volume in candlesRef, just re-load silently
+    }
+  }, [bullColor, bearColor])
+
+  // Live-update volume visibility
+  useEffect(() => {
+    showVolumeRef.current = showVolume
+    localStorage.setItem("ts_show_volume", showVolume)
+    if (!volumeSeriesRef.current) return
+    volumeSeriesRef.current.applyOptions({ visible: showVolume })
+    if (chartRef.current) {
+      chartRef.current.applyOptions({
+        rightPriceScale: {
+          scaleMargins: { top: 0.08, bottom: showVolume ? 0.22 : 0.05 },
+        }
+      })
+    }
+  }, [showVolume])
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -156,6 +205,7 @@ export default function MarketCharts() {
         textColor: "#6b7280",
         fontFamily: "'JetBrains Mono', 'SF Mono', monospace",
         fontSize: 11,
+        attributionLogo: false,
       },
       grid: {
         vertLines: { color: "rgba(255,255,255,0.03)" },
@@ -194,13 +244,15 @@ export default function MarketCharts() {
       handleScale:  { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
     })
 
+    const bc = bullColorRef.current || "#2ed573"
+    const rc = bearColorRef.current || "#ff4757"
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor:         "#2ed573",
-      downColor:       "#ff4757",
-      borderUpColor:   "#2ed573",
-      borderDownColor: "#ff4757",
-      wickUpColor:     "#2ed573",
-      wickDownColor:   "#ff4757",
+      upColor:         bc,
+      downColor:       rc,
+      borderUpColor:   bc,
+      borderDownColor: rc,
+      wickUpColor:     bc,
+      wickDownColor:   rc,
     })
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -208,6 +260,7 @@ export default function MarketCharts() {
       priceScaleId:   "",
       scaleMargins:   { top: 0.82, bottom: 0 },
     })
+    volumeSeries.applyOptions({ visible: showVolumeRef.current })
 
     chartRef.current        = chart
     candleSeriesRef.current = candleSeries
@@ -633,6 +686,63 @@ export default function MarketCharts() {
           <span className="text-xs" style={{ color:"var(--text-muted)" }}>
             {barCount > 0 ? `${barCount} bars` : ""}
           </span>
+
+          {/* Volume toggle */}
+          <button
+            onClick={() => setShowVolume(v => !v)}
+            title={showVolume ? "Hide volume" : "Show volume"}
+            className="px-2 py-1 rounded-lg text-xs font-semibold transition-all"
+            style={{
+              background: showVolume ? "rgba(108,99,255,0.15)" : "var(--bg-elevated)",
+              color: showVolume ? "var(--accent)" : "var(--text-muted)",
+              border: `1px solid ${showVolume ? "rgba(108,99,255,0.3)" : "var(--border)"}`,
+            }}>
+            VOL
+          </button>
+
+          {/* Candle color picker */}
+          <div className="relative">
+            <button
+              onClick={() => setShowColors(v => !v)}
+              title="Candle colors"
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold transition-all"
+              style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--text-muted)" }}>
+              <span className="w-3 h-3 rounded-sm inline-block" style={{ background: bullColor }}/>
+              <span className="w-3 h-3 rounded-sm inline-block" style={{ background: bearColor }}/>
+            </button>
+            {showColors && (
+              <div className="absolute top-full right-0 mt-1 rounded-xl shadow-2xl z-50 p-3 flex flex-col gap-3"
+                style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", minWidth:160 }}>
+                <div>
+                  <p className="text-xs mb-1.5 font-semibold" style={{ color:"var(--text-muted)" }}>Bull candle</p>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={bullColor} onChange={e => setBullColor(e.target.value)}
+                      className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"/>
+                    <span className="text-xs font-mono" style={{ color:"var(--text-secondary)" }}>{bullColor}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs mb-1.5 font-semibold" style={{ color:"var(--text-muted)" }}>Bear candle</p>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={bearColor} onChange={e => setBearColor(e.target.value)}
+                      className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"/>
+                    <span className="text-xs font-mono" style={{ color:"var(--text-secondary)" }}>{bearColor}</span>
+                  </div>
+                </div>
+                <div className="flex gap-1.5">
+                  {[["#2ed573","#ff4757"],["#26a69a","#ef5350"],["#ffffff","#434651"],["#f7c948","#6c63ff"]].map(([b,r]) => (
+                    <button key={b} onClick={() => { setBullColor(b); setBearColor(r) }}
+                      className="flex flex-col gap-0.5 p-1 rounded-lg hover:opacity-80"
+                      style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+                      <span className="w-4 h-2 rounded-sm block" style={{ background: b }}/>
+                      <span className="w-4 h-2 rounded-sm block" style={{ background: r }}/>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <button onClick={() => { chartRef.current?.timeScale().fitContent() }}
             title="Fit content"
             className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
