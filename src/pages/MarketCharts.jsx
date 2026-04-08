@@ -3,7 +3,7 @@
 // requires: npm install lightweight-charts
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { createChart, CrosshairMode } from "lightweight-charts"
+import { createChart, CrosshairMode, CandlestickSeries, HistogramSeries } from "lightweight-charts"
 import { useUser }  from "@/lib/UserContext"
 import { supabase } from "@/lib/supabase"
 import {
@@ -194,7 +194,7 @@ export default function MarketCharts() {
       handleScale:  { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
     })
 
-    const candleSeries = chart.addCandlestickSeries({
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor:         "#2ed573",
       downColor:       "#ff4757",
       borderUpColor:   "#2ed573",
@@ -203,7 +203,7 @@ export default function MarketCharts() {
       wickDownColor:   "#ff4757",
     })
 
-    const volumeSeries = chart.addHistogramSeries({
+    const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat:    { type: "volume" },
       priceScaleId:   "",
       scaleMargins:   { top: 0.82, bottom: 0 },
