@@ -30,10 +30,10 @@ int HIST_WINDOW[] = { 604800, 2592000, 7776000, 31536000, 94608000, 0 };
 // ── Target symbols: canonical name + broker alias candidates ─────────────────
 // The EA tries each alias until one resolves in Market Watch.
 // Data is always sent using the CANONICAL name so the DB stays consistent.
-#define TARGET_COUNT 9
+#define TARGET_COUNT 11
 string TARGET_CANONICAL[TARGET_COUNT] = {
    "EURUSD","GBPUSD","XAUUSD","BTCUSD","ETHUSD",
-   "US30","US100","UK100","GER30"
+   "US30","US100","UK100","GER30","USOIL","UKOIL"
 };
 string TARGET_ALIASES[TARGET_COUNT][8] = {
    { "EURUSD","EURUSDm","EURUSD.","EURUSD+","","","","" },
@@ -42,9 +42,11 @@ string TARGET_ALIASES[TARGET_COUNT][8] = {
    { "BTCUSD","BTCUSDm","BTCUSD.","BTC/USD","BTCUSDT","","","" },
    { "ETHUSD","ETHUSDm","ETHUSD.","ETH/USD","ETHUSDT","","","" },
    { "US30","DJ30","DJIA","WS30","USA30","US30m","DJI","" },
-   { "US100","NAS100","NASDAQ","USTEC","NAS100m","NDX","US100m","USTECH" },
+   { "USTEC","US100","NAS100","NASDAQ","NAS100m","NDX","US100m","USTECH" },  // Exness = USTEC
    { "UK100","FTSE100","UK100m","FTSE","GBR100","UK100.","","" },
-   { "GER30","GER40","DAX","DAX40","DAX30","GER30m","GER40m","DE30" }
+   { "DE30","GER30","GER40","DAX","DAX40","GER30m","GER40m","DE40" },       // Exness = DE30
+   { "USOIL","WTI","XTIUSD","CL","OIL","USOILm","USOIL.","" },
+   { "UKOIL","BRENT","XBRUSD","UKOIL.","UKOILm","BRN","BRENTOIL","" }
 };
 
 // Resolved broker names — filled at OnInit
@@ -283,13 +285,6 @@ void CmdFetchCandles(string id,string sym,string tfName,string fromS,string toS,
          ISO(r[i].time),r[i].open,r[i].high,r[i].low,r[i].close,r[i].tick_volume);
       if(i<n-1) body+=",";
    }
-   POST("/api/sylledge-commands/response",body+"]}");
-}
-
-void CmdFetchSymbols(string id) {
-   string syms[]; int n=GetSymbols(syms);
-   string body="{\"command_id\":\""+id+"\",\"type\":\"symbols\",\"symbols\":[";
-   for(int i=0;i<n;i++){body+="\""+syms[i]+"\"";if(i<n-1)body+=",";}
    POST("/api/sylledge-commands/response",body+"]}");
 }
 
