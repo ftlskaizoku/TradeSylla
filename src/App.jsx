@@ -19,6 +19,7 @@ import Settings      from "@/pages/Settings"
 import Admin         from "@/pages/Admin"
 import Pricing       from "@/pages/Pricing"
 import MarketCharts  from "@/pages/MarketCharts"
+import Notebook      from "@/pages/Notebook"
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useUser()
@@ -51,6 +52,7 @@ function AppRoutes() {
     { path:"Settings",     El:Settings     },
     { path:"Admin",        El:Admin        },
     { path:"MarketCharts", El:MarketCharts },
+    { path:"Notebook",     El:Notebook     },
   ]
 
   return (

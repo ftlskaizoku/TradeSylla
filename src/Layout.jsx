@@ -4,7 +4,7 @@ import { createPageUrl } from "@/utils"
 import {
   LayoutDashboard, BookOpen, BarChart3, Brain, FlaskConical,
   Settings, Menu, X, ChevronRight, TrendingUp, Shield, Wifi,
-  CalendarDays, Zap, LayoutGrid, BarChart2
+  CalendarDays, Zap, LayoutGrid, BarChart2, NotebookPen
 } from "lucide-react"
 import { useUser } from "@/lib/UserContext"
 import { supabase } from "@/lib/supabase"
@@ -49,6 +49,7 @@ export default function Layout({ children, currentPageName }) {
   const navItems = [
     { label:"Dashboard",   Icon:LayoutDashboard, page:"Dashboard",          emoji:"📊" },
     { label:"Journal",     Icon:BookOpen,        page:"Journal",            emoji:"📒", badge: tradeCount > 0 ? tradeCount.toLocaleString() : null },
+    { label:"Notebook",    Icon:NotebookPen,     page:"Notebook",           emoji:"✍️" },
     { label:"Calendar",    Icon:CalendarDays,    page:"Journal?view=calendar", emoji:"📅" },
     { label:"Analytics",   Icon:BarChart3,       page:"Analytics",          emoji:"📈" },
     { label:"Playbook",    Icon:Shield,          page:"Playbook",           emoji:"🛡️" },
