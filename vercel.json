@@ -3,9 +3,6 @@
     "api/sylledge-chat.js": {
       "maxDuration": 60
     },
-    "api/mt5-direct.js": {
-      "maxDuration": 60
-    },
     "api/ea-sync.js": {
       "maxDuration": 30
     },

@@ -1,7 +1,13 @@
 //+------------------------------------------------------------------+
-//| TradeSylla_MarketData.mq5   v3.4                                 |
+//| TradeSylla_MarketData.mq5   v3.5                                 |
 //|                                                                    |
-//| NEW in v3.4 — INCREMENTAL SYNC:                                  |
+//| NEW in v3.5 — PERIODIC GAP-FILL:                                 |
+//|  After the initial sync completes, the EA restarts the gap-fill  |
+//|  every ReSyncHours hours automatically. This means even if data  |
+//|  stopped in 2023, it will catch up on next restart — without     |
+//|  deleting any existing records (pure upsert, no duplicates).     |
+//|                                                                    |
+//| v3.4 — INCREMENTAL SYNC:                                         |
 //|  Before loading bars for each sym/tf, queries the API for the    |
 //|  latest candle_time already stored. Only fetches bars AFTER      |
 //|  that timestamp → fills gaps without re-sending existing data.   |
@@ -10,7 +16,7 @@
 //|  FullHistorySync=false → live push only (no gap-fill)            |
 //+------------------------------------------------------------------+
 #property copyright "TradeSylla"
-#property version   "3.40"
+#property version   "3.50"
 
 input string AdminToken      = "";
 input string ServerURL       = "https://tradesylla.vercel.app";
@@ -18,6 +24,7 @@ input bool   FullHistorySync = true;
 input int    PollInterval    = 10;
 input int    LiveInterval    = 60;
 input int    SyncDelay       = 80;
+input int    ReSyncHours     = 4;   // re-run gap-fill every N hours (0 = disable)
 
 ENUM_TIMEFRAMES TFS[]    = { PERIOD_M1, PERIOD_M5, PERIOD_M15, PERIOD_H1, PERIOD_H4, PERIOD_D1 };
 string          TFNAMES[]= { "M1","M5","M15","H1","H4","D1" };
@@ -51,6 +58,7 @@ int    g_symCount    = 0;
 
 datetime g_lastLive    = 0;
 datetime g_lastPoll    = 0;
+datetime g_lastResync  = 0;   // tracks when we last triggered a gap-fill
 bool     g_histDone    = false;
 int      g_symIdx      = 0;
 int      g_tfIdx       = 0;
@@ -62,9 +70,10 @@ int      MAX_RETRIES   = 3;
 
 int OnInit() {
    if(AdminToken == "") { Alert("TradeSylla MarketData: Set AdminToken"); return INIT_FAILED; }
-   Print("TradeSylla MarketData v3.3 starting...");
+   Print("TradeSylla MarketData v3.5 starting...");
    Print("ServerURL: ", ServerURL);
    Print("FullHistorySync: ", FullHistorySync ? "YES" : "NO");
+   Print("ReSyncHours: ", ReSyncHours, " (0=disabled)");
 
    // Resolve each target symbol to its broker-specific Market Watch name
    g_symCount = 0;
@@ -104,7 +113,24 @@ void OnDeinit(const int r) {
 
 void OnTimer() {
    datetime now = TimeCurrent();
+
+   // Gap-fill pass (initial or periodic)
    if(!g_histDone && FullHistorySync) { ProgressiveSyncStep(); return; }
+
+   // Periodic re-gap-fill: once g_histDone, restart every ReSyncHours
+   if(FullHistorySync && ReSyncHours > 0) {
+      datetime resyncInterval = (datetime)(ReSyncHours * 3600);
+      if(g_lastResync == 0) g_lastResync = now; // init on first live tick
+      if(now - g_lastResync >= resyncInterval) {
+         Print("Periodic re-sync triggered (every ", ReSyncHours, "h). Restarting gap-fill...");
+         g_histDone = false;
+         g_symIdx = 0; g_tfIdx = 0;
+         g_ratesLoaded = 0; g_batchStart = 0; g_retryCount = 0;
+         g_lastResync = now;
+         return;
+      }
+   }
+
    if(now - g_lastPoll >= PollInterval) { g_lastPoll = now; PollCommands(); }
    if(now - g_lastLive >= LiveInterval) { g_lastLive = now; PushLive(); }
 }
