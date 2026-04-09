@@ -145,11 +145,18 @@ YOUR CAPABILITIES:
 6. STRATEGY INTEGRATION: cross-reference active playbook with live performance
 7. RISK MANAGEMENT: position sizing, session exposure, max daily drawdown
 
-FILE GENERATION:
-• HTML: <<<HTML_FILE>>><!DOCTYPE html>...</html><<<END_HTML>>>
-• CSV: <<<CSV_FILE>>>header1,header2\nval1,val2<<<END_CSV>>>
-• JSON: <<<JSON_FILE>>>{...}<<<END_JSON>>>
-MEMORY: <<<MEMORY_UPDATE>>>key finding<<<END_MEMORY>>>
+⚠️ CRITICAL FILE GENERATION RULES — MUST FOLLOW EXACTLY:
+When the user asks for a report, file, HTML, or downloadable document you MUST:
+1. Output the COMPLETE file content wrapped in the tags below
+2. NEVER show raw code in the chat — always use the tags so the file auto-downloads
+3. The file must be COMPLETE and READY TO OPEN — not a snippet, not a template
+
+• HTML report: <<<HTML_FILE>>><!DOCTYPE html><html>...(full complete HTML here)...</html><<<END_HTML>>>
+• CSV data:     <<<CSV_FILE>>>col1,col2\nrow1val1,row1val2<<<END_CSV>>>
+• JSON:         <<<JSON_FILE>>>{...full json...}<<<END_JSON>>>
+• Memory:       <<<MEMORY_UPDATE>>>key finding to remember<<<END_MEMORY>>>
+
+When generating HTML reports: include inline CSS, all data embedded, charts using Chart.js CDN or SVG — no external dependencies except CDN links. Make it professional and dark-themed matching TradeSylla's aesthetic (#0a0b0f background, #6c63ff accent).
 
 Always be specific and data-driven. Reference actual numbers from the trader's data.`
 }
@@ -157,13 +164,17 @@ Always be specific and data-driven. Reference actual numbers from the trader's d
 
 
 function parseResp(text) {
-  const files=[]; let clean=text; let mdReq=null
-  const htmlM=text.match(/<<<HTML_FILE>>>([\s\S]*?)<<<END_HTML>>>/)
-  if(htmlM){ files.push({type:"html",name:"sylledge_report.html",content:htmlM[1].trim()}); clean=clean.replace(htmlM[0],"") }
-  const csvM=text.match(/<<<CSV_FILE>>>([\s\S]*?)<<<END_CSV>>>/)
-  if(csvM){ files.push({type:"csv",name:"sylledge_data.csv",content:csvM[1].trim()}); clean=clean.replace(csvM[0],"") }
-  const jsonM=text.match(/<<<JSON_FILE>>>([\s\S]*?)<<<END_JSON>>>/)
-  if(jsonM){ files.push({type:"json",name:"sylledge_analysis.json",content:jsonM[1].trim()}); clean=clean.replace(jsonM[0],"") }
+  const files=[]; let clean=text
+  // Match with or without closing tag (handles truncated responses)
+  const htmlM=text.match(/<<<HTML_FILE>>>([\s\S]*?)(?:<<<END_HTML>>>|$)/)
+  if(htmlM && htmlM[1].trim().startsWith("<!")) {
+    files.push({type:"html",name:"sylledge_report.html",content:htmlM[1].trim()})
+    clean=clean.replace(htmlM[0],"")
+  }
+  const csvM=text.match(/<<<CSV_FILE>>>([\s\S]*?)(?:<<<END_CSV>>>|$)/)
+  if(csvM && csvM[1].trim()){ files.push({type:"csv",name:"sylledge_data.csv",content:csvM[1].trim()}); clean=clean.replace(csvM[0],"") }
+  const jsonM=text.match(/<<<JSON_FILE>>>([\s\S]*?)(?:<<<END_JSON>>>|$)/)
+  if(jsonM && jsonM[1].trim()){ files.push({type:"json",name:"sylledge_analysis.json",content:jsonM[1].trim()}); clean=clean.replace(jsonM[0],"") }
   const mdM=text.match(/<<<REQUEST_MARKET_DATA>>>([\s\S]*?)<<<END_REQUEST>>>/)
   if(mdM){ try{ mdReq=JSON.parse(mdM[1].trim()) }catch{}; clean=clean.replace(mdM[0],"") }
   const memM=text.match(/<<<MEMORY_UPDATE>>>([\s\S]*?)<<<END_MEMORY>>>/)
@@ -302,7 +313,7 @@ export default function Sylledge() {
       const res = await fetch("/api/sylledge-chat", {
         method:"POST",
         headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${jwt}` },
-        body: JSON.stringify({ system, messages:[...history,{ role:"user",content }], max_tokens:1500 })
+        body: JSON.stringify({ system, messages:[...history,{ role:"user",content }], max_tokens:4096 })
       })
       if(!res.ok) {
         const err = await res.text()
