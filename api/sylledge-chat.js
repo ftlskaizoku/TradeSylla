@@ -3,12 +3,15 @@
 // SYLLEDGE calls this endpoint; this calls Anthropic using the server key.
 // Auth: valid Supabase JWT required (user must be logged in).
 
+// Extend Vercel function timeout to 60s (Pro) — needed for HTML report generation
+export const config = { maxDuration: 60 }
+
 import { createClient } from "@supabase/supabase-js"
 
-const SUPA_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabase = createClient(SUPA_URL, SUPA_KEY)
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin",  "*")
@@ -47,8 +50,8 @@ export default async function handler(req, res) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model:      model      || "claude-sonnet-4-6",
-        max_tokens: max_tokens || 2048,
+        model:      model      || "claude-sonnet-4-20250514",
+        max_tokens: max_tokens || 4096,
         system,
         messages,
       }),
@@ -57,10 +60,7 @@ export default async function handler(req, res) {
     const data = await anthropicRes.json()
 
     if (!anthropicRes.ok) {
-      console.error("Anthropic error:", anthropicRes.status, data)
-      return res.status(anthropicRes.status).json({
-        error: data.error?.message || `Anthropic returned ${anthropicRes.status}`
-      })
+      return res.status(anthropicRes.status).json({ error: data.error?.message || "Anthropic error" })
     }
 
     return res.status(200).json(data)
