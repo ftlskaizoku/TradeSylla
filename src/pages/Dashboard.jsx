@@ -9,7 +9,7 @@ import { createPageUrl } from "@/utils"
 import {
   TrendingUp, TrendingDown, BarChart3, Brain, Target,
   DollarSign, Activity, ArrowUpRight, ArrowDownRight,
-  Shield, ChevronRight, Plus, X, Calendar,
+  Shield, ChevronRight, Plus, X, Calendar, CalendarDays,
   Users, ToggleLeft, ToggleRight, Zap
 } from "lucide-react"
 import { Trade, Playbook, BrokerConnection, subscribeToTable } from "@/api/supabaseStore"

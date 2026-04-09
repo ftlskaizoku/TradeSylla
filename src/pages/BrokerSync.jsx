@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useUser } from '@/lib/UserContext';
+import { toast } from '@/components/ui/toast';
 
 // ── Tiny icon helper ──────────────────────────────────────────────────────────
 const Icon = ({ d, size = 16, stroke = 'currentColor', sw = 1.8 }) => (
@@ -164,10 +167,6 @@ const EA_STEPS = [
   },
 ];
 
-const MOCK_ACCOUNTS = [
-  { id: 1, broker: 'Exness', account: '12345678', type: 'MT5', method: 'EA', market: 'Forex', status: 'active', lastSync: '2 min ago', trades: 142 },
-];
-
 const MARKETS = [
   { emoji: '💱', label: 'Forex',   desc: 'Major, minor & exotic pairs' },
   { emoji: '📈', label: 'Futures', desc: 'Indices, commodities & rates' },
@@ -175,12 +174,171 @@ const MARKETS = [
   { emoji: '🏦', label: 'CFDs',    desc: 'Stocks, metals & energy' },
 ];
 
+
+// ── Direct MT5 Connection Form ────────────────────────────────────────────────
+function DirectMT5Form() {
+  const { user } = useUser()
+  const [form, setForm] = useState({
+    broker_name: '', mt5_login: '', mt5_server: '', investor_password: '',
+  })
+  const [step,    setStep]    = useState('form')  // form | syncing | done | error
+  const [message, setMessage] = useState('')
+  const [imported,setImported]= useState(0)
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const connect = async () => {
+    if (!form.mt5_login || !form.mt5_server || !form.investor_password) {
+      toast.error('Please fill in all required fields'); return
+    }
+    setStep('syncing'); setMessage('Connecting to MT5 broker...')
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const jwt = session?.access_token || ''
+
+      const res = await fetch('/api/mt5-direct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
+        body: JSON.stringify({ ...form, user_id: user?.id })
+      })
+      const data = await res.json()
+
+      if (!res.ok || data.error) {
+        setStep('error'); setMessage(data.error || 'Connection failed'); return
+      }
+
+      setImported(data.imported || 0)
+      setStep('done')
+      setMessage(data.message || 'Sync complete')
+    } catch (e) {
+      setStep('error'); setMessage('Network error: ' + e.message)
+    }
+  }
+
+  const reset = () => { setStep('form'); setMessage(''); setImported(0) }
+
+  const inputStyle = {
+    width: '100%', height: '40px', borderRadius: '10px', padding: '0 12px',
+    fontSize: '13px', border: '1px solid rgba(255,255,255,0.08)',
+    background: 'rgba(255,255,255,0.04)', color: 'var(--text-primary)',
+    outline: 'none', fontFamily: 'var(--font-mono)',
+  }
+  const labelStyle = { fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.08em' }
+
+  if (step === 'syncing') return (
+    <div style={{ border: '1px solid rgba(139,92,246,0.25)', borderRadius: '12px', padding: '2rem', textAlign: 'center' }}>
+      <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(139,92,246,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem', animation: 'spin 1s linear infinite' }}>
+        <Icon d={D.server} size={20} stroke="#a78bfa"/>
+      </div>
+      <p style={{ fontWeight: 600, marginBottom: '6px' }}>Connecting to MT5...</p>
+      <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{message}</p>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  )
+
+  if (step === 'done') return (
+    <div style={{ border: '1px solid rgba(46,213,115,0.25)', borderRadius: '12px', padding: '2rem', textAlign: 'center', background: 'rgba(46,213,115,0.03)' }}>
+      <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(46,213,115,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+        <Icon d={D.tick} size={20} stroke="#2ed573" sw={2.5}/>
+      </div>
+      <p style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '6px', color: 'var(--accent-success)' }}>Connected!</p>
+      <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+        {imported > 0 ? `${imported} trades imported from ${form.broker_name || form.mt5_server}` : message}
+      </p>
+      <button className="btn btn-secondary" onClick={reset} style={{ fontSize: '12px' }}>Connect another account</button>
+    </div>
+  )
+
+  if (step === 'error') return (
+    <div style={{ border: '1px solid rgba(255,71,87,0.25)', borderRadius: '12px', padding: '2rem', textAlign: 'center', background: 'rgba(255,71,87,0.03)' }}>
+      <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(255,71,87,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+        <Icon d={D.warn} size={20} stroke="#ff4757"/>
+      </div>
+      <p style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '6px', color: 'var(--accent-danger)' }}>Connection Failed</p>
+      <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '1.5rem', maxWidth: 380, margin: '0 auto 1.5rem' }}>{message}</p>
+      <button className="btn btn-secondary" onClick={reset} style={{ fontSize: '12px' }}>Try again</button>
+    </div>
+  )
+
+  return (
+    <div style={{ border: '1px solid rgba(139,92,246,0.2)', borderRadius: '12px', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '14px 18px', background: 'rgba(139,92,246,0.06)', borderBottom: '1px solid rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <Icon d={D.server} size={16} stroke="#a78bfa"/>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: '14px' }}>Direct MT5 Connection</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Read-only via investor password — no EA install required</div>
+        </div>
+      </div>
+      <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {/* Info note */}
+        <div style={S.warn}>
+          <Icon d={D.warn} size={13} stroke="rgba(234,179,8,0.9)"/>
+          <span style={{ fontSize: '12px', color: 'rgba(180,138,0,0.95)', lineHeight: 1.5 }}>
+            Use your <strong>investor password</strong> (read-only). Never enter your master trading password.
+            Your credentials are encrypted and stored securely.
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <label style={labelStyle}>Broker name</label>
+            <input style={inputStyle} value={form.broker_name}
+              onChange={e => set('broker_name', e.target.value)} placeholder="e.g. Exness"/>
+          </div>
+          <div>
+            <label style={labelStyle}>MT5 Account Login *</label>
+            <input style={inputStyle} value={form.mt5_login}
+              onChange={e => set('mt5_login', e.target.value)} placeholder="409913367" type="number"/>
+          </div>
+          <div>
+            <label style={labelStyle}>Broker Server *</label>
+            <input style={inputStyle} value={form.mt5_server}
+              onChange={e => set('mt5_server', e.target.value)} placeholder="Exness-MT5Real10"/>
+          </div>
+          <div>
+            <label style={labelStyle}>Investor Password *</label>
+            <input style={inputStyle} value={form.investor_password}
+              onChange={e => set('investor_password', e.target.value)}
+              placeholder="••••••••" type="password" autoComplete="new-password"/>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {[[D.lock,'Read-only access'],[D.check,'Auto-imports all closed trades'],[D.server,'Works with any MT5 broker']].map(([d,t]) => (
+            <div key={t} style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'var(--text-muted)', padding:'4px 10px', border:'1px solid rgba(255,255,255,0.06)', borderRadius:'20px' }}>
+              <Icon d={d} size={11} stroke="#a78bfa"/>{t}
+            </div>
+          ))}
+        </div>
+
+        <button className="btn btn-primary" onClick={connect}
+          style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
+          <Icon d={D.link} size={14} stroke="#fff"/> Connect & Import Trades
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function BrokerSync({ userToken = null }) {
+  const { user }    = useUser();
   const [method,    setMethod]    = useState('ea');
   const [openStep,  setOpenStep]  = useState(1);
   const [guideOpen, setGuideOpen] = useState(true);
-  const accounts = MOCK_ACCOUNTS;
+  const [accounts,  setAccounts]  = useState([]);
+  const [connLoading, setConnLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('broker_connections')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { setAccounts(data || []); setConnLoading(false); });
+  }, [user?.id]);
 
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', padding: '2rem 1.5rem' }}>
@@ -311,9 +469,7 @@ export default function BrokerSync({ userToken = null }) {
                   transition: 'all 0.2s',
                 }}
               >
-                <div style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(139,92,246,0.2)', color: '#a78bfa', fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', letterSpacing: '0.04em' }}>
-                  SOON
-                </div>
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
                   <div style={{ width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: method === 'direct' ? 'rgba(139,92,246,0.18)' : 'rgba(255,255,255,0.06)', flexShrink: 0 }}>
                     <Icon d={D.server} size={15} stroke={method === 'direct' ? '#a78bfa' : 'var(--color-text-secondary)'} />
@@ -380,35 +536,8 @@ export default function BrokerSync({ userToken = null }) {
               </div>
             )}
 
-            {/* ── Direct credentials coming soon ── */}
-            {method === 'direct' && (
-              <div style={{ border: '1px dashed rgba(139,92,246,0.25)', borderRadius: '12px', padding: '2.5rem 1.5rem', textAlign: 'center', background: 'rgba(139,92,246,0.03)' }}>
-                <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'rgba(139,92,246,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
-                  <Icon d={D.lock} size={24} stroke="#a78bfa" sw={1.6} />
-                </div>
-                <div style={{ fontFamily: 'var(--font-display, Syne, sans-serif)', fontWeight: 700, fontSize: '1.1rem', marginBottom: '8px' }}>
-                  Direct MT5 Connection — Coming Soon
-                </div>
-                <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', maxWidth: '420px', margin: '0 auto 1.5rem', lineHeight: 1.65 }}>
-                  Enter your MT5 server, login, and investor password once. TradeSylla connects directly to your broker — no Expert Advisor installation required.
-                </p>
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
-                  {[
-                    [D.server, 'No EA install'],
-                    [D.lock,   'Read-only investor password'],
-                    [D.check,  'Auto-sync on connect'],
-                  ].map(([d, t]) => (
-                    <div key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', padding: '6px 12px', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px' }}>
-                      <Icon d={d} size={13} stroke="#a78bfa" />
-                      {t}
-                    </div>
-                  ))}
-                </div>
-                <button className="btn btn-secondary" style={{ opacity: 0.55, cursor: 'not-allowed' }} disabled>
-                  Notify me when available
-                </button>
-              </div>
-            )}
+            {/* ── Direct MT5 connection ── */}
+            {method === 'direct' && <DirectMT5Form />}
           </>
         )}
       </div>

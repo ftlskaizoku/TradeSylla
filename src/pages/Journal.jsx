@@ -714,7 +714,7 @@ function TradeReplay({ trade, candles, onClose }) {
   const exitMs   = trade.exit_time  ? new Date(trade.exit_time).getTime()  : null
   const entryIdx = Math.max(0, candles.findIndex(c => new Date(c.t).getTime() >= entryMs))
   const exitIdx  = exitMs ? candles.findIndex(c => new Date(c.t).getTime() >= exitMs) : candles.length - 1
-  const startIdx = Math.max(0, entryIdx - 5)
+  const startIdx = Math.max(0, entryIdx - 8)
   const [dispStart] = useState(startIdx)
   const n = candles.length - dispStart
 
@@ -727,7 +727,7 @@ function TradeReplay({ trade, candles, onClose }) {
           if (f >= n - 1) { setPlaying(false); return f }
           return f + 1
         })
-      }, Math.max(50, 400 / speed))
+      }, Math.max(30, 400 / speed))
     } else { clearInterval(timerRef.current) }
     return () => clearInterval(timerRef.current)
   }, [playing, speed, n])
@@ -741,6 +741,8 @@ function TradeReplay({ trade, candles, onClose }) {
   const currentCandle = candles[dispStart + frame]
   const ep    = parseFloat(trade.entry_price) || 0
   const xp    = parseFloat(trade.exit_price)  || 0
+  const sl    = parseFloat(trade.sl) || 0
+  const tp    = parseFloat(trade.tp) || 0
   const sign  = trade.direction === "SELL" ? -1 : 1
   const rawPnl   = currentCandle ? sign * (parseFloat(currentCandle.c) - ep) : 0
   const lastRaw  = candles.length ? sign * (parseFloat(candles[candles.length-1].c) - ep) : 0
@@ -750,20 +752,31 @@ function TradeReplay({ trade, candles, onClose }) {
   const exitShown  = exitIdx > 0 && (dispStart + frame) >= exitIdx
   const progress   = n > 1 ? (frame / (n - 1)) * 100 : 0
 
-  const W = 900, H = 260, PAD = { top:12, right:60, bottom:28, left:10 }
-  const cW = W - PAD.left - PAD.right, cH = H - PAD.top - PAD.bottom
+  // Chart dimensions — leave space for volume bars at bottom
+  const W = 900, H = 300
+  const VOL_H = 40
+  const PAD = { top:12, right:70, bottom:VOL_H+24, left:10 }
+  const cW = W - PAD.left - PAD.right
+  const cH = H - PAD.top - PAD.bottom
+
   const cc = currentCandles
   const highs = cc.map(c => parseFloat(c.h))
   const lows  = cc.map(c => parseFloat(c.l))
-  const maxP  = Math.max(...highs, ep, xp) || 1
-  const minP  = Math.min(...lows,  ep, xp) || 0
+  const vals  = [ep, xp > 0 ? xp : ep]
+  if (sl > 0) vals.push(sl)
+  if (tp > 0) vals.push(tp)
+  const maxP  = Math.max(...highs, ...vals) || 1
+  const minP  = Math.min(...lows,  ...vals) || 0
   const range = (maxP - minP) || 0.0001
-  const toY  = p => PAD.top + cH - ((p - minP) / range) * cH
-  const toX  = i => PAD.left + (i / Math.max(cc.length - 1, 1)) * cW
-  const cW2  = Math.max(1, Math.min(10, cW / Math.max(cc.length, 1) - 1))
+  const toY   = p  => PAD.top + cH - ((p - minP) / range) * cH
+  const toX   = i  => PAD.left + (i / Math.max(cc.length - 1, 1)) * cW
+  const cW2   = Math.max(1, Math.min(12, cW / Math.max(cc.length, 1) - 1))
+  const volBase = PAD.top + cH + VOL_H
+  const maxVol = Math.max(...cc.map(c => parseFloat(c.v)||0)) || 1
+  const dp = ep < 10 ? 5 : 2
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col" style={{ background:"rgba(5,5,13,0.97)", backdropFilter:"blur(8px)" }}>
+    <div className="fixed inset-0 z-50 flex flex-col" style={{ background:"#05050d", backdropFilter:"blur(8px)" }}>
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 flex-shrink-0"
         style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-card)" }}>
@@ -774,22 +787,38 @@ function TradeReplay({ trade, candles, onClose }) {
           </div>
           <div>
             <p className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>
-              Trade Replay — {trade.symbol} {trade.direction}
+              Trade Replay — {trade.symbol}
+              <span className="ml-2 px-1.5 py-0.5 rounded text-xs"
+                style={{ background:trade.direction==="BUY"?"rgba(46,213,115,0.15)":"rgba(255,71,87,0.15)",
+                  color:trade.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)" }}>
+                {trade.direction==="BUY"?"▲":"▼"} {trade.direction}
+              </span>
             </p>
             <p className="text-xs" style={{ color:"var(--text-muted)", fontFamily:"var(--font-mono)" }}>
               {trade.timeframe} · {new Date(trade.entry_time).toLocaleDateString()}
+              {sl > 0 && <span className="ml-2" style={{ color:"var(--accent-danger)" }}>SL {sl.toFixed(dp)}</span>}
+              {tp > 0 && <span className="ml-2" style={{ color:"var(--accent-success)" }}>TP {tp.toFixed(dp)}</span>}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-xs" style={{ color:"var(--text-muted)" }}>Running P&L</p>
-            <p className="text-lg font-black" style={{
-              fontFamily:"var(--font-mono)",
-              color: livePnl >= 0 ? "var(--accent-success)" : "var(--accent-danger)"
-            }}>
-              {livePnl >= 0 ? "+" : ""}${livePnl.toFixed(2)}
-            </p>
+          {/* Stats strip */}
+          <div className="flex gap-4 text-right">
+            <div>
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>Current</p>
+              <p className="text-sm font-bold" style={{ fontFamily:"var(--font-mono)", color:"var(--text-primary)" }}>
+                {currentCandle ? parseFloat(currentCandle.c).toFixed(dp) : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs" style={{ color:"var(--text-muted)" }}>Running P&L</p>
+              <p className="text-lg font-black" style={{
+                fontFamily:"var(--font-mono)",
+                color: livePnl >= 0 ? "var(--accent-success)" : "var(--accent-danger)"
+              }}>
+                {livePnl >= 0 ? "+" : ""}${livePnl.toFixed(2)}
+              </p>
+            </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl hover:opacity-70"
             style={{ background:"var(--bg-elevated)", color:"var(--text-secondary)" }}>
@@ -799,98 +828,206 @@ function TradeReplay({ trade, candles, onClose }) {
       </div>
 
       {/* Chart */}
-      <div className="flex-1 relative overflow-hidden p-4">
+      <div className="flex-1 relative overflow-hidden px-4 pt-3 pb-1">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
-          {[0.25,0.5,0.75].map(f => (
+
+          {/* Grid lines */}
+          {[0.2,0.4,0.6,0.8].map(f => (
             <line key={f} x1={PAD.left} x2={W-PAD.right}
               y1={PAD.top+cH*f} y2={PAD.top+cH*f}
               stroke="rgba(255,255,255,0.04)" strokeWidth="0.5"/>
           ))}
+
+          {/* Trade window shading */}
           {entryShown && (() => {
             const eix = entryIdx - dispStart
             const ex = toX(Math.min(eix, cc.length-1))
             const ew = Math.max(0, toX(cc.length-1) - ex)
             return <rect x={ex} y={PAD.top} width={ew} height={cH}
-              fill={exitShown ? (livePnl>=0?"rgba(46,213,115,0.06)":"rgba(255,71,87,0.06)") : "rgba(108,99,255,0.05)"}/>
+              fill={exitShown ? (livePnl>=0?"rgba(46,213,115,0.05)":"rgba(255,71,87,0.05)") : "rgba(108,99,255,0.04)"}/>
           })()}
+
+          {/* SL line (shows from entry) */}
+          {entryShown && sl > 0 && sl >= minP && sl <= maxP && <>
+            <line x1={PAD.left} x2={W-PAD.right} y1={toY(sl)} y2={toY(sl)}
+              stroke="rgba(255,71,87,0.7)" strokeWidth="1" strokeDasharray="4,3"/>
+            <rect x={W-PAD.right+1} y={toY(sl)-7} width={30} height={13}
+              fill="rgba(255,71,87,0.85)" rx="3"/>
+            <text x={W-PAD.right+16} y={toY(sl)+3} textAnchor="middle"
+              fontSize="8" fill="#fff" fontWeight="700">SL</text>
+          </>}
+
+          {/* TP line (shows from entry) */}
+          {entryShown && tp > 0 && tp >= minP && tp <= maxP && <>
+            <line x1={PAD.left} x2={W-PAD.right} y1={toY(tp)} y2={toY(tp)}
+              stroke="rgba(46,213,115,0.7)" strokeWidth="1" strokeDasharray="4,3"/>
+            <rect x={W-PAD.right+1} y={toY(tp)-7} width={30} height={13}
+              fill="rgba(46,213,115,0.85)" rx="3"/>
+            <text x={W-PAD.right+16} y={toY(tp)+3} textAnchor="middle"
+              fontSize="8" fill="#fff" fontWeight="700">TP</text>
+          </>}
+
+          {/* Candles */}
           {cc.map((c,i) => {
             const o=parseFloat(c.o),cl=parseFloat(c.c),h=parseFloat(c.h),l=parseFloat(c.l)
             const isBull=cl>=o, color=isBull?"#2ed573":"#ff4757"
             const x=toX(i), bodyTop=toY(Math.max(o,cl)), bodyH=Math.max(1,toY(Math.min(o,cl))-bodyTop)
+            // Volume bar
+            const v=parseFloat(c.v)||0
+            const vh = (v/maxVol) * (VOL_H - 4)
             return <g key={i}>
               <line x1={x} x2={x} y1={toY(h)} y2={toY(l)} stroke={color} strokeWidth="1"/>
               <rect x={x-cW2/2} y={bodyTop} width={cW2} height={bodyH} fill={color} opacity={0.9} rx="0.5"/>
+              {vh > 0 && <rect x={x-cW2/2} y={volBase-vh} width={cW2} height={vh}
+                fill={isBull?"rgba(46,213,115,0.3)":"rgba(255,71,87,0.3)"} rx="0.5"/>}
             </g>
           })}
+
+          {/* Volume baseline */}
+          <line x1={PAD.left} x2={W-PAD.right} y1={volBase} y2={volBase}
+            stroke="rgba(255,255,255,0.06)" strokeWidth="0.5"/>
+
+          {/* Current price line */}
+          {currentCandle && (() => {
+            const cp = parseFloat(currentCandle.c)
+            const cy = toY(cp)
+            return <>
+              <line x1={PAD.left} x2={W-PAD.right} y1={cy} y2={cy}
+                stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray="3,3"/>
+              <rect x={W-PAD.right+1} y={cy-7} width={58} height={13}
+                fill="rgba(30,30,50,0.95)" rx="3" stroke="rgba(255,255,255,0.15)" strokeWidth="0.5"/>
+              <text x={W-PAD.right+30} y={cy+3} textAnchor="middle"
+                fontSize="8.5" fill="rgba(240,240,248,0.9)" fontFamily="monospace" fontWeight="600">
+                {cp.toFixed(dp)}
+              </text>
+            </>
+          })()}
+
+          {/* Entry price line */}
           {entryShown && ep > 0 && <>
-            <line x1={PAD.left} x2={W-PAD.right} y1={toY(ep)} y2={toY(ep)} stroke="#6c63ff" strokeWidth="1.5" strokeDasharray="5,3"/>
-            <rect x={W-PAD.right+1} y={toY(ep)-8} width={24} height={14} fill="rgba(108,99,255,0.9)" rx="3"/>
-            <text x={W-PAD.right+13} y={toY(ep)+4} textAnchor="middle" fontSize="8" fill="#fff" fontWeight="700">E</text>
+            <line x1={PAD.left} x2={W-PAD.right} y1={toY(ep)} y2={toY(ep)}
+              stroke="rgba(108,99,255,0.8)" strokeWidth="1.5" strokeDasharray="5,3"/>
+            <rect x={W-PAD.right+1} y={toY(ep)-7} width={58} height={13}
+              fill="rgba(108,99,255,0.9)" rx="3"/>
+            <text x={W-PAD.right+30} y={toY(ep)+3} textAnchor="middle"
+              fontSize="8" fill="#fff" fontFamily="monospace">E {ep.toFixed(dp)}</text>
           </>}
+
+          {/* Exit price line */}
           {exitShown && xp > 0 && <>
             <line x1={PAD.left} x2={W-PAD.right} y1={toY(xp)} y2={toY(xp)}
-              stroke={livePnl>=0?"#2ed573":"#ff4757"} strokeWidth="1.5" strokeDasharray="5,3"/>
-            <rect x={W-PAD.right+1} y={toY(xp)-8} width={24} height={14}
+              stroke={livePnl>=0?"rgba(46,213,115,0.8)":"rgba(255,71,87,0.8)"}
+              strokeWidth="1.5" strokeDasharray="5,3"/>
+            <rect x={W-PAD.right+1} y={toY(xp)-7} width={58} height={13}
               fill={livePnl>=0?"rgba(46,213,115,0.9)":"rgba(255,71,87,0.9)"} rx="3"/>
-            <text x={W-PAD.right+13} y={toY(xp)+4} textAnchor="middle" fontSize="8" fill="#fff" fontWeight="700">X</text>
+            <text x={W-PAD.right+30} y={toY(xp)+3} textAnchor="middle"
+              fontSize="8" fill="#fff" fontFamily="monospace">X {xp.toFixed(dp)}</text>
           </>}
+
+          {/* Price axis */}
           {[0,0.25,0.5,0.75,1].map((f,i) => {
-            const p=minP+range*(1-f), y=toY(p)
-            return <text key={i} x={W-PAD.right+3} y={y+3} fontSize="9"
-              fill="rgba(160,160,180,0.7)" fontFamily="monospace">
-              {p<10?p.toFixed(5):p.toFixed(2)}
+            const p = minP + range*(1-f), y = toY(p)
+            return <text key={i} x={W-PAD.right+3} y={y+3} fontSize="8.5"
+              fill="rgba(100,100,130,0.8)" fontFamily="monospace">
+              {p.toFixed(dp)}
             </text>
           })}
+
+          {/* Time label */}
           {currentCandle && <text x={W/2} y={H-4} textAnchor="middle" fontSize="10"
-            fill="rgba(160,160,180,0.7)" fontFamily="monospace">
-            {new Date(currentCandle.t).toLocaleString("en-US",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false})}
+            fill="rgba(100,100,130,0.8)" fontFamily="monospace">
+            {new Date(currentCandle.t).toLocaleString("en-US",{month:"2-digit",day:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false})}
           </text>}
         </svg>
-        <div className="absolute top-6 left-6 flex gap-2">
-          {entryShown && <span className="px-2 py-1 rounded-lg text-xs font-bold"
-            style={{ background:"rgba(108,99,255,0.2)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.3)" }}>
-            ● Entry {ep}
-          </span>}
-          {exitShown && <span className="px-2 py-1 rounded-lg text-xs font-bold"
-            style={{ background:livePnl>=0?"rgba(46,213,115,0.2)":"rgba(255,71,87,0.2)",
-              color:livePnl>=0?"var(--accent-success)":"var(--accent-danger)",
-              border:`1px solid ${livePnl>=0?"rgba(46,213,115,0.3)":"rgba(255,71,87,0.3)"}` }}>
-            ● Exit {xp}
-          </span>}
+
+        {/* Status badges */}
+        <div className="absolute top-5 left-6 flex gap-2 flex-wrap">
+          {!entryShown && (
+            <span className="px-2 py-1 rounded-lg text-xs font-semibold"
+              style={{ background:"rgba(108,99,255,0.12)", color:"var(--text-muted)", border:"1px solid var(--border)" }}>
+              Context (pre-entry)
+            </span>
+          )}
+          {entryShown && !exitShown && (
+            <span className="px-2 py-1 rounded-lg text-xs font-bold animate-pulse"
+              style={{ background:"rgba(108,99,255,0.2)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.3)" }}>
+              ● In trade — {trade.direction} @ {ep.toFixed(dp)}
+            </span>
+          )}
+          {exitShown && (
+            <span className="px-2 py-1 rounded-lg text-xs font-bold"
+              style={{ background:livePnl>=0?"rgba(46,213,115,0.2)":"rgba(255,71,87,0.2)",
+                color:livePnl>=0?"var(--accent-success)":"var(--accent-danger)",
+                border:`1px solid ${livePnl>=0?"rgba(46,213,115,0.3)":"rgba(255,71,87,0.3)"}` }}>
+              ● Closed {livePnl>=0?"✓ Profit":"✗ Loss"} — {livePnl >= 0 ? "+" : ""}${livePnl.toFixed(2)}
+            </span>
+          )}
         </div>
       </div>
 
       {/* Transport */}
       <div className="flex-shrink-0 px-5 py-4" style={{ borderTop:"1px solid var(--border)", background:"var(--bg-card)" }}>
-        <div className="mb-3 h-2 rounded-full overflow-hidden relative cursor-pointer"
+        {/* Progress bar */}
+        <div className="mb-3 h-2.5 rounded-full overflow-hidden relative cursor-pointer group"
           style={{ background:"var(--bg-elevated)" }}
           onClick={e => {
             const r = e.currentTarget.getBoundingClientRect()
             setFrame(Math.round(((e.clientX - r.left) / r.width) * (n-1)))
             setPlaying(false)
           }}>
-          <div className="h-full rounded-full" style={{ width:`${progress}%`, background:"linear-gradient(90deg,var(--accent),var(--accent-secondary))", transition:"width 0.1s" }}/>
-          {entryIdx >= dispStart && <div className="absolute inset-y-0 w-0.5 bg-purple-400 opacity-70"
-            style={{ left:`${((entryIdx-dispStart)/(n-1))*100}%` }}/>}
-          {exitIdx > 0 && exitIdx >= dispStart && <div className="absolute inset-y-0 w-0.5 opacity-70"
-            style={{ left:`${((exitIdx-dispStart)/(n-1))*100}%`, background:livePnl>=0?"#2ed573":"#ff4757" }}/>}
+          <div className="h-full rounded-full" style={{
+            width:`${progress}%`,
+            background:"linear-gradient(90deg,var(--accent),var(--accent-secondary))",
+            transition:"width 0.08s"
+          }}/>
+          {/* Entry marker on bar */}
+          {entryIdx >= dispStart && n > 1 && (
+            <div className="absolute inset-y-0 w-0.5"
+              style={{ left:`${((entryIdx-dispStart)/(n-1))*100}%`, background:"rgba(108,99,255,0.8)" }}>
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-xs px-1 rounded"
+                style={{ background:"rgba(108,99,255,0.9)", color:"#fff", fontSize:8 }}>E</div>
+            </div>
+          )}
+          {/* Exit marker on bar */}
+          {exitIdx > 0 && exitIdx >= dispStart && n > 1 && (
+            <div className="absolute inset-y-0 w-0.5"
+              style={{ left:`${((exitIdx-dispStart)/(n-1))*100}%`,
+                background:livePnl>=0?"rgba(46,213,115,0.8)":"rgba(255,71,87,0.8)" }}>
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-xs px-1 rounded"
+                style={{ background:livePnl>=0?"rgba(46,213,115,0.9)":"rgba(255,71,87,0.9)", color:"#fff", fontSize:8 }}>X</div>
+            </div>
+          )}
         </div>
+
         <div className="flex items-center justify-between">
           <span className="text-xs" style={{ color:"var(--text-muted)", fontFamily:"var(--font-mono)" }}>
-            {dispStart+frame+1} / {dispStart+n}
+            {dispStart+frame+1} / {dispStart+n} bars
           </span>
-          <div className="flex items-center gap-2">
-            <button onClick={rewindAll} className="p-2 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}><Rewind size={13}/></button>
-            <button onClick={stepBack}  className="p-2 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}><SkipBack size={13}/></button>
-            <button onClick={toggle} className="w-10 h-10 flex items-center justify-center rounded-xl"
+          <div className="flex items-center gap-1.5">
+            <button onClick={rewindAll} className="p-2 rounded-lg hover:opacity-70"
+              style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}>
+              <Rewind size={13}/>
+            </button>
+            <button onClick={stepBack} className="p-2 rounded-lg hover:opacity-70"
+              style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}>
+              <SkipBack size={13}/>
+            </button>
+            <button onClick={toggle}
+              className="w-10 h-10 flex items-center justify-center rounded-xl transition-transform active:scale-95"
               style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", color:"#fff" }}>
               {playing ? <Pause size={16}/> : <Play size={16}/>}
             </button>
-            <button onClick={stepFwd}  className="p-2 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}><SkipForward size={13}/></button>
-            <button onClick={skipEnd}  className="p-2 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}><FastForward size={13}/></button>
+            <button onClick={stepFwd} className="p-2 rounded-lg hover:opacity-70"
+              style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}>
+              <SkipForward size={13}/>
+            </button>
+            <button onClick={skipEnd} className="p-2 rounded-lg hover:opacity-70"
+              style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}>
+              <FastForward size={13}/>
+            </button>
           </div>
           <div className="flex gap-0.5 p-0.5 rounded-lg" style={{ background:"var(--bg-elevated)" }}>
-            {[1,2,4,8].map(s => (
+            {[1,2,4,8,16].map(s => (
               <button key={s} onClick={()=>setSpeed(s)}
                 className="px-2 py-1 rounded-md text-xs font-bold"
                 style={{ background:speed===s?"var(--accent)":"transparent", color:speed===s?"#fff":"var(--text-muted)" }}>
@@ -910,17 +1047,60 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
   const [loading,   setLoading]  = useState(true)
   const [replaying, setReplaying]= useState(false)
 
+  const [chartTF, setChartTF] = useState(null)
+
   useEffect(() => {
-    supabase
-      .from("trade_charts")
-      .select("candles, timeframe")
-      .eq("trade_id", trade.id)
-      .single()
-      .then(({ data }) => {
-        setCandles(data?.candles || [])
-        setLoading(false)
-      })
-      .catch(() => { setCandles([]); setLoading(false) })
+    const fetchChart = async () => {
+      setLoading(true)
+      try {
+        // 1. Try trade_charts first
+        const { data } = await supabase
+          .from("trade_charts")
+          .select("candles, timeframe")
+          .eq("trade_id", trade.id)
+          .single()
+
+        if (data?.candles?.length) {
+          setCandles(data.candles)
+          setChartTF(data.timeframe || trade.timeframe || "M15")
+          setLoading(false)
+          return
+        }
+      } catch {}
+
+      // 2. Fallback: pull M15 candles from sylledge_market_data around trade time
+      try {
+        const entryMs  = trade.entry_time ? new Date(trade.entry_time).getTime() : Date.now()
+        const exitMs   = trade.exit_time  ? new Date(trade.exit_time).getTime()  : entryMs + 100 * 15 * 60 * 1000
+        const BAR_MS   = 15 * 60 * 1000
+        const from = new Date(entryMs - 25 * BAR_MS).toISOString()
+        const to   = new Date(exitMs  + 15 * BAR_MS).toISOString()
+
+        const { data: mkt } = await supabase
+          .from("sylledge_market_data")
+          .select("candle_time,open_price,high_price,low_price,close_price,volume")
+          .eq("symbol", trade.symbol)
+          .eq("timeframe", "M15")
+          .gte("candle_time", from)
+          .lte("candle_time", to)
+          .order("candle_time", { ascending: true })
+          .limit(200)
+
+        if (mkt?.length) {
+          setCandles(mkt.map(r => ({
+            t: r.candle_time, o: r.open_price, h: r.high_price,
+            l: r.low_price,   c: r.close_price, v: r.volume || 0
+          })))
+          setChartTF("M15")
+          setLoading(false)
+          return
+        }
+      } catch {}
+
+      setCandles([])
+      setLoading(false)
+    }
+    fetchChart()
   }, [trade.id])
 
   const pnlColor = (trade.pnl||0) >= 0 ? "var(--accent-success)" : "var(--accent-danger)"
@@ -939,7 +1119,7 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
             <div className="flex items-center gap-2 mb-2">
               <BarChart2 size={13} style={{ color:"var(--accent)" }}/>
               <span className="text-xs font-semibold" style={{ color:"var(--text-primary)" }}>
-                {trade.symbol} · {trade.timeframe} chart
+                {trade.symbol} · {chartTF || trade.timeframe || "M15"} chart
               </span>
               <div className="flex items-center gap-2">
               <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(108,99,255,0.12)", color:"var(--accent)" }}>— Entry</span>
@@ -1912,11 +2092,19 @@ export default function Journal() {
   const [deleteTrade, setDeleteTrade] = useState(null)
   const [aiFeedbackTrade, setAiFeedbackTrade] = useState(null)
 
-  // Filters
-  const [filterSymbol,   setFilterSymbol]   = useState("ALL")
-  const [filterOutcome,  setFilterOutcome]  = useState("ALL")
-  const [filterDirection,setFilterDirection]= useState("ALL")
-  const [filterSession,  setFilterSession]  = useState("ALL")
+  // Filters — 14 dimensions
+  const [filterSymbol,    setFilterSymbol]    = useState("ALL")
+  const [filterOutcome,   setFilterOutcome]   = useState("ALL")
+  const [filterDirection, setFilterDirection] = useState("ALL")
+  const [filterSession,   setFilterSession]   = useState("ALL")
+  const [filterTF,        setFilterTF]        = useState("ALL")
+  const [filterQualMin,   setFilterQualMin]   = useState(0)
+  const [filterPnlMin,    setFilterPnlMin]    = useState("")
+  const [filterPnlMax,    setFilterPnlMax]    = useState("")
+  const [filterDateFrom,  setFilterDateFrom]  = useState("")
+  const [filterDateTo,    setFilterDateTo]    = useState("")
+  const [filterSearch,    setFilterSearch]    = useState("")
+  const [filtersOpen,     setFiltersOpen]     = useState(false)
 
   const loadTrades = async () => {
     try {
@@ -1934,12 +2122,40 @@ export default function Journal() {
   // Unique symbols from actual data
   const symbols = ["ALL", ...Array.from(new Set(trades.map(t=>t.symbol))).sort()]
 
+  // Active filter count
+  const activeFilters = [
+    filterSymbol !== "ALL", filterOutcome !== "ALL", filterDirection !== "ALL",
+    filterSession !== "ALL", filterTF !== "ALL", filterQualMin > 0,
+    filterPnlMin !== "", filterPnlMax !== "",
+    filterDateFrom !== "", filterDateTo !== "", filterSearch !== ""
+  ].filter(Boolean).length
+
+  const resetFilters = () => {
+    setFilterSymbol("ALL"); setFilterOutcome("ALL"); setFilterDirection("ALL")
+    setFilterSession("ALL"); setFilterTF("ALL"); setFilterQualMin(0)
+    setFilterPnlMin(""); setFilterPnlMax(""); setFilterDateFrom("")
+    setFilterDateTo(""); setFilterSearch("")
+  }
+
   // Filtered trades
   const filtered = trades.filter(t => {
-    if (filterSymbol!=="ALL"    && t.symbol    !== filterSymbol)    return false
-    if (filterOutcome!=="ALL"   && t.outcome   !== filterOutcome)   return false
-    if (filterDirection!=="ALL" && t.direction !== filterDirection) return false
-    if (filterSession!=="ALL"   && t.session   !== filterSession)   return false
+    if (filterSymbol    !== "ALL" && t.symbol    !== filterSymbol)    return false
+    if (filterOutcome   !== "ALL" && t.outcome   !== filterOutcome)   return false
+    if (filterDirection !== "ALL" && t.direction !== filterDirection) return false
+    if (filterSession   !== "ALL" && t.session   !== filterSession)   return false
+    if (filterTF        !== "ALL" && t.timeframe !== filterTF)        return false
+    if (filterQualMin   > 0       && (t.quality || 0) < filterQualMin) return false
+    if (filterPnlMin    !== ""    && (t.pnl || 0) < parseFloat(filterPnlMin)) return false
+    if (filterPnlMax    !== ""    && (t.pnl || 0) > parseFloat(filterPnlMax)) return false
+    if (filterDateFrom  !== "" && t.entry_time && new Date(t.entry_time) < new Date(filterDateFrom)) return false
+    if (filterDateTo    !== "" && t.entry_time && new Date(t.entry_time) > new Date(filterDateTo + "T23:59:59")) return false
+    if (filterSearch    !== "") {
+      const q = filterSearch.toLowerCase()
+      const match = (t.symbol||"").toLowerCase().includes(q) ||
+                    (t.notes||"").toLowerCase().includes(q)  ||
+                    (t.mt5_ticket||"").includes(q)
+      if (!match) return false
+    }
     return true
   })
 
@@ -1988,62 +2204,168 @@ export default function Journal() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="rounded-xl p-4 mb-5 flex flex-wrap gap-4" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        {/* Symbol filter */}
-        <div>
-          <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Symbol</p>
-          <div className="flex flex-wrap gap-1.5">
-            {symbols.map(s=>(
-              <button key={s} onClick={()=>setFilterSymbol(s)}
-                className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                style={{ background:filterSymbol===s?"var(--accent)":"var(--bg-elevated)", color:filterSymbol===s?"#fff":"var(--text-secondary)", border:"1px solid", borderColor:filterSymbol===s?"var(--accent)":"var(--border)" }}>
-                {s}
+      {/* Filters — 14 dimensions */}
+      <div className="rounded-xl mb-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+        {/* Filter bar header */}
+        <div className="flex items-center justify-between px-4 py-3 cursor-pointer"
+          onClick={() => setFiltersOpen(o => !o)}
+          style={{ borderBottom: filtersOpen ? "1px solid var(--border)" : "none" }}>
+          <div className="flex items-center gap-2">
+            <Activity size={13} style={{ color:"var(--accent)" }}/>
+            <span className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>Filters</span>
+            {activeFilters > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-bold"
+                style={{ background:"var(--accent)", color:"#fff" }}>{activeFilters}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {activeFilters > 0 && (
+              <button onClick={e => { e.stopPropagation(); resetFilters() }}
+                className="text-xs px-2 py-1 rounded-lg hover:opacity-70"
+                style={{ color:"var(--accent-danger)", background:"rgba(255,71,87,0.08)" }}>
+                Clear all
               </button>
-            ))}
+            )}
+            {filtersOpen ? <ChevronUp size={14} style={{ color:"var(--text-muted)" }}/> : <ChevronDown size={14} style={{ color:"var(--text-muted)" }}/>}
           </div>
         </div>
-        {/* Outcome filter */}
-        <div>
-          <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Outcome</p>
-          <div className="flex gap-1.5">
-            {["ALL","WIN","LOSS","BREAKEVEN"].map(o=>(
-              <button key={o} onClick={()=>setFilterOutcome(o)}
-                className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                style={{ background:filterOutcome===o?(o==="WIN"?"rgba(46,213,115,0.25)":o==="LOSS"?"rgba(255,71,87,0.25)":o==="BREAKEVEN"?"rgba(108,99,255,0.25)":"var(--accent)"):"var(--bg-elevated)",
-                  color:filterOutcome===o?(o==="WIN"?"var(--accent-success)":o==="LOSS"?"var(--accent-danger)":o==="BREAKEVEN"?"var(--accent)":"#fff"):"var(--text-secondary)",
-                  border:"1px solid", borderColor:filterOutcome===o?(o==="WIN"?"var(--accent-success)":o==="LOSS"?"var(--accent-danger)":o==="BREAKEVEN"?"var(--accent)":"var(--accent)"):"var(--border)" }}>
-                {o}
-              </button>
-            ))}
+
+        {filtersOpen && (
+          <div className="p-4 flex flex-wrap gap-5">
+            {/* Search */}
+            <div>
+              <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Search</p>
+              <input value={filterSearch} onChange={e => setFilterSearch(e.target.value)}
+                placeholder="Symbol, notes, ticket…"
+                className="h-8 rounded-lg px-3 text-xs border"
+                style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)", width:180 }}/>
+            </div>
+
+            {/* Symbol */}
+            <div>
+              <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Symbol</p>
+              <div className="flex flex-wrap gap-1.5">
+                {symbols.map(s => (
+                  <button key={s} onClick={() => setFilterSymbol(s)}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                    style={{ background:filterSymbol===s?"var(--accent)":"var(--bg-elevated)",
+                      color:filterSymbol===s?"#fff":"var(--text-secondary)",
+                      border:"1px solid", borderColor:filterSymbol===s?"var(--accent)":"var(--border)" }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Outcome */}
+            <div>
+              <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Outcome</p>
+              <div className="flex gap-1.5">
+                {["ALL","WIN","LOSS","BREAKEVEN"].map(o => (
+                  <button key={o} onClick={() => setFilterOutcome(o)}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                    style={{ background:filterOutcome===o?(o==="WIN"?"rgba(46,213,115,0.25)":o==="LOSS"?"rgba(255,71,87,0.25)":o==="BREAKEVEN"?"rgba(108,99,255,0.25)":"var(--accent)"):"var(--bg-elevated)",
+                      color:filterOutcome===o?(o==="WIN"?"var(--accent-success)":o==="LOSS"?"var(--accent-danger)":o==="BREAKEVEN"?"var(--accent)":"#fff"):"var(--text-secondary)",
+                      border:"1px solid", borderColor:filterOutcome===o?(o==="WIN"?"var(--accent-success)":o==="LOSS"?"var(--accent-danger)":"var(--accent)"):"var(--border)" }}>
+                    {o}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Direction */}
+            <div>
+              <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Direction</p>
+              <div className="flex gap-1.5">
+                {["ALL","BUY","SELL"].map(d => (
+                  <button key={d} onClick={() => setFilterDirection(d)}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                    style={{ background:filterDirection===d?"var(--accent)":"var(--bg-elevated)",
+                      color:filterDirection===d?"#fff":"var(--text-secondary)",
+                      border:"1px solid", borderColor:filterDirection===d?"var(--accent)":"var(--border)" }}>
+                    {d==="BUY"?"▲ ":d==="SELL"?"▼ ":""}{d}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Session */}
+            <div>
+              <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Session</p>
+              <div className="flex flex-wrap gap-1.5">
+                {["ALL",...SESSIONS].map(s => (
+                  <button key={s} onClick={() => setFilterSession(s)}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                    style={{ background:filterSession===s?"var(--accent)":"var(--bg-elevated)",
+                      color:filterSession===s?"#fff":"var(--text-secondary)",
+                      border:"1px solid", borderColor:filterSession===s?"var(--accent)":"var(--border)" }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Timeframe */}
+            <div>
+              <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Timeframe</p>
+              <div className="flex flex-wrap gap-1.5">
+                {["ALL",...TFS].map(tf => (
+                  <button key={tf} onClick={() => setFilterTF(tf)}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                    style={{ background:filterTF===tf?"var(--accent)":"var(--bg-elevated)",
+                      color:filterTF===tf?"#fff":"var(--text-secondary)",
+                      border:"1px solid", borderColor:filterTF===tf?"var(--accent)":"var(--border)" }}>
+                    {tf}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Quality min */}
+            <div>
+              <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>
+                Min Quality: <span style={{ color:"var(--accent)" }}>{filterQualMin > 0 ? `${filterQualMin}+` : "Any"}</span>
+              </p>
+              <input type="range" min="0" max="9" step="1" value={filterQualMin}
+                onChange={e => setFilterQualMin(parseInt(e.target.value))}
+                className="w-32 h-1.5 rounded-full appearance-none cursor-pointer"
+                style={{ accentColor:"var(--accent)" }}/>
+              <div className="flex justify-between text-xs mt-1 w-32" style={{ color:"var(--text-muted)" }}>
+                <span>Any</span><span>9+</span>
+              </div>
+            </div>
+
+            {/* P&L range */}
+            <div>
+              <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>P&L Range ($)</p>
+              <div className="flex items-center gap-2">
+                <input type="number" placeholder="Min" value={filterPnlMin}
+                  onChange={e => setFilterPnlMin(e.target.value)}
+                  className="h-8 rounded-lg px-3 text-xs border w-20"
+                  style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+                <span className="text-xs" style={{ color:"var(--text-muted)" }}>→</span>
+                <input type="number" placeholder="Max" value={filterPnlMax}
+                  onChange={e => setFilterPnlMax(e.target.value)}
+                  className="h-8 rounded-lg px-3 text-xs border w-20"
+                  style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+              </div>
+            </div>
+
+            {/* Date range */}
+            <div>
+              <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Date Range</p>
+              <div className="flex items-center gap-2">
+                <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+                  className="h-8 rounded-lg px-2 text-xs border"
+                  style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+                <span className="text-xs" style={{ color:"var(--text-muted)" }}>→</span>
+                <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+                  className="h-8 rounded-lg px-2 text-xs border"
+                  style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+              </div>
+            </div>
           </div>
-        </div>
-        {/* Direction filter */}
-        <div>
-          <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Direction</p>
-          <div className="flex gap-1.5">
-            {["ALL","BUY","SELL"].map(d=>(
-              <button key={d} onClick={()=>setFilterDirection(d)}
-                className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                style={{ background:filterDirection===d?"var(--accent)":"var(--bg-elevated)", color:filterDirection===d?"#fff":"var(--text-secondary)", border:"1px solid", borderColor:filterDirection===d?"var(--accent)":"var(--border)" }}>
-                {d}
-              </button>
-            ))}
-          </div>
-        </div>
-        {/* Session filter */}
-        <div>
-          <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Session</p>
-          <div className="flex flex-wrap gap-1.5">
-            {["ALL",...SESSIONS].map(s=>(
-              <button key={s} onClick={()=>setFilterSession(s)}
-                className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                style={{ background:filterSession===s?"var(--accent)":"var(--bg-elevated)", color:filterSession===s?"#fff":"var(--text-secondary)", border:"1px solid", borderColor:filterSession===s?"var(--accent)":"var(--border)" }}>
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Content */}
