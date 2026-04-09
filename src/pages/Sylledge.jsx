@@ -49,14 +49,52 @@ function buildTradeSummary(trades) {
   const wr     = (wins/trades.length*100).toFixed(1)
   const pnl    = trades.reduce((s,x)=>s+(x.total_pnl||x.pnl||0),0).toFixed(2)
   const avgQ   = (trades.reduce((s,x)=>s+(x.quality||5),0)/trades.length).toFixed(1)
-  const sess   = {}
+
+  // Session breakdown
+  const sess = {}
   trades.forEach(x=>{ if(!x.session)return; if(!sess[x.session])sess[x.session]={w:0,n:0,p:0}; sess[x.session].n++; sess[x.session].p+=(x.total_pnl||x.pnl||0); if(x.outcome==="WIN")sess[x.session].w++ })
   const sessStr=Object.entries(sess).map(([s,v])=>`${s}:${v.n}t,${(v.w/v.n*100).toFixed(0)}%WR,$${v.p.toFixed(2)}`).join(" | ")
+
+  // Best hours
   const hourMap={}
   trades.forEach(x=>{ if(!x.entry_time)return; const h=new Date(x.entry_time).getUTCHours(); if(!hourMap[h])hourMap[h]={w:0,n:0}; hourMap[h].n++; if(x.outcome==="WIN")hourMap[h].w++ })
   const bestHours=Object.entries(hourMap).filter(([,v])=>v.n>=3).sort((a,b)=>(b[1].w/b[1].n)-(a[1].w/a[1].n)).slice(0,5).map(([h,v])=>`${h}:00UTC(${(v.w/v.n*100).toFixed(0)}%WR,${v.n}t)`).join(", ")
-  const sample=trades.slice(0,20).map(t=>`${t.symbol} ${t.direction} ${t.outcome} $${(t.total_pnl||t.pnl||0).toFixed(2)} Q:${t.quality||5} Sess:${t.session||"?"} TF:${t.timeframe||"?"}`).join("\n")
-  return `TRADER DATA: Trades:${trades.length} | WR:${wr}% | P&L:$${pnl} | AvgQ:${avgQ}/10\nSessions: ${sessStr||"none"}\nBest Hours: ${bestHours||"insufficient data"}\n\nRECENT TRADES:\n${sample}`
+
+  // ── Symbol breakdown (the key fix — AI now sees ALL symbols) ──────────────
+  const symMap = {}
+  trades.forEach(t => {
+    const s = t.symbol || "UNKNOWN"
+    if (!symMap[s]) symMap[s] = { n:0, w:0, p:0 }
+    symMap[s].n++
+    symMap[s].p += (t.total_pnl||t.pnl||0)
+    if (t.outcome==="WIN") symMap[s].w++
+  })
+  const symStr = Object.entries(symMap)
+    .sort((a,b) => b[1].n - a[1].n)
+    .map(([sym,v]) => `${sym}:${v.n}t,${(v.w/v.n*100).toFixed(0)}%WR,$${v.p.toFixed(2)}`)
+    .join(" | ")
+
+  // ── Representative sample — 3 trades per symbol, not just first 20 ───────
+  const perSym = {}
+  trades.forEach(t => {
+    const s = t.symbol || "UNKNOWN"
+    if (!perSym[s]) perSym[s] = []
+    if (perSym[s].length < 3) perSym[s].push(t)
+  })
+  const sampleTrades = Object.values(perSym).flat()
+  const sample = sampleTrades.map(t =>
+    `${t.symbol} ${t.direction} ${t.outcome} $${(t.total_pnl||t.pnl||0).toFixed(2)} Q:${t.quality||5} Sess:${t.session||"?"} TF:${t.timeframe||"?"}`
+  ).join("\n")
+
+  return `TRADER DATA: Trades:${trades.length} | WR:${wr}% | P&L:$${pnl} | AvgQ:${avgQ}/10
+Sessions: ${sessStr||"none"}
+Best Hours: ${bestHours||"insufficient data"}
+
+SYMBOLS TRADED (complete breakdown):
+${symStr}
+
+SAMPLE TRADES (3 per symbol):
+${sample}`
 }
 
 // Fetch live market context from MarketCharts data (sylledge_market_data table)
