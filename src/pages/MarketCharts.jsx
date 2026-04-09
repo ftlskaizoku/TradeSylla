@@ -16,7 +16,16 @@ import {
 const TIMEFRAMES = ["M1","M5","M15","H1","H4","D1"]
 
 const FIB_LEVELS  = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
-const FIB_COLORS  = ["#ff4757","#ff6348","#ffa502","#ffffff","#2ed573","#1e90ff","#ff4757"]
+const FIB_COLORS  = [
+  "rgba(120,120,140,0.9)",  // 0%     — subtle grey
+  "rgba(160,140,100,0.85)", // 23.6%  — muted gold
+  "rgba(180,155,90,0.9)",   // 38.2%  — gold (key level)
+  "rgba(200,200,200,0.95)", // 50%    — bright white (key level)
+  "rgba(180,155,90,0.9)",   // 61.8%  — gold (key level)
+  "rgba(160,140,100,0.85)", // 78.6%  — muted gold
+  "rgba(120,120,140,0.9)",  // 100%   — subtle grey
+]
+const FIB_WIDTHS  = [1, 1, 1.5, 2, 1.5, 1, 1] // thicker on key levels
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 const TOOLS = [
@@ -504,14 +513,19 @@ export default function MarketCharts() {
           const y = pToY(price)
           if (y == null) return
           ctx.strokeStyle = FIB_COLORS[i]
-          ctx.lineWidth   = 1
-          ctx.setLineDash([4, 2])
+          ctx.lineWidth   = FIB_WIDTHS[i]
+          ctx.setLineDash(level === 0.5 ? [] : [4, 3])
           ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke()
           ctx.setLineDash([])
+          // Background pill for label
+          const lbl = `${(level * 100).toFixed(1)}%`
+          ctx.font = `${level === 0.5 || level === 0.618 || level === 0.382 ? "bold " : ""}10px monospace`
+          const txtW = ctx.measureText(lbl).width
+          ctx.fillStyle = "rgba(12,13,20,0.75)"
+          ctx.fillRect(x2 + 3, y - 8, txtW + 8, 13)
           ctx.fillStyle = FIB_COLORS[i]
-          ctx.font = "10px monospace"
           ctx.textAlign = "left"
-          ctx.fillText(`${(level * 100).toFixed(1)}%  ${fmtPrice(price)}`, x2 + 4, y + 3)
+          ctx.fillText(lbl, x2 + 7, y + 3)
         })
       }
     }
@@ -605,7 +619,7 @@ export default function MarketCharts() {
     <div className="flex flex-col gap-0 h-[calc(100vh-80px)]" style={{ minHeight: 0 }}>
 
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0 flex-wrap"
+      <div className="market-charts-topbar flex items-center gap-2 px-3 py-2 flex-shrink-0 flex-wrap"
         style={{ background:"var(--bg-card)", borderBottom:"1px solid var(--border)" }}>
 
         {/* Symbol dropdown */}
@@ -647,7 +661,7 @@ export default function MarketCharts() {
         </div>
 
         {/* Timeframe selector */}
-        <div className="flex gap-0.5 p-0.5 rounded-lg" style={{ background:"var(--bg-elevated)" }}>
+        <div className="tf-selector flex gap-0.5 p-0.5 rounded-lg" style={{ background:"var(--bg-elevated)" }}>
           {TIMEFRAMES.map(tf => (
             <button key={tf} onClick={() => setSelTF(tf)}
               className="px-2.5 py-1 rounded-md text-xs font-bold transition-all"
@@ -761,7 +775,7 @@ export default function MarketCharts() {
       <div className="flex flex-1 min-h-0">
 
         {/* Left toolbar */}
-        <div className="flex flex-col items-center gap-1 py-2 px-1.5 flex-shrink-0"
+        <div className="market-charts-toolbar flex flex-col items-center gap-1 py-2 px-1.5 flex-shrink-0"
           style={{ background:"var(--bg-card)", borderRight:"1px solid var(--border)", width:40 }}>
           {TOOLS.map(tool => (
             <button

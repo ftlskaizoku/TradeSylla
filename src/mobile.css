@@ -1,0 +1,205 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   TradeSylla Mobile CSS Patch
+   Add @import "./mobile.css"; at the top of src/index.css
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Global mobile base ──────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* Prevent horizontal scroll on body */
+  body { overflow-x: hidden; }
+
+  /* Tighter page padding on mobile */
+  .page-content, main > div { padding-left: 12px !important; padding-right: 12px !important; }
+
+  /* ── Dashboard ─────────────────────────────────────────────────────────── */
+
+  /* Stat cards: 2 per row on mobile */
+  .metric-card {
+    min-width: calc(50% - 6px) !important;
+    flex: 1 1 calc(50% - 6px) !important;
+  }
+
+  /* Charts row: single column */
+  .grid.grid-cols-1.md\:grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Activity feed + charts: stack */
+  .grid.grid-cols-1.lg\:grid-cols-5 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Account bar: wrap controls */
+  .flex.flex-wrap.gap-3.items-center {
+    gap: 8px;
+  }
+
+  /* ── Journal ───────────────────────────────────────────────────────────── */
+
+  /* Table: horizontal scroll */
+  .overflow-x-auto {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Table cells: compact on mobile */
+  table.w-full td, table.w-full th {
+    padding: 8px 6px !important;
+    font-size: 11px !important;
+  }
+
+  /* Hide less important table columns on mobile */
+  table.w-full td:nth-child(8),  /* Session */
+  table.w-full th:nth-child(8),
+  table.w-full td:nth-child(10), /* TF */
+  table.w-full th:nth-child(10),
+  table.w-full td:nth-child(11), /* Quality */
+  table.w-full th:nth-child(11) {
+    display: none;
+  }
+
+  /* Trade detail expanded: single column */
+  .p-4.grid.grid-cols-1.md\:grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Calendar cells: smaller min height */
+  .grid.grid-cols-7 > div { min-height: 48px !important; }
+
+  /* Filter bar: wrap */
+  .rounded-xl.p-4.mb-5.flex.flex-wrap { gap: 8px !important; }
+
+  /* ── Analytics ─────────────────────────────────────────────────────────── */
+
+  .grid.grid-cols-1.md\:grid-cols-3,
+  .grid.grid-cols-1.md\:grid-cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .grid.grid-cols-2.sm\:grid-cols-3.lg\:grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* ── Market Charts ─────────────────────────────────────────────────────── */
+
+  /* Hide left drawing toolbar on small screens */
+  .flex.flex-1.min-h-0 > div[style*="width:40px"],
+  .flex.flex-1.min-h-0 > div[style*="width: 40px"] {
+    display: none !important;
+  }
+
+  /* Top bar: wrap on mobile */
+  .flex.items-center.gap-2.px-3.py-2.flex-shrink-0.flex-wrap {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+
+  /* Timeframe buttons: smaller padding */
+  .flex.gap-0\.5.p-0\.5.rounded-lg button {
+    padding: 4px 6px !important;
+    font-size: 10px !important;
+  }
+
+  /* ── Sylledge ──────────────────────────────────────────────────────────── */
+
+  /* Quick prompts: horizontal scroll instead of wrap */
+  .flex.flex-wrap.gap-2.flex-shrink-0 {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .flex.flex-wrap.gap-2.flex-shrink-0::-webkit-scrollbar { display: none; }
+
+  /* Stat strip: 2x2 grid */
+  .flex.flex-wrap.gap-2.mb-4.flex-shrink-0 {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Header: stack on mobile */
+  .flex.flex-col.sm\:flex-row.sm\:items-center.justify-between.gap-4 {
+    flex-direction: column !important;
+  }
+
+  /* ── Settings ──────────────────────────────────────────────────────────── */
+
+  .grid.grid-cols-2.gap-3,
+  .grid.grid-cols-2.gap-4 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .grid.grid-cols-3.sm\:grid-cols-5,
+  .grid.grid-cols-2.sm\:grid-cols-3 {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+
+  /* ── BrokerSync ────────────────────────────────────────────────────────── */
+
+  .grid.grid-cols-3.gap-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Playbook ──────────────────────────────────────────────────────────── */
+
+  .grid.grid-cols-1.sm\:grid-cols-2,
+  .grid.grid-cols-1.sm\:grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Backtesting ───────────────────────────────────────────────────────── */
+
+  .grid.grid-cols-2.md\:grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* ── Modals: bottom sheet on mobile ───────────────────────────────────── */
+
+  /* Already handled with sm: classes in most modals */
+  .fixed.inset-0.z-50.flex.items-end.sm\:items-center {
+    align-items: flex-end !important;
+  }
+
+  /* ── Typography ────────────────────────────────────────────────────────── */
+
+  h1 { font-size: clamp(18px, 5vw, 28px) !important; }
+  h2 { font-size: clamp(15px, 4vw, 22px) !important; }
+
+  /* ── Overflow safe ─────────────────────────────────────────────────────── */
+
+  /* Any flex row that could overflow: allow wrapping */
+  .flex.items-center.gap-3:not(.no-wrap),
+  .flex.items-center.gap-2:not(.no-wrap) {
+    flex-wrap: wrap;
+  }
+
+  /* Stat cards min-width: prevent too-narrow cards */
+  .stat-card { min-width: 140px; }
+
+  /* Buttons: full width in forms on mobile */
+  .flex.gap-3 > .btn { min-width: 0; }
+}
+
+/* ── Very small screens (< 400px) ─────────────────────────────────────────── */
+@media (max-width: 400px) {
+
+  .metric-card {
+    min-width: 100% !important;
+    flex: 1 1 100% !important;
+  }
+
+  /* Table: show only critical columns */
+  table.w-full td:nth-child(n+6):not(:nth-child(7)):not(:last-child),
+  table.w-full th:nth-child(n+6):not(:nth-child(7)):not(:last-child) {
+    display: none;
+  }
+
+  /* Timeframe selector: allow scroll */
+  .flex.gap-0\.5 {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+}

@@ -849,3 +849,125 @@ h1, h2, h3, h4, h5, h6 {
   font-family:   var(--font-mono) !important;
   font-size:     12px !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVENESS — TradeSylla v1.0
+   Targets: all pages, all major breakpoints
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Sidebar: collapse to icon-only on mobile (Layout handles drawer) ─────── */
+@media (max-width: 768px) {
+  body { overflow-x: hidden; }
+
+  /* ── Stat cards: 2-column grid ─────────────────────────────────────────── */
+  .metric-card {
+    min-width: calc(50% - 6px) !important;
+    flex: 1 1 calc(50% - 6px) !important;
+  }
+  .stat-card {
+    flex: 1 1 calc(50% - 6px) !important;
+    min-width: calc(50% - 6px) !important;
+  }
+
+  /* ── Journal table ─────────────────────────────────────────────────────── */
+  .overflow-x-auto { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Hide verbose columns on mobile */
+  .journal-table td:nth-child(9),  /* Session */
+  .journal-table th:nth-child(9),
+  .journal-table td:nth-child(10), /* TF */
+  .journal-table th:nth-child(10),
+  .journal-table td:nth-child(11), /* Quality */
+  .journal-table th:nth-child(11),
+  .journal-table td:nth-child(12), /* Date */
+  .journal-table th:nth-child(12)  { display: none; }
+
+  /* Trade detail: single column */
+  .trade-detail-grid { grid-template-columns: 1fr !important; }
+
+  /* Calendar cells smaller */
+  .calendar-cell { min-height: 52px !important; padding: 6px !important; }
+
+  /* ── Charts: stack all 2-col and 3-col grids ───────────────────────────── */
+  [class*="md:grid-cols-2"],
+  [class*="md:grid-cols-3"],
+  [class*="lg:grid-cols-3"],
+  [class*="lg:grid-cols-5"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* But keep 2-col on sm breakpoint where intended */
+  [class*="sm:grid-cols-2"] { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* ── MarketCharts: hide drawing toolbar ────────────────────────────────── */
+  .market-charts-toolbar { display: none !important; }
+
+  /* MarketCharts top bar: wrap */
+  .market-charts-topbar {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+    padding: 6px 8px !important;
+  }
+
+  /* Timeframe buttons */
+  .tf-selector button {
+    padding: 3px 6px !important;
+    font-size: 10px !important;
+    min-width: 28px;
+  }
+
+  /* ── SYLLEDGE: quick prompts scroll ────────────────────────────────────── */
+  .quick-prompts {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .quick-prompts::-webkit-scrollbar { display: none; }
+
+  /* Stats strip: 2-col */
+  .sylledge-stats {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* ── Settings / forms: single column ──────────────────────────────────── */
+  .form-grid-2 { grid-template-columns: 1fr !important; }
+
+  /* ── Modals: bottom sheet ──────────────────────────────────────────────── */
+  .modal-bottom-sheet {
+    border-radius: 20px 20px 0 0 !important;
+    max-height: 92vh !important;
+  }
+
+  /* ── Typography: fluid sizing ─────────────────────────────────────────── */
+  .page-title { font-size: clamp(18px, 5vw, 26px) !important; }
+
+  /* ── Buttons: min touch target ─────────────────────────────────────────── */
+  button { min-height: 36px; }
+  .btn   { min-height: 36px; }
+
+  /* ── Filters / tab bars: horizontal scroll ─────────────────────────────── */
+  .filter-bar {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    flex-wrap: nowrap !important;
+    scrollbar-width: none;
+  }
+  .filter-bar::-webkit-scrollbar { display: none; }
+}
+
+/* ── Very small screens (< 400px) ─────────────────────────────────────────── */
+@media (max-width: 400px) {
+  .metric-card, .stat-card {
+    min-width: 100% !important;
+    flex: 1 1 100% !important;
+  }
+
+  .tf-selector { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .tf-selector::-webkit-scrollbar { display: none; }
+
+  .page-title { font-size: 18px !important; }
+}

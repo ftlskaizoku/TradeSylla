@@ -388,12 +388,14 @@ string GetSession(datetime t) {
 }
 
 string GetTF(datetime e, datetime x) {
+   // If no exit time, default to M15 — most common retail timeframe
+   if(x <= 0 || e <= 0 || x <= e) return "M15";
    int m = (int)((x - e) / 60);
-   if(m <= 5)    return "M1";
-   if(m <= 20)   return "M5";
-   if(m <= 60)   return "M15";
-   if(m <= 240)  return "H1";
-   if(m <= 1440) return "H4";
+   if(m <= 2)    return "M1";
+   if(m <= 10)   return "M5";
+   if(m <= 45)   return "M15";
+   if(m <= 200)  return "H1";
+   if(m <= 1000) return "H4";
    return "D1";
 }
 

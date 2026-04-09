@@ -59,35 +59,64 @@ function buildTradeSummary(trades) {
   return `TRADER DATA: Trades:${trades.length} | WR:${wr}% | P&L:$${pnl} | AvgQ:${avgQ}/10\nSessions: ${sessStr||"none"}\nBest Hours: ${bestHours||"insufficient data"}\n\nRECENT TRADES:\n${sample}`
 }
 
-function buildSystemPrompt(trades,playbooks,backtests,memory,selPlaybook,attachments) {
+// Fetch live market context from MarketCharts data (sylledge_market_data table)
+async function fetchMarketContext(trades, supabaseClient) {
+  if(!trades.length) return ""
+  const symCount = {}
+  trades.forEach(t => { symCount[t.symbol] = (symCount[t.symbol]||0)+1 })
+  const topSyms = Object.entries(symCount).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([s])=>s)
+  const parts = []
+  for(const sym of topSyms) {
+    try {
+      const { data } = await supabaseClient
+        .from("sylledge_market_data")
+        .select("candle_time,open_price,high_price,low_price,close_price")
+        .eq("symbol", sym).eq("timeframe", "H1")
+        .order("candle_time", { ascending: false }).limit(24)
+      if(data?.length) {
+        const latest = data[0], oldest = data[data.length-1]
+        const chg = ((latest.close_price - oldest.close_price)/oldest.close_price*100).toFixed(2)
+        const hi = Math.max(...data.map(d=>d.high_price))
+        const lo = Math.min(...data.map(d=>d.low_price))
+        const dp = latest.close_price < 10 ? 5 : 2
+        parts.push(`${sym}: Price=${latest.close_price.toFixed(dp)} | 24h Chg=${chg}% | Range ${lo.toFixed(dp)}-${hi.toFixed(dp)}`)
+      }
+    } catch {}
+  }
+  return parts.length ? "\n\nLIVE MARKET DATA (MarketCharts):\n" + parts.join("\n") : ""
+}
+
+function buildSystemPrompt(trades,playbooks,backtests,memory,selPlaybook,attachments,marketCtx) {
   const tradeSummary = buildTradeSummary(trades)
   const pbTxt = selPlaybook ? (() => { const pb=playbooks.find(p=>p.id===selPlaybook); return pb?`\n\nACTIVE PLAYBOOK: "${pb.name}"\n${pb.description||""}\nRules:${JSON.stringify(pb.rules||{})}`:"" })() : ""
   const btTxt = backtests.length ? "\n\nBACKTESTED STRATEGIES:\n"+backtests.slice(0,5).map(b=>`• ${b.name||"Strategy"}: ${b.total_trades||0}t,${b.win_rate||0}%WR,$${b.total_pnl||0}`).join("\n") : ""
   const attachTxt = attachments.length ? `\n\nUPLOADED FILES: ${attachments.map(a=>a.name).join(", ")} — analyze their content too if relevant.` : ""
+  const mktTxt = marketCtx || ""
   return `You are SYLLEDGE, an elite professional trading coach and quant analyst embedded in TradeSylla.
 
-${tradeSummary}${pbTxt}${btTxt}${attachTxt}
+${tradeSummary}${pbTxt}${btTxt}${mktTxt}${attachTxt}
 
 YOUR MEMORY:\n${memory||"no memory yet"}
 
 YOUR CAPABILITIES:
-1. DEEP ANALYSIS of entry times, sessions, SL, TP, RR — use the actual data above
-2. MARKET DATA: request live candles from MT5 EA using <<<REQUEST_MARKET_DATA>>>
+1. DEEP ANALYSIS of entry times, sessions, SL, TP, RR — use the actual trade data above
+2. MARKET CONTEXT: you have live H1 data for the trader's most-traded symbols — use it
 3. BACKTEST COMPARISON: compare live vs backtest results
-4. FILE GENERATION: downloadable reports/CSVs/HTML charts
-5. FILE READING: read uploaded PDFs, images, CSVs
-6. STRATEGY INTEGRATION: use the active playbook
-7. RISK MANAGEMENT: position sizing, session exposure, max daily loss
+4. FILE GENERATION: downloadable HTML reports, CSVs, JSON analysis
+5. FILE READING: analyze uploaded PDFs, images, CSVs
+6. STRATEGY INTEGRATION: cross-reference active playbook with live performance
+7. RISK MANAGEMENT: position sizing, session exposure, max daily drawdown
 
 FILE GENERATION:
 • HTML: <<<HTML_FILE>>><!DOCTYPE html>...</html><<<END_HTML>>>
 • CSV: <<<CSV_FILE>>>header1,header2\nval1,val2<<<END_CSV>>>
 • JSON: <<<JSON_FILE>>>{...}<<<END_JSON>>>
-MARKET DATA: <<<REQUEST_MARKET_DATA>>>{"symbol":"XAUUSD","timeframe":"H1","from":"2025-01-01","to":"2025-03-01"}<<<END_REQUEST>>>
 MEMORY: <<<MEMORY_UPDATE>>>key finding<<<END_MEMORY>>>
 
-Be specific, data-driven, and actionable. You have their actual trade data — use it.`
+Always be specific and data-driven. Reference actual numbers from the trader's data.`
 }
+
+
 
 function parseResp(text) {
   const files=[]; let clean=text; let mdReq=null
@@ -223,7 +252,9 @@ export default function Sylledge() {
 
   const callAI = async (userMsg, extraContent) => {
     const jwt   = await getSessionToken()
-    const system = buildSystemPrompt(trades,playbooks,backtests,memory,selPlaybook,attachments)
+    // Fetch live market data from MarketCharts and inject into system prompt
+    const marketCtx = await fetchMarketContext(trades, supabase)
+    const system = buildSystemPrompt(trades,playbooks,backtests,memory,selPlaybook,attachments,marketCtx)
     const history = messages.slice(-12).map(m=>({ role:m.role, content:m.content }))
     let content = userMsg
     if(extraContent?.length) {
@@ -233,8 +264,12 @@ export default function Sylledge() {
       const res = await fetch("/api/sylledge-chat", {
         method:"POST",
         headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${jwt}` },
-        body: JSON.stringify({ system, messages:[...history,{ role:"user",content }], max_tokens:1200 })
+        body: JSON.stringify({ system, messages:[...history,{ role:"user",content }], max_tokens:1500 })
       })
+      if(!res.ok) {
+        const err = await res.text()
+        return `SYLLEDGE error (${res.status}): ${err}`
+      }
       const data = await res.json()
       if(data.error) return `SYLLEDGE error: ${data.error}`
       return data.content?.map(b=>b.text||"").join("") || "No response."
@@ -325,7 +360,7 @@ export default function Sylledge() {
       </div>
 
       {/* ── Stats strip ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
+      <div className="sylledge-stats flex flex-wrap gap-2 mb-4 flex-shrink-0">
         {[
           { label:"Win Rate",  v:`${winRate}%`,  color:parseFloat(winRate)>=50?"var(--accent-success)":"var(--accent-danger)", icon:Target },
           { label:"Net P&L",   v:`${netPnl>=0?"+":""}$${netPnl.toFixed(0)}`, color:netPnl>=0?"var(--accent-success)":"var(--accent-danger)", icon:TrendingUp },
@@ -359,7 +394,7 @@ export default function Sylledge() {
       {tab==="chat" && (
         <div className="flex flex-col flex-1 min-h-0 gap-3">
           {/* Quick prompts */}
-          <div className="flex flex-wrap gap-2 flex-shrink-0">
+          <div className="quick-prompts flex flex-wrap gap-2 flex-shrink-0">
             {QUICK_PROMPTS.map(p=>(
               <button key={p.label} onClick={()=>sendMessage(p.prompt)} disabled={loading}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-80 transition-opacity"
