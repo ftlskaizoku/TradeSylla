@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authHelpers } from '@/lib/supabase'
+import { useUser } from '@/lib/UserContext'
 import { toast } from '@/components/ui/toast'
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight, TrendingUp } from 'lucide-react'
 
@@ -85,12 +86,18 @@ function OAuthBtn({ icon, label, onClick, loading }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function SignIn({ switchTo }) {
   const navigate   = useNavigate()
+  const { user }   = useUser()
   const [email,    setEmail]    = useState(() => localStorage.getItem('ts_saved_email') || '')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading,     setLoading]     = useState(false)
   const [rememberMe,  setRememberMe]  = useState(() => localStorage.getItem('ts_remember') === '1')
   const [oauthLoading, setOauthLoading] = useState('')
+
+  // Navigate as soon as auth state confirms user is logged in
+  useEffect(() => {
+    if (user) navigate('/Dashboard', { replace: true })
+  }, [user])
 
   const handleSignIn = async () => {
     if (!email || !password) { toast.error('Please fill in all fields'); return }
@@ -107,7 +114,7 @@ function SignIn({ switchTo }) {
       localStorage.removeItem('ts_saved_email')
     }
     toast.success('Welcome back!')
-    navigate('/Dashboard')
+    // Navigation handled by useEffect watching user state above
   }
 
   const handleGoogle = async () => {

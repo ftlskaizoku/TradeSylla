@@ -7,7 +7,7 @@ import {
   Plus, Pencil, Trash2, X, List, CalendarDays,
   TrendingUp, TrendingDown, Activity, ChevronLeft, ChevronRight,
   Upload, CheckCircle, Brain, Sparkles, Download, AlertTriangle, ChevronDown, ChevronUp,
-  BarChart2, Clock, Hash
+  BarChart2, Clock, Hash, Play, Pause, SkipBack, SkipForward, FastForward, Rewind
 } from "lucide-react"
 
 
@@ -700,6 +700,208 @@ function RunningPnLChart({ candles, entryTime, exitTime, entryPrice, direction, 
   } catch {
     return null
   }
+}
+
+
+// ─── Trade Replay Mode ────────────────────────────────────────────────────────
+function TradeReplay({ trade, candles, onClose }) {
+  const [frame,   setFrame]   = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [speed,   setSpeed]   = useState(1)
+  const timerRef = useRef(null)
+
+  const entryMs  = trade.entry_time ? new Date(trade.entry_time).getTime() : 0
+  const exitMs   = trade.exit_time  ? new Date(trade.exit_time).getTime()  : null
+  const entryIdx = Math.max(0, candles.findIndex(c => new Date(c.t).getTime() >= entryMs))
+  const exitIdx  = exitMs ? candles.findIndex(c => new Date(c.t).getTime() >= exitMs) : candles.length - 1
+  const startIdx = Math.max(0, entryIdx - 5)
+  const [dispStart] = useState(startIdx)
+  const n = candles.length - dispStart
+
+  const currentCandles = candles.slice(dispStart, dispStart + frame + 1)
+
+  useEffect(() => {
+    if (playing) {
+      timerRef.current = setInterval(() => {
+        setFrame(f => {
+          if (f >= n - 1) { setPlaying(false); return f }
+          return f + 1
+        })
+      }, Math.max(50, 400 / speed))
+    } else { clearInterval(timerRef.current) }
+    return () => clearInterval(timerRef.current)
+  }, [playing, speed, n])
+
+  const toggle    = () => setPlaying(p => !p)
+  const stepBack  = () => { setPlaying(false); setFrame(f => Math.max(0, f - 1)) }
+  const stepFwd   = () => { setPlaying(false); setFrame(f => Math.min(n - 1, f + 1)) }
+  const rewindAll = () => { setPlaying(false); setFrame(0) }
+  const skipEnd   = () => { setPlaying(false); setFrame(n - 1) }
+
+  const currentCandle = candles[dispStart + frame]
+  const ep    = parseFloat(trade.entry_price) || 0
+  const xp    = parseFloat(trade.exit_price)  || 0
+  const sign  = trade.direction === "SELL" ? -1 : 1
+  const rawPnl   = currentCandle ? sign * (parseFloat(currentCandle.c) - ep) : 0
+  const lastRaw  = candles.length ? sign * (parseFloat(candles[candles.length-1].c) - ep) : 0
+  const scale    = (lastRaw !== 0 && trade.pnl !== 0) ? trade.pnl / lastRaw : 1
+  const livePnl  = rawPnl * scale
+  const entryShown = (dispStart + frame) >= entryIdx
+  const exitShown  = exitIdx > 0 && (dispStart + frame) >= exitIdx
+  const progress   = n > 1 ? (frame / (n - 1)) * 100 : 0
+
+  const W = 900, H = 260, PAD = { top:12, right:60, bottom:28, left:10 }
+  const cW = W - PAD.left - PAD.right, cH = H - PAD.top - PAD.bottom
+  const cc = currentCandles
+  const highs = cc.map(c => parseFloat(c.h))
+  const lows  = cc.map(c => parseFloat(c.l))
+  const maxP  = Math.max(...highs, ep, xp) || 1
+  const minP  = Math.min(...lows,  ep, xp) || 0
+  const range = (maxP - minP) || 0.0001
+  const toY  = p => PAD.top + cH - ((p - minP) / range) * cH
+  const toX  = i => PAD.left + (i / Math.max(cc.length - 1, 1)) * cW
+  const cW2  = Math.max(1, Math.min(10, cW / Math.max(cc.length, 1) - 1))
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col" style={{ background:"rgba(5,5,13,0.97)", backdropFilter:"blur(8px)" }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3 flex-shrink-0"
+        style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-card)" }}>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+            style={{ background:"rgba(108,99,255,0.15)" }}>
+            <Play size={14} style={{ color:"var(--accent)" }}/>
+          </div>
+          <div>
+            <p className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>
+              Trade Replay — {trade.symbol} {trade.direction}
+            </p>
+            <p className="text-xs" style={{ color:"var(--text-muted)", fontFamily:"var(--font-mono)" }}>
+              {trade.timeframe} · {new Date(trade.entry_time).toLocaleDateString()}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-xs" style={{ color:"var(--text-muted)" }}>Running P&L</p>
+            <p className="text-lg font-black" style={{
+              fontFamily:"var(--font-mono)",
+              color: livePnl >= 0 ? "var(--accent-success)" : "var(--accent-danger)"
+            }}>
+              {livePnl >= 0 ? "+" : ""}${livePnl.toFixed(2)}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:opacity-70"
+            style={{ background:"var(--bg-elevated)", color:"var(--text-secondary)" }}>
+            <X size={16}/>
+          </button>
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div className="flex-1 relative overflow-hidden p-4">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+          {[0.25,0.5,0.75].map(f => (
+            <line key={f} x1={PAD.left} x2={W-PAD.right}
+              y1={PAD.top+cH*f} y2={PAD.top+cH*f}
+              stroke="rgba(255,255,255,0.04)" strokeWidth="0.5"/>
+          ))}
+          {entryShown && (() => {
+            const eix = entryIdx - dispStart
+            const ex = toX(Math.min(eix, cc.length-1))
+            const ew = Math.max(0, toX(cc.length-1) - ex)
+            return <rect x={ex} y={PAD.top} width={ew} height={cH}
+              fill={exitShown ? (livePnl>=0?"rgba(46,213,115,0.06)":"rgba(255,71,87,0.06)") : "rgba(108,99,255,0.05)"}/>
+          })()}
+          {cc.map((c,i) => {
+            const o=parseFloat(c.o),cl=parseFloat(c.c),h=parseFloat(c.h),l=parseFloat(c.l)
+            const isBull=cl>=o, color=isBull?"#2ed573":"#ff4757"
+            const x=toX(i), bodyTop=toY(Math.max(o,cl)), bodyH=Math.max(1,toY(Math.min(o,cl))-bodyTop)
+            return <g key={i}>
+              <line x1={x} x2={x} y1={toY(h)} y2={toY(l)} stroke={color} strokeWidth="1"/>
+              <rect x={x-cW2/2} y={bodyTop} width={cW2} height={bodyH} fill={color} opacity={0.9} rx="0.5"/>
+            </g>
+          })}
+          {entryShown && ep > 0 && <>
+            <line x1={PAD.left} x2={W-PAD.right} y1={toY(ep)} y2={toY(ep)} stroke="#6c63ff" strokeWidth="1.5" strokeDasharray="5,3"/>
+            <rect x={W-PAD.right+1} y={toY(ep)-8} width={24} height={14} fill="rgba(108,99,255,0.9)" rx="3"/>
+            <text x={W-PAD.right+13} y={toY(ep)+4} textAnchor="middle" fontSize="8" fill="#fff" fontWeight="700">E</text>
+          </>}
+          {exitShown && xp > 0 && <>
+            <line x1={PAD.left} x2={W-PAD.right} y1={toY(xp)} y2={toY(xp)}
+              stroke={livePnl>=0?"#2ed573":"#ff4757"} strokeWidth="1.5" strokeDasharray="5,3"/>
+            <rect x={W-PAD.right+1} y={toY(xp)-8} width={24} height={14}
+              fill={livePnl>=0?"rgba(46,213,115,0.9)":"rgba(255,71,87,0.9)"} rx="3"/>
+            <text x={W-PAD.right+13} y={toY(xp)+4} textAnchor="middle" fontSize="8" fill="#fff" fontWeight="700">X</text>
+          </>}
+          {[0,0.25,0.5,0.75,1].map((f,i) => {
+            const p=minP+range*(1-f), y=toY(p)
+            return <text key={i} x={W-PAD.right+3} y={y+3} fontSize="9"
+              fill="rgba(160,160,180,0.7)" fontFamily="monospace">
+              {p<10?p.toFixed(5):p.toFixed(2)}
+            </text>
+          })}
+          {currentCandle && <text x={W/2} y={H-4} textAnchor="middle" fontSize="10"
+            fill="rgba(160,160,180,0.7)" fontFamily="monospace">
+            {new Date(currentCandle.t).toLocaleString("en-US",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false})}
+          </text>}
+        </svg>
+        <div className="absolute top-6 left-6 flex gap-2">
+          {entryShown && <span className="px-2 py-1 rounded-lg text-xs font-bold"
+            style={{ background:"rgba(108,99,255,0.2)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.3)" }}>
+            ● Entry {ep}
+          </span>}
+          {exitShown && <span className="px-2 py-1 rounded-lg text-xs font-bold"
+            style={{ background:livePnl>=0?"rgba(46,213,115,0.2)":"rgba(255,71,87,0.2)",
+              color:livePnl>=0?"var(--accent-success)":"var(--accent-danger)",
+              border:`1px solid ${livePnl>=0?"rgba(46,213,115,0.3)":"rgba(255,71,87,0.3)"}` }}>
+            ● Exit {xp}
+          </span>}
+        </div>
+      </div>
+
+      {/* Transport */}
+      <div className="flex-shrink-0 px-5 py-4" style={{ borderTop:"1px solid var(--border)", background:"var(--bg-card)" }}>
+        <div className="mb-3 h-2 rounded-full overflow-hidden relative cursor-pointer"
+          style={{ background:"var(--bg-elevated)" }}
+          onClick={e => {
+            const r = e.currentTarget.getBoundingClientRect()
+            setFrame(Math.round(((e.clientX - r.left) / r.width) * (n-1)))
+            setPlaying(false)
+          }}>
+          <div className="h-full rounded-full" style={{ width:`${progress}%`, background:"linear-gradient(90deg,var(--accent),var(--accent-secondary))", transition:"width 0.1s" }}/>
+          {entryIdx >= dispStart && <div className="absolute inset-y-0 w-0.5 bg-purple-400 opacity-70"
+            style={{ left:`${((entryIdx-dispStart)/(n-1))*100}%` }}/>}
+          {exitIdx > 0 && exitIdx >= dispStart && <div className="absolute inset-y-0 w-0.5 opacity-70"
+            style={{ left:`${((exitIdx-dispStart)/(n-1))*100}%`, background:livePnl>=0?"#2ed573":"#ff4757" }}/>}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs" style={{ color:"var(--text-muted)", fontFamily:"var(--font-mono)" }}>
+            {dispStart+frame+1} / {dispStart+n}
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={rewindAll} className="p-2 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}><Rewind size={13}/></button>
+            <button onClick={stepBack}  className="p-2 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}><SkipBack size={13}/></button>
+            <button onClick={toggle} className="w-10 h-10 flex items-center justify-center rounded-xl"
+              style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))", color:"#fff" }}>
+              {playing ? <Pause size={16}/> : <Play size={16}/>}
+            </button>
+            <button onClick={stepFwd}  className="p-2 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}><SkipForward size={13}/></button>
+            <button onClick={skipEnd}  className="p-2 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)", background:"var(--bg-elevated)" }}><FastForward size={13}/></button>
+          </div>
+          <div className="flex gap-0.5 p-0.5 rounded-lg" style={{ background:"var(--bg-elevated)" }}>
+            {[1,2,4,8].map(s => (
+              <button key={s} onClick={()=>setSpeed(s)}
+                className="px-2 py-1 rounded-md text-xs font-bold"
+                style={{ background:speed===s?"var(--accent)":"transparent", color:speed===s?"#fff":"var(--text-muted)" }}>
+                {s}×
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ─── Inline Trade Detail Row ──────────────────────────────────────────────────
