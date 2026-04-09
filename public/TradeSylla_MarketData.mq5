@@ -1,20 +1,16 @@
 //+------------------------------------------------------------------+
-//| TradeSylla_MarketData.mq5   v3.2                                 |
+//| TradeSylla_MarketData.mq5   v3.4                                 |
 //|                                                                    |
-//| FIX vs v3.1:                                                       |
-//|  SyncSymbol() loaded ALL bars then looped through all batches     |
-//|  in one OnTimer call → MT5 killed EA after ~60-90 seconds.       |
+//| NEW in v3.4 — INCREMENTAL SYNC:                                  |
+//|  Before loading bars for each sym/tf, queries the API for the    |
+//|  latest candle_time already stored. Only fetches bars AFTER      |
+//|  that timestamp → fills gaps without re-sending existing data.   |
 //|                                                                    |
-//|  NEW STATE MACHINE:                                               |
-//|  Each OnTimer tick sends exactly ONE 500-bar HTTP batch, then     |
-//|  returns. Bars are loaded once per sym/tf and stored globally.    |
-//|  Each tick blocks <200ms — well within MT5 watchdog threshold.   |
-//|                                                                    |
-//|  HISTORY WINDOWS (to avoid loading millions of M1 bars):         |
-//|  M1→7d  M5→30d  M15→90d  H1→1yr  H4→3yr  D1→2015              |
+//|  FullHistorySync=true  → gap-fill from last stored bar           |
+//|  FullHistorySync=false → live push only (no gap-fill)            |
 //+------------------------------------------------------------------+
 #property copyright "TradeSylla"
-#property version   "3.20"
+#property version   "3.40"
 
 input string AdminToken      = "";
 input string ServerURL       = "https://tradesylla.vercel.app";
@@ -119,24 +115,45 @@ void ProgressiveSyncStep() {
 
    if(g_symIdx >= TARGET_COUNT) {
       g_histDone = true;
-      Print("=== History sync COMPLETE: ", TARGET_COUNT, " symbols x ", ArraySize(TFS), " TFs ===");
+      Print("=== Gap-fill sync COMPLETE: ", TARGET_COUNT, " symbols x ", ArraySize(TFS), " TFs ===");
       return;
    }
 
    string brokerSym    = g_brokerSym[g_symIdx];
    string canonicalSym = TARGET_CANONICAL[g_symIdx];
 
-   // Phase A: load bars once per sym/tf
+   // Phase A: load bars once per sym/tf — from LAST STORED bar, not fixed window
    if(g_ratesLoaded == 0) {
-      datetime fromDt = (HIST_WINDOW[g_tfIdx] == 0)
-         ? D'2015.01.01'
-         : TimeCurrent() - HIST_WINDOW[g_tfIdx];
+      // Ask the server for the latest candle_time we already have
+      datetime lastStored = GetLastStoredTime(canonicalSym, TFNAMES[g_tfIdx]);
+
+      datetime fromDt;
+      if(lastStored > 0) {
+         // Gap-fill: start 1 bar after what we already have
+         fromDt = lastStored + PeriodSeconds(TFS[g_tfIdx]);
+         Print("Gap-fill ", canonicalSym, " ", TFNAMES[g_tfIdx],
+               " from ", TimeToString(fromDt, TIME_DATE|TIME_MINUTES));
+      } else {
+         // No data yet — use original history window
+         fromDt = (HIST_WINDOW[g_tfIdx] == 0)
+            ? D'2015.01.01'
+            : TimeCurrent() - HIST_WINDOW[g_tfIdx];
+         Print("Full sync ", canonicalSym, " ", TFNAMES[g_tfIdx],
+               " from ", TimeToString(fromDt, TIME_DATE|TIME_MINUTES));
+      }
+
+      // If fromDt is recent (within 2 bars), nothing to do — skip
+      if(fromDt >= TimeCurrent() - PeriodSeconds(TFS[g_tfIdx]) * 2) {
+         Print("Already up-to-date: ", canonicalSym, " ", TFNAMES[g_tfIdx]);
+         AdvanceSyncIndex(false); return;
+      }
+
       ArrayResize(g_rates, 0);
       g_ratesLoaded = CopyRates(brokerSym, TFS[g_tfIdx], fromDt, TimeCurrent(), g_rates);
       if(g_ratesLoaded <= 0) {
          g_retryCount++;
          if(g_retryCount <= MAX_RETRIES) {
-            Print("No data yet: ", canonicalSym, "(", brokerSym, ") ",
+            Print("No new bars: ", canonicalSym, "(", brokerSym, ") ",
                   TFNAMES[g_tfIdx], " retry ", g_retryCount);
             Sleep(300); return;
          }
@@ -145,8 +162,9 @@ void ProgressiveSyncStep() {
          AdvanceSyncIndex(false); return;
       }
       g_batchStart = 0; g_retryCount = 0;
-      Print("Syncing: ", canonicalSym, " ", TFNAMES[g_tfIdx],
-            " = ", g_ratesLoaded, " bars  [", g_symIdx+1, "/", TARGET_COUNT, "]");
+      Print("Sending ", g_ratesLoaded, " new bars: ",
+            canonicalSym, " ", TFNAMES[g_tfIdx],
+            "  [", g_symIdx+1, "/", TARGET_COUNT, "]");
    }
 
    // Phase B: send exactly one batch — always use canonical symbol name
@@ -165,6 +183,29 @@ void ProgressiveSyncStep() {
       ArrayResize(g_rates, 0); g_ratesLoaded = 0; g_batchStart = 0;
       AdvanceSyncIndex(false);
    }
+}
+
+// Query the API for the latest candle_time stored for a given symbol/TF
+// Returns 0 if nothing stored yet
+datetime GetLastStoredTime(string sym, string tf) {
+   string path = "/api/sylledge-market?symbol=" + sym +
+                 "&timeframe=" + tf + "&limit=1&order=desc";
+   string resp = HTTGET(path);
+   if(resp == "" || resp == "[]" || resp == "null") return 0;
+
+   // Parse first "candle_time" value from JSON array
+   string key = "\"candle_time\":\"";
+   int pos = StringFind(resp, key);
+   if(pos == -1) return 0;
+   int start = pos + StringLen(key);
+   int end   = StringFind(resp, "\"", start);
+   if(end == -1) return 0;
+
+   string dtStr = StringSubstr(resp, start, end - start);
+   // dtStr is ISO: "2023-11-15T14:00:00" — convert to datetime
+   dtStr = StringSubstr(dtStr, 0, 19); // strip timezone suffix if any
+   StringReplace(dtStr, "T", " ");
+   return StringToTime(dtStr);
 }
 
 void AdvanceSyncIndex(bool skipAll) {

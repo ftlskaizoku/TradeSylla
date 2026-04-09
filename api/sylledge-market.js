@@ -56,12 +56,13 @@ export default async function handler(req, res) {
 
   // ── GET — any authenticated user reads market data ─────────────────────────
   if (req.method === "GET") {
-    const { symbol, timeframe, limit = 500, from, to } = req.query
+    const { symbol, timeframe, limit = 500, from, to, order = "asc" } = req.query
     if (!symbol || !timeframe) return res.status(400).json({ error: "symbol and timeframe required" })
+    const ascending = order !== "desc"
     let q = supabase.from("sylledge_market_data")
       .select("candle_time,open_price,high_price,low_price,close_price,volume")
-      .eq("symbol", symbol).eq("timeframe", timeframe)
-      .order("candle_time", { ascending: true })
+      .eq("symbol", normalizeSymbol(symbol)).eq("timeframe", timeframe)
+      .order("candle_time", { ascending })
       .limit(parseInt(limit))
     if (from) q = q.gte("candle_time", from)
     if (to)   q = q.lte("candle_time", to)
