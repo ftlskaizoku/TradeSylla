@@ -16,7 +16,7 @@
 //|  FullHistorySync=false → live push only (no gap-fill)            |
 //+------------------------------------------------------------------+
 #property copyright "TradeSylla"
-#property version   "3.50"
+#property version   "3.60"
 
 input string AdminToken      = "";
 input string ServerURL       = "https://tradesylla.vercel.app";
@@ -24,7 +24,7 @@ input bool   FullHistorySync = true;
 input int    PollInterval    = 10;
 input int    LiveInterval    = 60;
 input int    SyncDelay       = 80;
-input int    ReSyncHours     = 4;   // re-run gap-fill every N hours (0 = disable)
+input int    ReSyncHours     = 1;   // re-run gap-fill every N hours (0 = disable)
 
 ENUM_TIMEFRAMES TFS[]    = { PERIOD_M1, PERIOD_M5, PERIOD_M15, PERIOD_H1, PERIOD_H4, PERIOD_D1 };
 string          TFNAMES[]= { "M1","M5","M15","H1","H4","D1" };
@@ -70,7 +70,7 @@ int      MAX_RETRIES   = 3;
 
 int OnInit() {
    if(AdminToken == "") { Alert("TradeSylla MarketData: Set AdminToken"); return INIT_FAILED; }
-   Print("TradeSylla MarketData v3.5 starting...");
+   Print("TradeSylla MarketData v3.6 starting...");
    Print("ServerURL: ", ServerURL);
    Print("FullHistorySync: ", FullHistorySync ? "YES" : "NO");
    Print("ReSyncHours: ", ReSyncHours, " (0=disabled)");
@@ -173,6 +173,33 @@ void ProgressiveSyncStep() {
          Print("Already up-to-date: ", canonicalSym, " ", TFNAMES[g_tfIdx]);
          AdvanceSyncIndex(false); return;
       }
+
+      // ── Force MT5 to download history from broker before CopyRates ──────
+      // MT5 only loads history on demand. Without this, CopyRates returns 0
+      // for timeframes/symbols that haven't been viewed in the terminal.
+      datetime preload[];
+      int preloaded = CopyTime(brokerSym, TFS[g_tfIdx], fromDt, TimeCurrent(), preload);
+      if(preloaded <= 0) {
+         // Ask MT5 to synchronise — wait up to 5 seconds
+         int waitMs = 0;
+         while(!SeriesInfoInteger(brokerSym, TFS[g_tfIdx], SERIES_SYNCHRONIZED) && waitMs < 5000) {
+            Sleep(200); waitMs += 200;
+         }
+         // Retry CopyTime after sync
+         preloaded = CopyTime(brokerSym, TFS[g_tfIdx], fromDt, TimeCurrent(), preload);
+         if(preloaded <= 0) {
+            g_retryCount++;
+            if(g_retryCount <= MAX_RETRIES) {
+               Print("History not ready: ", canonicalSym, " ", TFNAMES[g_tfIdx],
+                     " retry ", g_retryCount, "/", MAX_RETRIES);
+               Sleep(500); return;
+            }
+            Print("Skip (no history): ", canonicalSym, " ", TFNAMES[g_tfIdx]);
+            g_ratesLoaded = 0; g_retryCount = 0;
+            AdvanceSyncIndex(false); return;
+         }
+      }
+      ArrayFree(preload);
 
       ArrayResize(g_rates, 0);
       g_ratesLoaded = CopyRates(brokerSym, TFS[g_tfIdx], fromDt, TimeCurrent(), g_rates);
