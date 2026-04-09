@@ -704,8 +704,9 @@ function RunningPnLChart({ candles, entryTime, exitTime, entryPrice, direction, 
 
 // ─── Inline Trade Detail Row ──────────────────────────────────────────────────
 function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
-  const [candles, setCandles] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [candles,   setCandles]  = useState(null)
+  const [loading,   setLoading]  = useState(true)
+  const [replaying, setReplaying]= useState(false)
 
   useEffect(() => {
     supabase
@@ -723,7 +724,11 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
   const pnlColor = (trade.pnl||0) >= 0 ? "var(--accent-success)" : "var(--accent-danger)"
 
   return (
-    <tr>
+    <>
+      {replaying && candles?.length && (
+        <TradeReplay trade={trade} candles={candles} onClose={() => setReplaying(false)}/>
+      )}
+      <tr>
       <td colSpan={colSpan} style={{ background:"var(--bg-elevated)", borderBottom:"2px solid var(--accent)", padding:0 }}>
         <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
 
@@ -806,6 +811,11 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
             )}
 
             <div className="flex gap-2 pt-1">
+              <button onClick={()=>setReplaying(true)} disabled={!candles?.length}
+                className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold disabled:opacity-30 flex-shrink-0"
+                style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.2)" }}>
+                <Play size={11}/> Replay
+              </button>
               <button onClick={()=>onAI(trade)}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold"
                 style={{ background:"rgba(0,212,170,0.1)", color:"var(--accent-secondary)", border:"1px solid rgba(0,212,170,0.2)" }}>
@@ -826,6 +836,7 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
         </div>
       </td>
     </tr>
+    </>
   )
 }
 

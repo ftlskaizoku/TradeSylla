@@ -9,78 +9,64 @@ import { supabase } from "@/lib/supabase"
 import {
   BarChart2, RefreshCw, Database, ChevronDown,
   MousePointer, Minus, Square, Trash2, RotateCcw,
-  TrendingUp, ZoomIn, Maximize2
+  Maximize2, Type, Move, Ruler
 } from "lucide-react"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TIMEFRAMES = ["M1","M5","M15","H1","H4","D1"]
 
-const FIB_LEVELS  = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
-const FIB_COLORS  = [
-  "rgba(120,120,140,0.9)",  // 0%     — subtle grey
-  "rgba(160,140,100,0.85)", // 23.6%  — muted gold
-  "rgba(180,155,90,0.9)",   // 38.2%  — gold (key level)
-  "rgba(200,200,200,0.95)", // 50%    — bright white (key level)
-  "rgba(180,155,90,0.9)",   // 61.8%  — gold (key level)
-  "rgba(160,140,100,0.85)", // 78.6%  — muted gold
-  "rgba(120,120,140,0.9)",  // 100%   — subtle grey
+// Fibonacci — uniform TradingView-style gold, fill zones between levels
+const FIB_LEVELS   = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
+const FIB_EXT_LEVELS = [0, 0.618, 1.0, 1.618, 2.618, 4.236]
+const FIB_LINE_COLOR = "rgba(178,152,80,0.9)"  // uniform muted gold
+const FIB_KEY_COLOR  = "rgba(210,185,105,1)"   // brighter for 38.2, 50, 61.8
+const FIB_KEY_SET    = new Set([0.382, 0.5, 0.618])
+const FIB_FILLS      = [
+  "rgba(178,152,80,0.0)",  "rgba(178,152,80,0.04)",
+  "rgba(178,152,80,0.05)", "rgba(178,152,80,0.07)",
+  "rgba(178,152,80,0.05)", "rgba(178,152,80,0.04)",
 ]
-const FIB_WIDTHS  = [1, 1, 1.5, 2, 1.5, 1, 1] // thicker on key levels
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
+// Groups separated by null entries (rendered as dividers)
 const TOOLS = [
-  {
-    id: "cursor", label: "Cursor / Pan", shortcut: "V",
-    icon: () => <MousePointer size={15}/>,
-  },
-  {
-    id: "hline", label: "Horizontal Line", shortcut: "H",
-    icon: () => <Minus size={15}/>,
-  },
-  {
-    id: "vline", label: "Vertical Line", shortcut: "X",
-    icon: () => (
-      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-        <line x1="7.5" y1="1" x2="7.5" y2="14" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2,1.5"/>
-      </svg>
-    ),
-  },
-  {
-    id: "trendline", label: "Trend Line", shortcut: "T",
-    icon: () => (
-      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-        <line x1="1" y1="13" x2="14" y2="2" stroke="currentColor" strokeWidth="1.5"/>
-        <circle cx="1.5" cy="12.5" r="1.5" fill="currentColor"/>
-        <circle cx="13.5" cy="2.5" r="1.5" fill="currentColor"/>
-      </svg>
-    ),
-  },
-  {
-    id: "ray", label: "Ray (Extended Line)", shortcut: "R",
-    icon: () => (
-      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-        <line x1="1" y1="13" x2="14" y2="2" stroke="currentColor" strokeWidth="1.5"/>
-        <circle cx="1.5" cy="12.5" r="1.5" fill="currentColor"/>
-        <line x1="10" y1="5" x2="14" y2="2" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2,1"/>
-      </svg>
-    ),
-  },
-  {
-    id: "rect", label: "Rectangle", shortcut: "B",
-    icon: () => <Square size={14}/>,
-  },
-  {
-    id: "fib", label: "Fibonacci Retracement", shortcut: "F",
-    icon: () => (
-      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-        <line x1="1" y1="2"  x2="14" y2="2"  stroke="#ff4757" strokeWidth="1"/>
-        <line x1="1" y1="5"  x2="14" y2="5"  stroke="#ffa502" strokeWidth="1"/>
-        <line x1="1" y1="7.5" x2="14" y2="7.5" stroke="currentColor" strokeWidth="1"/>
-        <line x1="1" y1="10" x2="14" y2="10" stroke="#2ed573" strokeWidth="1"/>
-        <line x1="1" y1="13" x2="14" y2="13" stroke="#1e90ff" strokeWidth="1"/>
-      </svg>
-    ),
-  },
+  // ── Cursor
+  { id:"cursor",   label:"Cursor / Pan",        shortcut:"V", group:1,
+    icon:()=><MousePointer size={14}/> },
+  null,
+  // ── Lines
+  { id:"hline",    label:"Horizontal Line",     shortcut:"H", group:2,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" strokeWidth="1.5"/><line x1="1" y1="7" x2="4" y2="7" stroke="currentColor" strokeWidth="2.5"/></svg> },
+  { id:"vline",    label:"Vertical Line",       shortcut:"X", group:2,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2,1.5"/></svg> },
+  { id:"trendline",label:"Trend Line",          shortcut:"T", group:2,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="1" y1="12" x2="13" y2="2" stroke="currentColor" strokeWidth="1.5"/><circle cx="1.5" cy="11.5" r="1.5" fill="currentColor"/><circle cx="12.5" cy="2.5" r="1.5" fill="currentColor"/></svg> },
+  { id:"ray",      label:"Ray",                 shortcut:"R", group:2,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="1" y1="12" x2="13" y2="2" stroke="currentColor" strokeWidth="1.5"/><circle cx="1.5" cy="11.5" r="1.5" fill="currentColor"/><line x1="10" y1="5" x2="14" y2="2" stroke="currentColor" strokeWidth="1" strokeDasharray="2,1" opacity="0.6"/></svg> },
+  { id:"extline",  label:"Extended Line",       shortcut:"E", group:2,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="0" y1="12" x2="14" y2="2" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3,2"/><circle cx="4" cy="9.8" r="1.5" fill="currentColor"/><circle cx="10" cy="4.2" r="1.5" fill="currentColor"/></svg> },
+  { id:"channel",  label:"Parallel Channel",    shortcut:"P", group:2,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="1" y1="10" x2="13" y2="4" stroke="currentColor" strokeWidth="1.5"/><line x1="1" y1="13" x2="13" y2="7" stroke="currentColor" strokeWidth="1.5"/><line x1="1" y1="10" x2="1" y2="13" stroke="currentColor" strokeWidth="1" strokeDasharray="2,1"/><line x1="13" y1="4" x2="13" y2="7" stroke="currentColor" strokeWidth="1" strokeDasharray="2,1"/></svg> },
+  null,
+  // ── Shapes
+  { id:"rect",     label:"Rectangle",           shortcut:"B", group:3,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="12" height="8" stroke="currentColor" strokeWidth="1.5" fill="none"/></svg> },
+  { id:"circle",   label:"Circle",              shortcut:"O", group:3,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><ellipse cx="7" cy="7" rx="5.5" ry="5.5" stroke="currentColor" strokeWidth="1.5" fill="none"/></svg> },
+  null,
+  // ── Fibonacci
+  { id:"fib",      label:"Fibonacci Retracement",shortcut:"F", group:4,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="1" y1="2" x2="13" y2="2" stroke="rgba(210,185,105,1)" strokeWidth="1.5"/><line x1="1" y1="5" x2="13" y2="5" stroke="rgba(178,152,80,0.9)" strokeWidth="1"/><line x1="1" y1="8" x2="13" y2="8" stroke="rgba(210,185,105,1)" strokeWidth="1.5"/><line x1="1" y1="11" x2="13" y2="11" stroke="rgba(178,152,80,0.9)" strokeWidth="1"/></svg> },
+  { id:"fibext",   label:"Fibonacci Extension", shortcut:"G", group:4,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="1" y1="3" x2="13" y2="3" stroke="rgba(210,185,105,1)" strokeWidth="1.5"/><line x1="1" y1="7" x2="13" y2="7" stroke="rgba(210,185,105,1)" strokeWidth="2"/><line x1="1" y1="11" x2="13" y2="11" stroke="rgba(210,185,105,1)" strokeWidth="1.5"/></svg> },
+  null,
+  // ── Annotations
+  { id:"arrow",    label:"Arrow",               shortcut:"A", group:5,
+    icon:()=><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="2" y1="12" x2="12" y2="2" stroke="currentColor" strokeWidth="1.5"/><polyline points="7,2 12,2 12,7" stroke="currentColor" strokeWidth="1.5" fill="none"/></svg> },
+  { id:"measure",  label:"Measure / Ruler",     shortcut:"M", group:5,
+    icon:()=><Ruler size={13}/> },
+  { id:"text",     label:"Text Label",          shortcut:"N", group:5,
+    icon:()=><Type size={13}/> },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -185,7 +171,7 @@ export default function MarketCharts() {
     if (!isAdmin) return
     const handler = e => {
       if (e.target.tagName === "INPUT") return
-      const map = { v:"cursor", h:"hline", x:"vline", t:"trendline", r:"ray", b:"rect", f:"fib" }
+      const map = { v:"cursor", h:"hline", x:"vline", t:"trendline", r:"ray", e:"extline", p:"channel", b:"rect", o:"circle", f:"fib", g:"fibext", a:"arrow", m:"measure", n:"text" }
       const tool = map[e.key.toLowerCase()]
       if (tool) { setActiveTool(tool); e.preventDefault() }
       if (e.key === "Escape") { setPendingDraw(null); setActiveTool("cursor") }
@@ -421,84 +407,131 @@ export default function MarketCharts() {
     const W = canvas.width / dpr
     const H = canvas.height / dpr
 
-    const tToX = t  => chartRef.current.timeScale().timeToCoordinate(t)
-    const pToY = p  => candleSeriesRef.current.priceToCoordinate(p)
+    const tToX = t => chartRef.current.timeScale().timeToCoordinate(t)
+    const pToY = p => candleSeriesRef.current.priceToCoordinate(p)
 
     const allDrawings = [...drawingsRef.current, ...(pendingRef.current ? [pendingRef.current] : [])]
 
     for (const d of allDrawings) {
-      const alpha = d.pending ? 0.55 : 1
-      ctx.globalAlpha = alpha
+      ctx.globalAlpha = d.pending ? 0.55 : 1
 
+      // ── Horizontal Line ──────────────────────────────────────────────────
       if (d.type === "hline") {
-        const y = pToY(d.price)
-        if (y == null) continue
-        ctx.strokeStyle = "#6c63ff"
-        ctx.lineWidth   = 1.5
+        const y = pToY(d.price); if (y == null) continue
+        ctx.strokeStyle = "#6c63ff"; ctx.lineWidth = 1.5
         ctx.setLineDash([5, 3])
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke()
         ctx.setLineDash([])
-        // Label
-        ctx.fillStyle = "#6c63ff"
-        ctx.font = "bold 10px monospace"
-        ctx.textAlign = "right"
-        ctx.fillText(fmtPrice(d.price), W - 6, y - 4)
+        const lbl = fmtPrice(d.price)
+        ctx.font = "bold 10px monospace"; ctx.textAlign = "right"
+        ctx.fillStyle = "#6c63ff"; ctx.fillText(lbl, W - 6, y - 4)
       }
 
+      // ── Vertical Line ────────────────────────────────────────────────────
       else if (d.type === "vline") {
-        const x = tToX(d.time)
-        if (x == null) continue
-        ctx.strokeStyle = "#ffa502"
-        ctx.lineWidth   = 1.5
+        const x = tToX(d.time); if (x == null) continue
+        ctx.strokeStyle = "#ffa502"; ctx.lineWidth = 1.5
         ctx.setLineDash([5, 3])
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke()
         ctx.setLineDash([])
       }
 
-      else if (d.type === "trendline" || d.type === "ray") {
+      // ── Trend Line ───────────────────────────────────────────────────────
+      else if (d.type === "trendline") {
         if (!d.p1) continue
-        const ax = tToX(d.p1.time), ay = pToY(d.p1.price)
-        if (ax == null) continue
-        // Dot at P1
-        ctx.fillStyle = "#2ed573"
-        ctx.beginPath(); ctx.arc(ax, ay, 4, 0, Math.PI * 2); ctx.fill()
-
+        const ax = tToX(d.p1.time), ay = pToY(d.p1.price); if (ax == null) continue
+        ctx.fillStyle = "#2ed573"; ctx.beginPath(); ctx.arc(ax, ay, 4, 0, Math.PI*2); ctx.fill()
         if (!d.p2) continue
-        const bx = tToX(d.p2.time), by = pToY(d.p2.price)
-        if (bx == null) continue
-
-        // For ray: extend line to edge of chart
-        let x1 = ax, y1 = ay, x2 = bx, y2 = by
-        if (d.type === "ray") {
-          const dx = bx - ax, dy = by - ay
-          const t  = Math.max((W - ax) / (dx || 1), (0 - ax) / (dx || 1))
-          x2 = ax + dx * t; y2 = ay + dy * t
-        }
-
-        ctx.strokeStyle = "#2ed573"
-        ctx.lineWidth   = 1.5
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
-
-        ctx.fillStyle = "#2ed573"
-        ctx.beginPath(); ctx.arc(bx, by, 4, 0, Math.PI * 2); ctx.fill()
+        const bx = tToX(d.p2.time), by = pToY(d.p2.price); if (bx == null) continue
+        ctx.strokeStyle = "#2ed573"; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke()
+        ctx.fillStyle = "#2ed573"; ctx.beginPath(); ctx.arc(bx, by, 4, 0, Math.PI*2); ctx.fill()
       }
 
+      // ── Ray (extends right) ──────────────────────────────────────────────
+      else if (d.type === "ray") {
+        if (!d.p1) continue
+        const ax = tToX(d.p1.time), ay = pToY(d.p1.price); if (ax == null) continue
+        ctx.fillStyle = "#2ed573"; ctx.beginPath(); ctx.arc(ax, ay, 4, 0, Math.PI*2); ctx.fill()
+        if (!d.p2) continue
+        const bx = tToX(d.p2.time), by = pToY(d.p2.price); if (bx == null) continue
+        const dx = bx - ax, dy = by - ay
+        const t  = ((W - ax) / (dx || 0.001))
+        const x2 = ax + dx * t, y2 = ay + dy * t
+        ctx.strokeStyle = "#2ed573"; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(x2, y2); ctx.stroke()
+        ctx.fillStyle = "#2ed573"; ctx.beginPath(); ctx.arc(bx, by, 3, 0, Math.PI*2); ctx.fill()
+      }
+
+      // ── Extended Line (both ways) ────────────────────────────────────────
+      else if (d.type === "extline") {
+        if (!d.p1 || !d.p2) continue
+        const ax = tToX(d.p1.time), ay = pToY(d.p1.price)
+        const bx = tToX(d.p2.time), by = pToY(d.p2.price)
+        if (ax == null || bx == null) continue
+        const dx = bx - ax, dy = by - ay
+        const slope = dy / (dx || 0.001)
+        const x1 = 0,  y1 = ay - slope * ax
+        const x2 = W,  y2 = ay + slope * (W - ax)
+        ctx.strokeStyle = "#2ed573"; ctx.lineWidth = 1.5
+        ctx.setLineDash([6, 3])
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
+        ctx.setLineDash([])
+        ctx.fillStyle = "#2ed573"; ctx.beginPath(); ctx.arc(ax, ay, 3, 0, Math.PI*2); ctx.fill()
+        ctx.beginPath(); ctx.arc(bx, by, 3, 0, Math.PI*2); ctx.fill()
+      }
+
+      // ── Parallel Channel ─────────────────────────────────────────────────
+      else if (d.type === "channel") {
+        if (!d.p1) continue
+        const ax = tToX(d.p1.time), ay = pToY(d.p1.price); if (ax == null) continue
+        ctx.fillStyle = "#a29bfe"; ctx.beginPath(); ctx.arc(ax, ay, 4, 0, Math.PI*2); ctx.fill()
+        if (!d.p2) continue
+        const bx = tToX(d.p2.time), by = pToY(d.p2.price); if (bx == null) continue
+        // Default channel offset = 50px
+        const offset = d.offset || 50
+        const dx = bx - ax, dy = by - ay
+        const len = Math.sqrt(dx*dx + dy*dy) || 1
+        const nx = (-dy / len) * offset, ny = (dx / len) * offset
+        ctx.strokeStyle = "#a29bfe"; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke()
+        ctx.setLineDash([4, 3])
+        ctx.beginPath(); ctx.moveTo(ax+nx, ay+ny); ctx.lineTo(bx+nx, by+ny); ctx.stroke()
+        ctx.setLineDash([])
+        ctx.fillStyle = "rgba(162,155,254,0.05)"
+        ctx.beginPath()
+        ctx.moveTo(ax, ay); ctx.lineTo(bx, by)
+        ctx.lineTo(bx+nx, by+ny); ctx.lineTo(ax+nx, ay+ny)
+        ctx.closePath(); ctx.fill()
+        ctx.fillStyle = "#a29bfe"
+        ctx.beginPath(); ctx.arc(bx, by, 3, 0, Math.PI*2); ctx.fill()
+      }
+
+      // ── Rectangle ────────────────────────────────────────────────────────
       else if (d.type === "rect") {
         if (!d.p1) continue
-        const ax = tToX(d.p1.time), ay = pToY(d.p1.price)
-        if (ax == null) continue
+        const ax = tToX(d.p1.time), ay = pToY(d.p1.price); if (ax == null) continue
         if (!d.p2) { ctx.fillStyle="#1e90ff"; ctx.beginPath(); ctx.arc(ax,ay,4,0,Math.PI*2); ctx.fill(); continue }
-        const bx = tToX(d.p2.time), by = pToY(d.p2.price)
-        if (bx == null) continue
+        const bx = tToX(d.p2.time), by = pToY(d.p2.price); if (bx == null) continue
         const rx = Math.min(ax, bx), ry = Math.min(ay, by)
-        const rw = Math.abs(bx - ax),  rh = Math.abs(by - ay)
-        ctx.fillStyle   = "rgba(30,144,255,0.06)"
-        ctx.strokeStyle = "#1e90ff"
-        ctx.lineWidth   = 1.5
-        ctx.beginPath(); ctx.roundRect(rx, ry, rw, rh, 2)
-        ctx.fill(); ctx.stroke()
+        const rw = Math.abs(bx - ax), rh = Math.abs(by - ay)
+        ctx.fillStyle = "rgba(30,144,255,0.06)"; ctx.strokeStyle = "#1e90ff"; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.roundRect(rx, ry, rw, rh, 2); ctx.fill(); ctx.stroke()
       }
 
+      // ── Circle ───────────────────────────────────────────────────────────
+      else if (d.type === "circle") {
+        if (!d.p1) continue
+        const ax = tToX(d.p1.time), ay = pToY(d.p1.price); if (ax == null) continue
+        if (!d.p2) { ctx.fillStyle="#fd79a8"; ctx.beginPath(); ctx.arc(ax,ay,4,0,Math.PI*2); ctx.fill(); continue }
+        const bx = tToX(d.p2.time), by = pToY(d.p2.price); if (bx == null) continue
+        const rx = Math.abs(bx - ax) / 2, ry = Math.abs(by - ay) / 2
+        const cx2 = (ax + bx) / 2, cy2 = (ay + by) / 2
+        ctx.fillStyle = "rgba(253,121,168,0.06)"; ctx.strokeStyle = "#fd79a8"; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.ellipse(cx2, cy2, rx || 1, ry || 1, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke()
+      }
+
+      // ── Fibonacci Retracement ─────────────────────────────────────────────
       else if (d.type === "fib") {
         if (!d.p1 || !d.p2) continue
         const ax = tToX(d.p1.time), bx = tToX(d.p2.time)
@@ -508,25 +541,115 @@ export default function MarketCharts() {
         const pLow  = Math.min(d.p1.price, d.p2.price)
         const pRange = pHigh - pLow
 
+        // Draw fill zones between levels
+        const levelYs = FIB_LEVELS.map(l => pToY(pLow + pRange * (1 - l)))
+        FIB_FILLS.forEach((fill, i) => {
+          const y1 = levelYs[i], y2 = levelYs[i+1]
+          if (y1 == null || y2 == null) return
+          ctx.fillStyle = fill
+          ctx.fillRect(x1, Math.min(y1, y2), x2 - x1, Math.abs(y2 - y1))
+        })
+
+        // Draw lines
         FIB_LEVELS.forEach((level, i) => {
           const price = pLow + pRange * (1 - level)
-          const y = pToY(price)
-          if (y == null) return
-          ctx.strokeStyle = FIB_COLORS[i]
-          ctx.lineWidth   = FIB_WIDTHS[i]
-          ctx.setLineDash(level === 0.5 ? [] : [4, 3])
-          ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke()
+          const y = pToY(price); if (y == null) return
+          const isKey = FIB_KEY_SET.has(level)
+          ctx.strokeStyle = isKey ? FIB_KEY_COLOR : FIB_LINE_COLOR
+          ctx.lineWidth   = isKey ? 1.5 : 1
           ctx.setLineDash([])
-          // Background pill for label
+          ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke()
+          // Label
           const lbl = `${(level * 100).toFixed(1)}%`
-          ctx.font = `${level === 0.5 || level === 0.618 || level === 0.382 ? "bold " : ""}10px monospace`
-          const txtW = ctx.measureText(lbl).width
-          ctx.fillStyle = "rgba(12,13,20,0.75)"
-          ctx.fillRect(x2 + 3, y - 8, txtW + 8, 13)
-          ctx.fillStyle = FIB_COLORS[i]
+          ctx.font = `${isKey ? "bold " : ""}10px monospace`
+          const tw = ctx.measureText(lbl).width
+          ctx.fillStyle = "rgba(10,11,20,0.8)"
+          ctx.fillRect(x2 + 2, y - 8, tw + 8, 13)
+          ctx.fillStyle = isKey ? FIB_KEY_COLOR : FIB_LINE_COLOR
           ctx.textAlign = "left"
-          ctx.fillText(lbl, x2 + 7, y + 3)
+          ctx.fillText(lbl, x2 + 6, y + 3)
         })
+      }
+
+      // ── Fibonacci Extension ───────────────────────────────────────────────
+      else if (d.type === "fibext") {
+        if (!d.p1 || !d.p2) continue
+        const ax = tToX(d.p1.time), bx = tToX(d.p2.time)
+        if (ax == null || bx == null) continue
+        const x1 = Math.min(ax, bx), x2 = Math.max(ax, bx)
+        const pHigh = Math.max(d.p1.price, d.p2.price)
+        const pLow  = Math.min(d.p1.price, d.p2.price)
+        const pRange = pHigh - pLow
+
+        FIB_EXT_LEVELS.forEach((level) => {
+          const price = pLow - pRange * level  // extension goes below
+          const y = pToY(price); if (y == null) return
+          const isKey = level === 1.618
+          ctx.strokeStyle = isKey ? FIB_KEY_COLOR : FIB_LINE_COLOR
+          ctx.lineWidth   = isKey ? 2 : 1
+          ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke()
+          const lbl = `${(level * 100).toFixed(1)}%`
+          ctx.font = `${isKey ? "bold " : ""}10px monospace`
+          const tw = ctx.measureText(lbl).width
+          ctx.fillStyle = "rgba(10,11,20,0.8)"; ctx.fillRect(x2+2, y-8, tw+8, 13)
+          ctx.fillStyle = isKey ? FIB_KEY_COLOR : FIB_LINE_COLOR
+          ctx.textAlign = "left"; ctx.fillText(lbl, x2+6, y+3)
+        })
+      }
+
+      // ── Arrow ────────────────────────────────────────────────────────────
+      else if (d.type === "arrow") {
+        if (!d.p1) continue
+        const ax = tToX(d.p1.time), ay = pToY(d.p1.price); if (ax == null) continue
+        if (!d.p2) { ctx.fillStyle="#ffeaa7"; ctx.beginPath(); ctx.arc(ax,ay,4,0,Math.PI*2); ctx.fill(); continue }
+        const bx = tToX(d.p2.time), by = pToY(d.p2.price); if (bx == null) continue
+        const angle = Math.atan2(by - ay, bx - ax)
+        const hs = 10, hw = 5
+        ctx.strokeStyle = "#ffeaa7"; ctx.fillStyle = "#ffeaa7"; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(bx, by)
+        ctx.lineTo(bx - hs * Math.cos(angle - Math.PI/6), by - hs * Math.sin(angle - Math.PI/6))
+        ctx.lineTo(bx - hs * Math.cos(angle + Math.PI/6), by - hs * Math.sin(angle + Math.PI/6))
+        ctx.closePath(); ctx.fill()
+      }
+
+      // ── Measure / Ruler ──────────────────────────────────────────────────
+      else if (d.type === "measure") {
+        if (!d.p1 || !d.p2) continue
+        const ax = tToX(d.p1.time), ay = pToY(d.p1.price)
+        const bx = tToX(d.p2.time), by = pToY(d.p2.price)
+        if (ax == null || bx == null) continue
+        const rx = Math.min(ax, bx), ry = Math.min(ay, by)
+        const rw = Math.abs(bx - ax), rh = Math.abs(by - ay)
+        const priceDiff = Math.abs(d.p2.price - d.p1.price)
+        const pct = Math.abs((d.p2.price - d.p1.price) / d.p1.price * 100).toFixed(2)
+        const dp  = d.p1.price < 10 ? 5 : 2
+        ctx.fillStyle = "rgba(108,99,255,0.08)"; ctx.strokeStyle = "rgba(108,99,255,0.5)"; ctx.lineWidth = 1
+        ctx.setLineDash([3, 2])
+        ctx.beginPath(); ctx.rect(rx, ry, rw, rh); ctx.fill(); ctx.stroke()
+        ctx.setLineDash([])
+        // Label
+        const lbl = `Δ ${priceDiff.toFixed(dp)} (${pct}%)`
+        ctx.font = "bold 11px monospace"; const tw = ctx.measureText(lbl).width
+        const lx = rx + rw/2 - tw/2, ly = ry + rh/2
+        ctx.fillStyle = "rgba(10,11,20,0.85)"; ctx.fillRect(lx-4, ly-10, tw+8, 16)
+        ctx.fillStyle = "var(--accent)"; ctx.textAlign = "left"; ctx.fillText(lbl, lx, ly+2)
+      }
+
+      // ── Text Label ───────────────────────────────────────────────────────
+      else if (d.type === "text") {
+        const x = tToX(d.time), y = pToY(d.price); if (x == null) continue
+        const lbl = d.label || "A"
+        ctx.font = "bold 12px monospace"
+        const tw = ctx.measureText(lbl).width
+        ctx.fillStyle = "rgba(10,11,20,0.85)"
+        ctx.beginPath(); ctx.roundRect(x - 2, y - 14, tw + 12, 18, 4); ctx.fill()
+        ctx.strokeStyle = "rgba(253,121,168,0.6)"; ctx.lineWidth = 1
+        ctx.stroke()
+        ctx.fillStyle = "#fd79a8"; ctx.textAlign = "left"
+        ctx.fillText(lbl, x + 4, y)
+        ctx.fillStyle = "#fd79a8"; ctx.beginPath(); ctx.arc(x, y+4, 2, 0, Math.PI*2); ctx.fill()
       }
     }
 
@@ -556,10 +679,14 @@ export default function MarketCharts() {
     const coords = getCoords(e)
     if (!coords) return
 
+    // One-click tools
     if (tool === "hline") {
       setDrawings(prev => [...prev, { id: Date.now(), type: "hline", price: coords.price }])
     } else if (tool === "vline") {
       setDrawings(prev => [...prev, { id: Date.now(), type: "vline", time: coords.time }])
+    } else if (tool === "text") {
+      const label = window.prompt("Enter label text:", "Note") || "Note"
+      setDrawings(prev => [...prev, { id: Date.now(), type: "text", time: coords.time, price: coords.price, label }])
     } else {
       // Two-point tools
       if (!pendingRef.current) {
@@ -776,13 +903,16 @@ export default function MarketCharts() {
 
         {/* Left toolbar */}
         <div className="market-charts-toolbar flex flex-col items-center gap-1 py-2 px-1.5 flex-shrink-0"
-          style={{ background:"var(--bg-card)", borderRight:"1px solid var(--border)", width:40 }}>
-          {TOOLS.map(tool => (
+          style={{ background:"var(--bg-card)", borderRight:"1px solid var(--border)", width:44 }}>
+          {TOOLS.map((tool, i) => tool === null ? (
+            <div key={`sep-${i}`} className="w-5 border-t my-0.5 flex-shrink-0"
+              style={{ borderColor:"var(--border)" }}/>
+          ) : (
             <button
               key={tool.id}
               title={`${tool.label} (${tool.shortcut})`}
               onClick={() => { setActiveTool(tool.id); if (tool.id === "cursor") setPendingDraw(null) }}
-              className="w-7 h-7 flex items-center justify-center rounded-lg transition-all hover:opacity-90"
+              className="w-7 h-7 flex items-center justify-center rounded-lg transition-all hover:opacity-90 flex-shrink-0"
               style={{
                 background: activeTool === tool.id ? "rgba(108,99,255,0.25)" : "transparent",
                 color:      activeTool === tool.id ? "var(--accent)" : "var(--text-muted)",
@@ -862,7 +992,7 @@ export default function MarketCharts() {
               style={{ background:"rgba(108,99,255,0.2)", border:"1px solid rgba(108,99,255,0.3)", color:"var(--accent)" }}>
               {pendingDraw
                 ? "Click to set second point · Esc to cancel"
-                : `${TOOLS.find(t => t.id === activeTool)?.label} — click to place`}
+                : `${TOOLS.find(t => t && t.id === activeTool)?.label} — click to place`}
             </div>
           )}
         </div>
