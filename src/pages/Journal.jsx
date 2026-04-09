@@ -35,6 +35,7 @@ function safeTrade(t) {
       outcome, session: t.session || "LONDON", timeframe: t.timeframe || "H1",
       entry_time, notes: t.notes || "",
       screenshots: Array.isArray(t.screenshots) ? t.screenshots : [],
+      tags: Array.isArray(t.tags) ? t.tags : [],
     }
   } catch { return null }
 }
@@ -52,6 +53,33 @@ const OUTCOME_STYLE = {
 const DIR_STYLE = {
   BUY:  { bg:"rgba(46,213,115,0.15)", color:"var(--accent-success)" },
   SELL: { bg:"rgba(255,71,87,0.15)", color:"var(--accent-danger)" },
+}
+
+
+// ─── Tag Definitions ──────────────────────────────────────────────────────────
+const TRADE_TAGS = {
+  mistakes: {
+    label: "Mistakes", color: "#ff4757", bg: "rgba(255,71,87,0.12)",
+    tags: ["FOMO","Revenge Trade","Overleverage","Early Exit","Late Entry",
+           "Moved SL","No Setup","Chased Price","Sized Up","Ignored Plan"]
+  },
+  setups: {
+    label: "Setups", color: "#6c63ff", bg: "rgba(108,99,255,0.12)",
+    tags: ["Break & Retest","Structure Break","Supply/Demand","Trend Continuation",
+           "Reversal","Scalp","Breakout","Range Play","News Play","Opening Range"]
+  },
+  habits: {
+    label: "Habits", color: "#2ed573", bg: "rgba(46,213,115,0.12)",
+    tags: ["Followed Plan","Checked HTF","Waited Confirmation","Respected SL",
+           "Took Partial","Sized Down","Reviewed Chart","Journaled Before"]
+  },
+}
+
+function getTagStyle(tag) {
+  for (const cat of Object.values(TRADE_TAGS)) {
+    if (cat.tags.includes(tag)) return { color: cat.color, bg: cat.bg }
+  }
+  return { color: "var(--accent)", bg: "rgba(108,99,255,0.12)" }
 }
 
 // ─── Trade Form Modal ─────────────────────────────────────────────────────────
@@ -1046,8 +1074,23 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
   const [candles,   setCandles]  = useState(null)
   const [loading,   setLoading]  = useState(true)
   const [replaying, setReplaying]= useState(false)
+  const [tradeTags, setTradeTags]= useState(Array.isArray(trade.tags) ? trade.tags : [])
+  const [tagSaving, setTagSaving]= useState(false)
+  const [tagOpen,   setTagOpen]  = useState(false)
 
   const [chartTF, setChartTF] = useState(null)
+
+  const toggleTag = async (tag) => {
+    const next = tradeTags.includes(tag)
+      ? tradeTags.filter(t => t !== tag)
+      : [...tradeTags, tag]
+    setTradeTags(next)
+    setTagSaving(true)
+    try {
+      await supabase.from("trades").update({ tags: next }).eq("id", trade.id)
+    } catch {}
+    setTagSaving(false)
+  }
 
   useEffect(() => {
     const fetchChart = async () => {
@@ -1186,6 +1229,66 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
               </div>
             )}
 
+            {/* ── Trade Tags ─────────────────────────────────────────────── */}
+            <div className="rounded-lg p-2.5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color:"var(--text-secondary)" }}>
+                  Tags {tagSaving && <span className="text-xs" style={{ color:"var(--text-muted)" }}>saving…</span>}
+                </p>
+                <button onClick={() => setTagOpen(o => !o)}
+                  className="text-xs px-2 py-0.5 rounded-lg transition-all"
+                  style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.2)" }}>
+                  {tagOpen ? "Done" : "+ Add"}
+                </button>
+              </div>
+
+              {/* Active tags display */}
+              {tradeTags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {tradeTags.map(tag => {
+                    const st = getTagStyle(tag)
+                    return (
+                      <span key={tag} onClick={() => toggleTag(tag)}
+                        className="px-2 py-0.5 rounded-full text-xs font-semibold cursor-pointer hover:opacity-70 transition-opacity"
+                        style={{ background: st.bg, color: st.color, border:`1px solid ${st.color}40` }}>
+                        {tag} ×
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+              {tradeTags.length === 0 && !tagOpen && (
+                <p className="text-xs" style={{ color:"var(--text-muted)" }}>No tags yet — click "+ Add"</p>
+              )}
+
+              {/* Tag picker */}
+              {tagOpen && (
+                <div className="flex flex-col gap-2 mt-2 pt-2" style={{ borderTop:"1px solid var(--border)" }}>
+                  {Object.entries(TRADE_TAGS).map(([catKey, cat]) => (
+                    <div key={catKey}>
+                      <p className="text-xs font-bold mb-1.5" style={{ color: cat.color }}>{cat.label}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {cat.tags.map(tag => {
+                          const active = tradeTags.includes(tag)
+                          return (
+                            <button key={tag} onClick={() => toggleTag(tag)}
+                              className="px-2 py-0.5 rounded-full text-xs font-medium transition-all"
+                              style={{
+                                background: active ? cat.bg : "var(--bg-elevated)",
+                                color: active ? cat.color : "var(--text-muted)",
+                                border: `1px solid ${active ? cat.color + "60" : "var(--border)"}`,
+                              }}>
+                              {active ? "✓ " : ""}{tag}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {trade.mt5_ticket && (
               <p className="text-xs flex items-center gap-1" style={{ color:"var(--text-muted)" }}>
                 <Hash size={10}/> Ticket #{trade.mt5_ticket}
@@ -1225,7 +1328,7 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
 // ─── Table View ───────────────────────────────────────────────────────────────
 function TableView({ trades, onEdit, onDelete, onAI }) {
   const [expandedId, setExpandedId] = useState(null)
-  const COLS = ["","Symbol","Dir","Entry","Exit","P&L","Pips","Outcome","Session","TF","Quality","Date","Actions"]
+  const COLS = ["","Symbol","Dir","Entry","Exit","P&L","Pips","Outcome","Tags","Session","TF","Quality","Date","Actions"]
 
   const toggle = (id) => setExpandedId(prev => prev === id ? null : id)
 
@@ -1286,6 +1389,22 @@ function TableView({ trades, onEdit, onDelete, onAI }) {
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background:OUTCOME_STYLE[t.outcome]?.bg, color:OUTCOME_STYLE[t.outcome]?.color }}>
                         {t.outcome}
                       </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-0.5">
+                        {Array.isArray(t.tags) && t.tags.slice(0,2).map(tag => {
+                          const st = getTagStyle(tag)
+                          return (
+                            <span key={tag} className="px-1.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+                              style={{ background: st.bg, color: st.color, fontSize:10 }}>
+                              {tag}
+                            </span>
+                          )
+                        })}
+                        {Array.isArray(t.tags) && t.tags.length > 2 && (
+                          <span className="text-xs" style={{ color:"var(--text-muted)", fontSize:10 }}>+{t.tags.length-2}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color:"var(--text-secondary)" }}>{t.session||"—"}</td>
                     <td className="px-3 py-3 text-xs" style={{ color:"var(--text-secondary)" }}>{t.timeframe||"—"}</td>
@@ -2104,6 +2223,7 @@ export default function Journal() {
   const [filterDateFrom,  setFilterDateFrom]  = useState("")
   const [filterDateTo,    setFilterDateTo]    = useState("")
   const [filterSearch,    setFilterSearch]    = useState("")
+  const [filterTag,       setFilterTag]       = useState("")
   const [filtersOpen,     setFiltersOpen]     = useState(false)
 
   const loadTrades = async () => {
@@ -2127,14 +2247,15 @@ export default function Journal() {
     filterSymbol !== "ALL", filterOutcome !== "ALL", filterDirection !== "ALL",
     filterSession !== "ALL", filterTF !== "ALL", filterQualMin > 0,
     filterPnlMin !== "", filterPnlMax !== "",
-    filterDateFrom !== "", filterDateTo !== "", filterSearch !== ""
+    filterDateFrom !== "", filterDateTo !== "", filterSearch !== "",
+    filterTag !== ""
   ].filter(Boolean).length
 
   const resetFilters = () => {
     setFilterSymbol("ALL"); setFilterOutcome("ALL"); setFilterDirection("ALL")
     setFilterSession("ALL"); setFilterTF("ALL"); setFilterQualMin(0)
     setFilterPnlMin(""); setFilterPnlMax(""); setFilterDateFrom("")
-    setFilterDateTo(""); setFilterSearch("")
+    setFilterDateTo(""); setFilterSearch(""); setFilterTag("")
   }
 
   // Filtered trades
@@ -2149,6 +2270,7 @@ export default function Journal() {
     if (filterPnlMax    !== ""    && (t.pnl || 0) > parseFloat(filterPnlMax)) return false
     if (filterDateFrom  !== "" && t.entry_time && new Date(t.entry_time) < new Date(filterDateFrom)) return false
     if (filterDateTo    !== "" && t.entry_time && new Date(t.entry_time) > new Date(filterDateTo + "T23:59:59")) return false
+    if (filterTag !== "" && !(Array.isArray(t.tags) && t.tags.includes(filterTag))) return false
     if (filterSearch    !== "") {
       const q = filterSearch.toLowerCase()
       const match = (t.symbol||"").toLowerCase().includes(q) ||
@@ -2362,6 +2484,28 @@ export default function Journal() {
                 <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
                   className="h-8 rounded-lg px-2 text-xs border"
                   style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+              </div>
+            </div>
+
+            {/* Tags filter */}
+            <div>
+              <p className="text-xs mb-2 font-medium" style={{ color:"var(--text-muted)" }}>Filter by Tag</p>
+              <div className="flex flex-col gap-2">
+                {Object.entries(TRADE_TAGS).map(([catKey, cat]) => (
+                  <div key={catKey} className="flex flex-wrap gap-1">
+                    {cat.tags.map(tag => (
+                      <button key={tag} onClick={() => setFilterTag(filterTag === tag ? "" : tag)}
+                        className="px-2 py-0.5 rounded-full text-xs font-medium transition-all"
+                        style={{
+                          background: filterTag === tag ? cat.bg : "var(--bg-elevated)",
+                          color:      filterTag === tag ? cat.color : "var(--text-muted)",
+                          border:     `1px solid ${filterTag === tag ? cat.color + "60" : "var(--border)"}`,
+                        }}>
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
