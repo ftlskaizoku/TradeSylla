@@ -4,7 +4,7 @@ import { createPageUrl } from "@/utils"
 import {
   LayoutDashboard, BookOpen, BarChart3, Brain, FlaskConical,
   Settings, Menu, X, ChevronRight, TrendingUp, Shield, Wifi,
-  CalendarDays, Zap, LayoutGrid, BarChart2, PenLine, FileBarChart2
+  CalendarDays, Zap, LayoutGrid, BarChart2, PenLine, FileBarChart2, Calculator
 } from "lucide-react"
 import { useUser } from "@/lib/UserContext"
 import { useLanguage } from "@/lib/LanguageContext"
@@ -55,6 +55,7 @@ export default function Layout({ children, currentPageName }) {
     { label:t("nav_calendar"),    Icon:CalendarDays,    page:"Journal?view=calendar", emoji:"📅" },
     { label:t("nav_analytics"),   Icon:BarChart3,       page:"Analytics",             emoji:"📈" },
     { label:t("nav_reports"),     Icon:FileBarChart2,   page:"Reports",               emoji:"📋" },
+    { label:t("nav_calculator"),  Icon:Calculator,      page:"Calculator",            emoji:"🧮" },
     { label:t("nav_playbook"),    Icon:Shield,          page:"Playbook",              emoji:"🛡️" },
     { label:t("nav_sylledge"),    Icon:Brain,           page:"Sylledge",              emoji:"🤖", badge:"AI" },
     { label:t("nav_backtesting"), Icon:FlaskConical,    page:"Backtesting",           emoji:"⚗️" },

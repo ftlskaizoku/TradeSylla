@@ -22,6 +22,7 @@ import Pricing       from "@/pages/Pricing"
 import MarketCharts  from "@/pages/MarketCharts"
 import Notebook      from "@/pages/Notebook"
 import Reports       from "@/pages/Reports"
+import Calculator    from "@/pages/Calculator"
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useUser()
@@ -56,6 +57,7 @@ function AppRoutes() {
     { path:"MarketCharts", El:MarketCharts },
     { path:"Notebook",     El:Notebook     },
     { path:"Reports",      El:Reports      },
+    { path:"Calculator",   El:Calculator   },
   ]
 
   return (

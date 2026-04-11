@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
-import { Trade, subscribeToTable } from "@/api/supabaseStore"
+import { Trade, Playbook, subscribeToTable } from "@/api/supabaseStore"
 import { supabase } from "@/lib/supabase"
 import { toast } from "@/components/ui/toast"
 import {
@@ -462,6 +462,135 @@ function QualityEditor({ trade, onUpdate }) {
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Star Rating ──────────────────────────────────────────────────────────────
+// 1–5 stars for quick emotional/execution rating, separate from quality score
+function StarRating({ trade }) {
+  const [rating, setRating] = useState(trade.star_rating || 0)
+  const [hover,  setHover]  = useState(0)
+  const [saving, setSaving] = useState(false)
+
+  const save = async (val) => {
+    const next = rating === val ? 0 : val  // click same star = clear
+    setRating(next)
+    setSaving(true)
+    try { await supabase.from("trades").update({ star_rating: next }).eq("id", trade.id) }
+    catch {}
+    setSaving(false)
+  }
+
+  const labels = ["", "Poor execution", "Below average", "Average", "Good trade", "Perfect trade"]
+  const active  = hover || rating
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex gap-0.5">
+        {[1,2,3,4,5].map(n => (
+          <button key={n}
+            onClick={() => save(n)}
+            onMouseEnter={() => setHover(n)}
+            onMouseLeave={() => setHover(0)}
+            className="transition-transform hover:scale-110 active:scale-95"
+            style={{ fontSize:18, lineHeight:1 }}>
+            <span style={{ color: n <= active ? "#ffa502" : "var(--text-muted)", filter: n <= active ? "drop-shadow(0 0 4px rgba(255,165,2,0.4))" : "none" }}>
+              {n <= active ? "★" : "☆"}
+            </span>
+          </button>
+        ))}
+      </div>
+      <span className="text-xs" style={{ color:"var(--text-muted)" }}>
+        {saving ? "…" : active ? labels[active] : "Rate this trade"}
+      </span>
+    </div>
+  )
+}
+
+// ─── Trade Executions Table ───────────────────────────────────────────────────
+// Shows partial fills / multiple entries from MT5 if stored as executions JSON
+// Falls back to single entry/exit display for manual trades
+function ExecutionsTable({ trade }) {
+  // Executions can be stored as JSON array in trade.executions field
+  const executions = useMemo(() => {
+    if (Array.isArray(trade.executions) && trade.executions.length > 0) {
+      return trade.executions
+    }
+    // Fallback: build synthetic entry/exit rows from trade fields
+    const rows = []
+    if (trade.entry_price && trade.entry_time) {
+      rows.push({
+        type:      "ENTRY",
+        price:     parseFloat(trade.entry_price),
+        time:      trade.entry_time,
+        volume:    parseFloat(trade.lot_size || trade.volume || 0),
+        direction: trade.direction,
+      })
+    }
+    if (trade.exit_price && trade.exit_time) {
+      rows.push({
+        type:      "EXIT",
+        price:     parseFloat(trade.exit_price),
+        time:      trade.exit_time,
+        volume:    parseFloat(trade.lot_size || trade.volume || 0),
+        direction: trade.direction === "BUY" ? "SELL" : "BUY",
+        pnl:       parseFloat(trade.pnl || 0),
+      })
+    }
+    return rows
+  }, [trade])
+
+  if (!executions.length) return null
+
+  const dp = trade.entry_price < 10 ? 5 : 2
+
+  return (
+    <div>
+      <p className="text-xs font-semibold mb-2" style={{ color:"var(--text-muted)" }}>Executions</p>
+      <div className="rounded-xl overflow-hidden" style={{ border:"1px solid var(--border)" }}>
+        <table className="w-full">
+          <thead>
+            <tr style={{ background:"var(--bg-elevated)", borderBottom:"1px solid var(--border)" }}>
+              {["Type","Direction","Price","Volume","Time","P&L"].map(h => (
+                <th key={h} className="px-3 py-1.5 text-left text-xs font-semibold" style={{ color:"var(--text-muted)" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {executions.map((ex, i) => (
+              <tr key={i} style={{ borderBottom: i < executions.length-1 ? "1px solid var(--border)" : "none" }}>
+                <td className="px-3 py-1.5">
+                  <span className="px-1.5 py-0.5 rounded text-xs font-bold"
+                    style={{ background: ex.type==="ENTRY" ? "rgba(108,99,255,0.12)" : "rgba(255,165,2,0.12)",
+                      color: ex.type==="ENTRY" ? "var(--accent)" : "var(--accent-warning)" }}>
+                    {ex.type}
+                  </span>
+                </td>
+                <td className="px-3 py-1.5">
+                  <span className="text-xs font-bold"
+                    style={{ color: ex.direction==="BUY" ? "var(--accent-success)" : "var(--accent-danger)" }}>
+                    {ex.direction==="BUY" ? "▲" : "▼"} {ex.direction}
+                  </span>
+                </td>
+                <td className="px-3 py-1.5 text-xs" style={{ color:"var(--text-primary)", fontFamily:"var(--font-mono)" }}>
+                  {ex.price?.toFixed(dp) || "—"}
+                </td>
+                <td className="px-3 py-1.5 text-xs" style={{ color:"var(--text-secondary)", fontFamily:"var(--font-mono)" }}>
+                  {ex.volume || "—"}
+                </td>
+                <td className="px-3 py-1.5 text-xs" style={{ color:"var(--text-muted)" }}>
+                  {ex.time ? new Date(ex.time).toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}) : "—"}
+                </td>
+                <td className="px-3 py-1.5 text-xs font-bold" style={{ fontFamily:"var(--font-mono)",
+                  color: ex.pnl !== undefined ? (ex.pnl >= 0 ? "var(--accent-success)" : "var(--accent-danger)") : "var(--text-muted)" }}>
+                  {ex.pnl !== undefined ? `${ex.pnl >= 0 ? "+" : ""}$${ex.pnl.toFixed(2)}` : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -1070,7 +1199,7 @@ function TradeReplay({ trade, candles, onClose }) {
 }
 
 // ─── Inline Trade Detail Row ──────────────────────────────────────────────────
-function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
+function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI, playbooks = [] }) {
   const [candles,   setCandles]  = useState(null)
   const [loading,   setLoading]  = useState(true)
   const [replaying, setReplaying]= useState(false)
@@ -1196,6 +1325,7 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
                   direction={trade.direction}
                   finalPnl={trade.pnl || 0}
                 />
+                <ExecutionsTable trade={trade}/>
               </>
             )}
           </div>
@@ -1220,6 +1350,11 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
               ))}
               {/* Quality — inline editable */}
               <QualityEditor trade={trade} onUpdate={onEdit}/>
+            </div>
+
+            {/* Star Rating */}
+            <div className="px-1">
+              <StarRating trade={trade}/>
             </div>
 
             {trade.notes && (
@@ -1264,27 +1399,50 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
               {/* Tag picker */}
               {tagOpen && (
                 <div className="flex flex-col gap-2 mt-2 pt-2" style={{ borderTop:"1px solid var(--border)" }}>
-                  {Object.entries(TRADE_TAGS).map(([catKey, cat]) => (
-                    <div key={catKey}>
-                      <p className="text-xs font-bold mb-1.5" style={{ color: cat.color }}>{cat.label}</p>
-                      <div className="flex flex-wrap gap-1">
-                        {cat.tags.map(tag => {
-                          const active = tradeTags.includes(tag)
-                          return (
-                            <button key={tag} onClick={() => toggleTag(tag)}
-                              className="px-2 py-0.5 rounded-full text-xs font-medium transition-all"
-                              style={{
-                                background: active ? cat.bg : "var(--bg-elevated)",
-                                color: active ? cat.color : "var(--text-muted)",
-                                border: `1px solid ${active ? cat.color + "60" : "var(--border)"}`,
-                              }}>
-                              {active ? "✓ " : ""}{tag}
-                            </button>
-                          )
-                        })}
+                  {Object.entries(TRADE_TAGS).map(([catKey, cat]) => {
+                    // For Setups: merge static tags + user's Playbook strategies
+                    const allTags = catKey === "setups" && playbooks.length > 0
+                      ? [
+                          ...cat.tags,
+                          ...playbooks
+                            .map(p => p.name?.trim())
+                            .filter(Boolean)
+                            .filter(n => !cat.tags.includes(n)) // no duplicates
+                        ]
+                      : cat.tags
+
+                    return (
+                      <div key={catKey}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <p className="text-xs font-bold" style={{ color: cat.color }}>{cat.label}</p>
+                          {catKey === "setups" && playbooks.length > 0 && (
+                            <span className="text-xs px-1.5 py-0.5 rounded-full"
+                              style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)", fontSize:9 }}>
+                              +{playbooks.length} from Playbook
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {allTags.map(tag => {
+                            const active     = tradeTags.includes(tag)
+                            const isPlaybook = catKey === "setups" && !cat.tags.includes(tag)
+                            return (
+                              <button key={tag} onClick={() => toggleTag(tag)}
+                                className="px-2 py-0.5 rounded-full text-xs font-medium transition-all flex items-center gap-1"
+                                style={{
+                                  background: active ? cat.bg : "var(--bg-elevated)",
+                                  color:      active ? cat.color : "var(--text-muted)",
+                                  border:     `1px solid ${active ? cat.color + "60" : isPlaybook ? "rgba(108,99,255,0.3)" : "var(--border)"}`,
+                                }}>
+                                {isPlaybook && <span style={{ fontSize:8, opacity:0.7 }}>📋</span>}
+                                {active ? "✓ " : ""}{tag}
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -1326,7 +1484,7 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI }) {
 }
 
 // ─── Table View ───────────────────────────────────────────────────────────────
-function TableView({ trades, onEdit, onDelete, onAI }) {
+function TableView({ trades, onEdit, onDelete, onAI, playbooks = [] }) {
   const [expandedId, setExpandedId] = useState(null)
   const COLS = ["","Symbol","Dir","Entry","Exit","P&L","Pips","Outcome","Tags","Session","TF","Quality","Date","Actions"]
 
@@ -1440,6 +1598,7 @@ function TableView({ trades, onEdit, onDelete, onAI }) {
                       onEdit={onEdit}
                       onDelete={onDelete}
                       onAI={onAI}
+                      playbooks={playbooks}
                     />
                   )}
                 </>
@@ -2206,6 +2365,7 @@ export default function Journal() {
   const viewMode = searchParams.get("view") === "calendar" ? "calendar" : "table"
 
   const [trades, setTrades]         = useState([])
+  const [playbooks, setPlaybooks]   = useState([])
   const [modalOpen, setModalOpen]   = useState(false)
   const [editTrade, setEditTrade]   = useState(null)
   const [deleteTrade, setDeleteTrade] = useState(null)
@@ -2235,6 +2395,7 @@ export default function Journal() {
   }
   useEffect(() => {
     loadTrades()
+    Playbook.list().then(data => setPlaybooks(data || [])).catch(() => {})
     const unsub = subscribeToTable('trades', loadTrades)
     return () => { try { unsub() } catch {} }
   }, [])
@@ -2515,7 +2676,7 @@ export default function Journal() {
       {/* Content */}
       {viewMode==="calendar"
         ? <CalendarView trades={filtered} onNewTrade={openNew}/>
-        : <TableView trades={filtered} onEdit={handleEdit} onDelete={setDeleteTrade} onAI={setAiFeedbackTrade}/>
+        : <TableView trades={filtered} onEdit={handleEdit} onDelete={setDeleteTrade} onAI={setAiFeedbackTrade} playbooks={playbooks}/>
       }
 
       {/* Floating + button */}
