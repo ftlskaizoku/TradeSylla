@@ -7,6 +7,7 @@ import {
   CalendarDays, Zap, LayoutGrid, BarChart2, PenLine, FileBarChart2
 } from "lucide-react"
 import { useUser } from "@/lib/UserContext"
+import { useLanguage } from "@/lib/LanguageContext"
 import { supabase } from "@/lib/supabase"
 import InstallPrompt from "@/components/InstallPrompt"
 import { Trade } from "@/api/supabaseStore"
@@ -17,6 +18,7 @@ export default function Layout({ children, currentPageName }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [tradeCount,  setTradeCount]  = useState(null)
   const { user } = useUser()
+  const { t } = useLanguage()
   const location = useLocation()
   const lastTracked = useRef("")
 
@@ -47,17 +49,17 @@ export default function Layout({ children, currentPageName }) {
 
   // Nav items with icon emoji and optional badge
   const navItems = [
-    { label:"Dashboard",   Icon:LayoutDashboard, page:"Dashboard",          emoji:"📊" },
-    { label:"Journal",     Icon:BookOpen,        page:"Journal",            emoji:"📒", badge: tradeCount > 0 ? tradeCount.toLocaleString() : null },
-    { label:"Notebook",    Icon:PenLine,         page:"Notebook",           emoji:"✍️" },
-    { label:"Calendar",    Icon:CalendarDays,    page:"Journal?view=calendar", emoji:"📅" },
-    { label:"Analytics",   Icon:BarChart3,       page:"Analytics",          emoji:"📈" },
-    { label:"Reports",     Icon:FileBarChart2,   page:"Reports",            emoji:"📋" },
-    { label:"Playbook",    Icon:Shield,          page:"Playbook",           emoji:"🛡️" },
-    { label:"SYLLEDGE AI", Icon:Brain,           page:"Sylledge",           emoji:"🤖", badge:"AI" },
-    { label:"Backtesting", Icon:FlaskConical,    page:"Backtesting",        emoji:"⚗️" },
-    { label:"Broker Sync", Icon:Wifi,            page:"BrokerSync",         emoji:"🔄" },
-    { label:"Settings",    Icon:Settings,        page:"Settings",           emoji:"⚙️" },
+    { label:t("nav_dashboard"),   Icon:LayoutDashboard, page:"Dashboard",             emoji:"📊" },
+    { label:t("nav_journal"),     Icon:BookOpen,        page:"Journal",               emoji:"📒", badge: tradeCount > 0 ? tradeCount.toLocaleString() : null },
+    { label:t("nav_notebook"),    Icon:PenLine,         page:"Notebook",              emoji:"✍️" },
+    { label:t("nav_calendar"),    Icon:CalendarDays,    page:"Journal?view=calendar", emoji:"📅" },
+    { label:t("nav_analytics"),   Icon:BarChart3,       page:"Analytics",             emoji:"📈" },
+    { label:t("nav_reports"),     Icon:FileBarChart2,   page:"Reports",               emoji:"📋" },
+    { label:t("nav_playbook"),    Icon:Shield,          page:"Playbook",              emoji:"🛡️" },
+    { label:t("nav_sylledge"),    Icon:Brain,           page:"Sylledge",              emoji:"🤖", badge:"AI" },
+    { label:t("nav_backtesting"), Icon:FlaskConical,    page:"Backtesting",           emoji:"⚗️" },
+    { label:t("nav_brokersync"),  Icon:Wifi,            page:"BrokerSync",            emoji:"🔄" },
+    { label:t("nav_settings"),    Icon:Settings,        page:"Settings",              emoji:"⚙️" },
   ]
 
   const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email)
@@ -157,7 +159,7 @@ export default function Layout({ children, currentPageName }) {
               border:"1px solid rgba(108,99,255,0.25)", color:"var(--accent)",
               boxShadow:"0 2px 12px rgba(108,99,255,0.1)"
             }}>
-            <Zap size={14}/> Upgrade to Pro
+            <Zap size={14}/> {t("nav_upgrade")}
           </a>
         </div>
 
@@ -197,7 +199,7 @@ export default function Layout({ children, currentPageName }) {
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs"
               style={{ background:"rgba(46,213,115,0.1)", color:"var(--accent-success)", border:"1px solid rgba(46,213,115,0.2)" }}>
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
-              <span className="hidden sm:inline">Live</span>
+              <span className="hidden sm:inline">{t("nav_live")}</span>
             </div>
           </div>
         </header>

@@ -9,6 +9,7 @@
 
 import { useState, useEffect } from "react"
 import { useUser } from "@/lib/UserContext"
+import { useLanguage, LANGUAGES } from "@/lib/LanguageContext"
 import { supabase } from "@/lib/supabase"
 import { Trade, Playbook, BacktestSession, BrokerConnection, SylledgeInsight } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
@@ -16,7 +17,7 @@ import { Link } from "react-router-dom"
 import { createPageUrl } from "@/utils"
 import {
   User, Palette, Database, Key, Bell, Save, Download, Upload,
-  Eye, EyeOff, Copy, CheckCircle, RefreshCw, Trash2,
+  Eye, EyeOff, Copy, CheckCircle, RefreshCw, Trash2, Globe,
   Crown, LogOut, ChevronRight, Zap
 } from "lucide-react"
 
@@ -85,6 +86,7 @@ export function loadSavedTheme() {
 const PAGES = [
   { id:"account",      label:"Account",       icon:User,     color:"#6c63ff" },
   { id:"appearance",   label:"Appearance",    icon:Palette,  color:"#00d4aa" },
+  { id:"language",     label:"Language",      icon:Globe,    color:"#6c63ff" },
   { id:"data",         label:"Data & Import", icon:Database, color:"#ffa502" },
   { id:"apikeys",      label:"API Keys",      icon:Key,      color:"#ff6b35" },
   { id:"notifications",label:"Notifications", icon:Bell,     color:"#a29bfe" },
@@ -686,10 +688,97 @@ function NotificationsPage() {
 }
 
 // ─── Main Settings Page ───────────────────────────────────────────────────────
+// ─── Language Page ────────────────────────────────────────────────────────────
+function LanguagePage({ lang, setLang, tl, langSaved, setLangSaved }) {
+  return (
+    <div className="space-y-4">
+      <div className="card p-5">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background:"rgba(108,99,255,0.12)" }}>
+            <Globe size={16} style={{ color:"var(--accent)" }}/>
+          </div>
+          <div>
+            <h2 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>
+              {tl("settings_lang_title")}
+            </h2>
+            <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>
+              {tl("settings_lang_desc")}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {LANGUAGES.map(l => (
+            <button key={l.code}
+              onClick={() => {
+                setLang(l.code)
+                setLangSaved(true)
+                setTimeout(() => setLangSaved(false), 2500)
+              }}
+              className="flex flex-col items-center gap-2.5 p-5 rounded-2xl transition-all hover:opacity-90"
+              style={{
+                background: lang === l.code ? "rgba(108,99,255,0.12)" : "var(--bg-elevated)",
+                border:     `2px solid ${lang === l.code ? "var(--accent)" : "var(--border)"}`,
+              }}>
+              <span style={{ fontSize: 36 }}>{l.flag}</span>
+              <span className="font-semibold text-sm" style={{ color: lang === l.code ? "var(--accent)" : "var(--text-primary)" }}>
+                {l.label}
+              </span>
+              {l.dir === "rtl" && (
+                <span className="text-xs" style={{ color:"var(--text-muted)" }}>RTL</span>
+              )}
+              {lang === l.code && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                  style={{ background:"var(--accent)", color:"#fff" }}>
+                  ✓ Active
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {langSaved && (
+          <div className="flex items-center gap-2 mt-4 px-3 py-2 rounded-xl"
+            style={{ background:"rgba(46,213,115,0.1)", border:"1px solid rgba(46,213,115,0.2)" }}>
+            <CheckCircle size={14} style={{ color:"var(--accent-success)" }}/>
+            <span className="text-sm font-medium" style={{ color:"var(--accent-success)" }}>
+              {tl("settings_lang_saved")} — {LANGUAGES.find(l=>l.code===lang)?.label}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Preview */}
+      <div className="card p-5">
+        <h3 className="text-sm font-semibold mb-3" style={{ color:"var(--text-primary)" }}>
+          Preview
+        </h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {[
+            ["nav_dashboard","nav_journal","nav_analytics"],
+            ["save","cancel","filter"],
+            ["win","loss","breakeven"],
+          ].flat().map(key => (
+            <div key={key} className="px-3 py-2 rounded-xl flex items-center justify-between"
+              style={{ background:"var(--bg-elevated)" }}>
+              <span className="text-xs" style={{ color:"var(--text-muted)" }}>{key}</span>
+              <span className="text-xs font-semibold" style={{ color:"var(--text-primary)" }}>{tl(key)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Settings() {
   const { user, updateUser, signOut } = useUser()
+  const { lang, setLang, t: tl } = useLanguage()
   const [activePage, setActivePage]  = useState(() => localStorage.getItem("ts_settings_page") || "account")
   const [stats, setStats]            = useState({ trades: 0, playbooks: 0, backtests: 0, brokers: 0, insights: 0 })
+  const [langSaved, setLangSaved]    = useState(false)
 
   useEffect(() => {
     loadSavedTheme()
@@ -754,6 +843,7 @@ export default function Settings() {
         <div className="flex-1 min-w-0">
           {activePage === "account"       && <AccountPage user={user} updateUser={updateUser} signOut={signOut} stats={stats}/>}
           {activePage === "appearance"    && <AppearancePage/>}
+          {activePage === "language"      && <LanguagePage lang={lang} setLang={setLang} tl={tl} langSaved={langSaved} setLangSaved={setLangSaved}/>}
           {activePage === "data"          && <DataPage stats={stats}/>}
           {activePage === "apikeys"       && <APIKeysPage user={user}/>}
           {activePage === "notifications" && <NotificationsPage/>}

@@ -2,6 +2,7 @@
 import { QueryClientProvider }                           from "@tanstack/react-query"
 import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom"
 import { UserProvider, useUser }                         from "@/lib/UserContext"
+import { LanguageProvider }                              from "@/lib/LanguageContext"
 import { queryClient }                                   from "@/lib/queryClient"
 import { Toaster }                                       from "@/components/ui/toast"
 import { useRealtimeSync }                               from "@/lib/useRealtimeSync"
@@ -75,13 +76,15 @@ function AppRoutes() {
 export default function App() {
   return (
     <UserProvider>
-      <QueryClientProvider client={queryClient}>
-        <Router>
-          <AppRoutes />
-          <Toaster />
-          <InstallPrompt />
-        </Router>
-      </QueryClientProvider>
+      <LanguageProvider>
+        <QueryClientProvider client={queryClient}>
+          <Router>
+            <AppRoutes />
+            <Toaster />
+            <InstallPrompt />
+          </Router>
+        </QueryClientProvider>
+      </LanguageProvider>
     </UserProvider>
   )
 }
