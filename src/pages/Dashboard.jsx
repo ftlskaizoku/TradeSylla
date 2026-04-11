@@ -595,7 +595,7 @@ export default function Dashboard() {
           gradient={netPnl>=0?["#2ed573","#00d4aa"]:["#ff4757","#ff6b81"]}
         />
         <StatCard
-          label=t("dash_win_rate")
+          label={t("dash_win_rate")}
           value={`${winRate}%`}
           icon={Target}
           color="var(--accent)"
@@ -606,7 +606,7 @@ export default function Dashboard() {
           gradient={["#6c63ff","#4facfe"]}
         />
         <StatCard
-          label=t("dash_profit_factor")
+          label={t("dash_profit_factor")}
           value={profitFactor}
           icon={BarChart3}
           color="var(--accent-secondary)"
@@ -617,7 +617,7 @@ export default function Dashboard() {
           gradient={["#00d4aa","#0fd"]}
         />
         <StatCard
-          label=t("dash_expectancy")
+          label={t("dash_expectancy")}
           value={`$${expectancy}`}
           icon={Activity}
           color="var(--accent-warning)"

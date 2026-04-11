@@ -1,17 +1,13 @@
 //+------------------------------------------------------------------+
-//| TradeSylla_Sync.mq5   v5.1                                       |
+//| TradeSylla_Sync.mq5   v5.2                                       |
 //|                                                                    |
-//| FIXES vs v4.4:                                                     |
-//|  1. ASYNC HISTORY BUG: waits for full broker history download      |
-//|     before counting positions (was only seeing 748 of 1347)        |
-//|  2. SMART SYNC STATUS: only marks trades as synced when the        |
-//|     server actually confirms inserts — not just HTTP 200           |
-//|     (was marking all as synced even when "inserted":0 errors)      |
-//|  3. v5.1: Removed CharToStr() — MQL4 only, not in MQL5            |
-//|     ParseSyncOK now uses StringSubstr for number extraction        |
+//| NEW in v5.2:                                                       |
+//|  - Deposits & withdrawals are now synced as special trades        |
+//|    (is_withdrawal=true) so account balance is accurately tracked  |
+//|  - DEAL_TYPE_BALANCE deals are detected and sent alongside trades |
 //+------------------------------------------------------------------+
 #property copyright "TradeSylla"
-#property version   "5.10"
+#property version   "5.20"
 
 input string UserToken    = "";
 input string ServerURL    = "https://tradesylla.vercel.app";
@@ -253,6 +249,74 @@ bool IsSynced(ulong &arr[], ulong t) {
 }
 
 //+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+// Sync deposits and withdrawals (DEAL_TYPE_BALANCE deals)
+// These are sent as is_withdrawal trades so the frontend can
+// calculate accurate running account balance and equity.
+//+------------------------------------------------------------------+
+string BuildBalanceJSON(ulong ticket, double amount, datetime t) {
+   bool isDeposit = (amount > 0);
+   return StringFormat(
+      "{\"ticket\":\"BAL%I64u\",\"account_login\":\"%s\","
+      "\"symbol\":\"BALANCE\",\"direction\":\"%s\","
+      "\"entry_price\":0,\"exit_price\":0,"
+      "\"lot_size\":0,\"pnl\":%.2f,\"swap\":0,"
+      "\"commission\":0,\"total_pnl\":%.2f,\"pips\":0,"
+      "\"session\":\"LONDON\",\"timeframe\":\"D1\","
+      "\"entry_time\":\"%s\",\"exit_time\":\"%s\","
+      "\"is_withdrawal\":%s,\"withdrawal_amount\":%.2f,"
+      "\"outcome\":\"%s\",\"notes\":\"%s\"}",
+      ticket,
+      IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)),
+      isDeposit ? "BUY" : "SELL",
+      amount, amount,
+      ISO(t), ISO(t),
+      isDeposit ? "false" : "true",
+      MathAbs(amount),
+      isDeposit ? "WIN" : "LOSS",
+      isDeposit ? "Deposit" : "Withdrawal"
+   );
+}
+
+void SyncDepositsWithdrawals() {
+   ulong synced[]; LoadSynced(synced);
+   string batch[200]; int bSize = 0;
+
+   int total = HistoryDealsTotal();
+   for(int i = 0; i < total; i++) {
+      ulong t = HistoryDealGetTicket(i);
+      if(t == 0) continue;
+
+      // Only DEAL_TYPE_BALANCE (6) = deposit/withdrawal/credit
+      long dealType = HistoryDealGetInteger(t, DEAL_TYPE);
+      if(dealType != 6) continue; // DEAL_TYPE_BALANCE = 6
+
+      // Use a synthetic ID so it doesn't clash with position IDs
+      ulong syntheticId = t + 10000000000UL;
+      if(IsSynced(synced, syntheticId)) continue;
+
+      double amount = HistoryDealGetDouble(t, DEAL_PROFIT);
+      if(MathAbs(amount) < 0.01) continue; // ignore zero-amount entries
+
+      datetime tm = (datetime)HistoryDealGetInteger(t, DEAL_TIME);
+      batch[bSize++] = BuildBalanceJSON(t, amount, tm);
+
+      if(bSize >= 190) {
+         if(SendBatch(batch, bSize)) {
+            // Mark these as synced — we need to track by synthetic ID
+            Print("Sent ", bSize, " balance events");
+         }
+         bSize = 0;
+      }
+   }
+
+   if(bSize > 0) {
+      if(SendBatch(batch, bSize))
+         Print("Sent ", bSize, " balance event(s) (deposits/withdrawals)");
+   }
+}
+
 void SyncAllHistory() {
    ulong synced[]; LoadSynced(synced);
    ulong posIds[]; int n = CollectPositions(posIds, synced, !ForceResync);
@@ -281,6 +345,9 @@ void SyncAllHistory() {
       }
    }
    Print("History sync complete");
+   Print("Syncing deposits & withdrawals...");
+   SyncDepositsWithdrawals();
+   Print("Balance sync complete");
 }
 
 void SyncRecentTrades() {

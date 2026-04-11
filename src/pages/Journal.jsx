@@ -282,102 +282,297 @@ function DeleteConfirm({ trade, onCancel, onConfirm }) {
 }
 
 // ─── Calendar View ────────────────────────────────────────────────────────────
-function CalendarView({ trades, onNewTrade }) {
-  const [current, setCurrent] = useState(new Date())
+function CalendarView({ trades, onNewTrade, onEdit, onDelete, onAI, playbooks = [] }) {
+  const [current,     setCurrent]     = useState(new Date())
+  const [selectedDay, setSelectedDay] = useState(null)  // "YYYY-MM-DD"
+
   const year  = current.getFullYear()
   const month = current.getMonth()
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"]
   const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
-  const firstDay   = new Date(year, month, 1).getDay()
-  const daysInMonth= new Date(year, month+1, 0).getDate()
+  const firstDay    = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month+1, 0).getDate()
+  const todayKey    = new Date().toISOString().slice(0,10)
 
   const byDay = {}
   trades.forEach(t => {
     if (!t.entry_time) return
     const key = new Date(t.entry_time).toISOString().slice(0,10)
-    if (!byDay[key]) byDay[key]=[]
+    if (!byDay[key]) byDay[key] = []
     byDay[key].push(t)
   })
 
   const monthTotal = Object.entries(byDay)
     .filter(([d]) => d.startsWith(`${year}-${String(month+1).padStart(2,"0")}`))
-    .reduce((s,[,arr])=>s+arr.reduce((a,t)=>a+(t.pnl||0),0),0)
+    .reduce((s,[,arr]) => s + arr.reduce((a,t) => a+(t.pnl||0), 0), 0)
+
+  const selectedTrades = selectedDay ? (byDay[selectedDay] || []) : []
+  const selectedPnl    = selectedTrades.reduce((s,t) => s+(t.pnl||0), 0)
+
+  const fmtDate = (key) => new Date(key + "T12:00:00").toLocaleDateString("en-US", {
+    weekday:"long", month:"long", day:"numeric"
+  })
 
   return (
-    <div>
-      {/* Calendar Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
-          <button onClick={()=>setCurrent(new Date(year,month-1,1))} className="p-2 rounded-lg hover:opacity-70" style={{ background:"var(--bg-elevated)", color:"var(--text-secondary)" }}>
-            <ChevronLeft size={16}/>
-          </button>
-          <h2 className="text-base font-bold" style={{ color:"var(--text-primary)" }}>{MONTHS[month]} {year}</h2>
-          <button onClick={()=>setCurrent(new Date(year,month+1,1))} className="p-2 rounded-lg hover:opacity-70" style={{ background:"var(--bg-elevated)", color:"var(--text-secondary)" }}>
-            <ChevronRight size={16}/>
-          </button>
-          <button onClick={()=>setCurrent(new Date())} className="px-3 py-1 rounded-lg text-xs font-medium" style={{ background:"rgba(108,99,255,0.15)", color:"var(--accent)" }}>
-            Today
-          </button>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* ── Calendar grid (2/3 width) ──────────────────────────────── */}
+      <div className="lg:col-span-2">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setCurrent(new Date(year,month-1,1))} className="p-2 rounded-lg hover:opacity-70"
+              style={{ background:"var(--bg-elevated)", color:"var(--text-secondary)" }}>
+              <ChevronLeft size={16}/>
+            </button>
+            <h2 className="text-base font-bold" style={{ color:"var(--text-primary)" }}>{MONTHS[month]} {year}</h2>
+            <button onClick={() => setCurrent(new Date(year,month+1,1))} className="p-2 rounded-lg hover:opacity-70"
+              style={{ background:"var(--bg-elevated)", color:"var(--text-secondary)" }}>
+              <ChevronRight size={16}/>
+            </button>
+            <button onClick={() => { setCurrent(new Date()); setSelectedDay(todayKey) }}
+              className="px-3 py-1 rounded-lg text-xs font-medium"
+              style={{ background:"rgba(108,99,255,0.15)", color:"var(--accent)" }}>
+              Today
+            </button>
+          </div>
+          <span className="text-sm font-semibold"
+            style={{ color: monthTotal>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+            {monthTotal>=0?"+":""}${monthTotal.toFixed(0)} this month
+          </span>
         </div>
-        <span className="text-sm font-semibold" style={{ color: monthTotal>=0?"var(--accent-success)":"var(--accent-danger)" }}>
-          {monthTotal>=0?"+":""} ${monthTotal.toFixed(0)} this month
-        </span>
+
+        {/* Grid */}
+        <div className="rounded-2xl overflow-hidden" style={{ border:"1px solid var(--border)" }}>
+          <div className="grid grid-cols-7" style={{ background:"var(--bg-elevated)", borderBottom:"1px solid var(--border)" }}>
+            {DAYS.map(d => (
+              <div key={d} className="text-center text-xs font-semibold py-2.5" style={{ color:"var(--text-muted)" }}>{d}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7">
+            {Array.from({ length: firstDay }).map((_,i) => (
+              <div key={`e${i}`} style={{ borderBottom:"1px solid var(--border)", borderRight:"1px solid var(--border)", minHeight:88 }}/>
+            ))}
+            {Array.from({ length: daysInMonth }).map((_,i) => {
+              const day = i+1
+              const key = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`
+              const dayTrades = byDay[key] || []
+              const pnl    = dayTrades.reduce((s,t) => s+(t.pnl||0), 0)
+              const wins   = dayTrades.filter(t => t.outcome==="WIN").length
+              const losses = dayTrades.filter(t => t.outcome==="LOSS").length
+              const hasTrades  = dayTrades.length > 0
+              const isToday    = key === todayKey
+              const isSelected = key === selectedDay
+              const dow = new Date(year,month,day).getDay()
+              const isLastInRow = dow===6 || day===daysInMonth
+
+              return (
+                <div key={day}
+                  className="p-2 cursor-pointer transition-all"
+                  onClick={() => setSelectedDay(isSelected ? null : key)}
+                  style={{
+                    borderBottom:  "1px solid var(--border)",
+                    borderRight:   isLastInRow ? "none" : "1px solid var(--border)",
+                    minHeight:     88,
+                    background:    isSelected
+                      ? "rgba(108,99,255,0.12)"
+                      : hasTrades
+                      ? pnl>=0 ? "rgba(46,213,115,0.04)" : "rgba(255,71,87,0.04)"
+                      : "transparent",
+                    outline:       isSelected ? "2px solid rgba(108,99,255,0.5)" : "none",
+                    outlineOffset: "-1px",
+                  }}
+                  onMouseEnter={e => { if(!isSelected) e.currentTarget.style.background = "var(--bg-elevated)" }}
+                  onMouseLeave={e => { if(!isSelected) e.currentTarget.style.background = hasTrades ? (pnl>=0?"rgba(46,213,115,0.04)":"rgba(255,71,87,0.04)") : "transparent" }}>
+
+                  {/* Day number */}
+                  <div className="text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-1"
+                    style={{ color:isToday?"#fff":isSelected?"var(--accent)":"var(--text-secondary)",
+                      background:isToday?"var(--accent)":isSelected?"rgba(108,99,255,0.15)":"transparent" }}>
+                    {day}
+                  </div>
+
+                  {hasTrades && (
+                    <div>
+                      <div className="text-xs font-bold"
+                        style={{ color: pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+                        {pnl>=0?"+":""}${Math.abs(pnl)>=1000?(pnl/1000).toFixed(1)+"k":pnl.toFixed(0)}
+                      </div>
+                      <div className="flex gap-0.5 mt-0.5 flex-wrap">
+                        {wins>0 && <span className="text-xs px-1 rounded" style={{ background:"rgba(46,213,115,0.15)", color:"var(--accent-success)", fontSize:10 }}>{wins}W</span>}
+                        {losses>0 && <span className="text-xs px-1 rounded" style={{ background:"rgba(255,71,87,0.15)", color:"var(--accent-danger)", fontSize:10 }}>{losses}L</span>}
+                        <span className="text-xs" style={{ color:"var(--text-muted)", fontSize:10 }}>{dayTrades.length}t</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* Grid */}
-      <div className="rounded-xl overflow-hidden" style={{ border:"1px solid var(--border)" }}>
-        {/* Day headers */}
-        <div className="grid grid-cols-7" style={{ background:"var(--bg-elevated)", borderBottom:"1px solid var(--border)" }}>
-          {DAYS.map(d=>(
-            <div key={d} className="text-center text-xs font-semibold py-2.5" style={{ color:"var(--text-muted)" }}>{d}</div>
-          ))}
-        </div>
-        {/* Day cells */}
-        <div className="grid grid-cols-7">
-          {Array.from({ length: firstDay }).map((_,i)=>(
-            <div key={`e${i}`} style={{ borderBottom:"1px solid var(--border)", borderRight:"1px solid var(--border)", minHeight:80 }}/>
-          ))}
-          {Array.from({ length: daysInMonth }).map((_,i)=>{
-            const day = i+1
-            const key = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`
-            const dayTrades = byDay[key] || []
-            const pnl  = dayTrades.reduce((s,t)=>s+(t.pnl||0),0)
-            const wins = dayTrades.filter(t=>t.outcome==="WIN").length
-            const losses= dayTrades.filter(t=>t.outcome==="LOSS").length
-            const hasTrades = dayTrades.length>0
-            const isToday = key===new Date().toISOString().slice(0,10)
-            const dow = new Date(year,month,day).getDay()
-            const isLastInRow = dow===6 || day===daysInMonth
-            return (
-              <div key={day} className="p-2" style={{
-                borderBottom:"1px solid var(--border)",
-                borderRight: isLastInRow?"none":"1px solid var(--border)",
-                minHeight:80,
-                background: hasTrades?(pnl>=0?"rgba(46,213,115,0.05)":"rgba(255,71,87,0.05)"):"transparent"
-              }}>
-                <div className="text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-1"
-                  style={{ color:isToday?"#fff":"var(--text-secondary)", background:isToday?"var(--accent)":"transparent" }}>
-                  {day}
-                </div>
-                {hasTrades && (
-                  <div>
-                    <div className="text-xs font-bold" style={{ color:pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
-                      {pnl>=0?"+":""} ${Math.abs(pnl)>=1000?(pnl/1000).toFixed(1)+"k":pnl.toFixed(0)}
+      {/* ── Day detail panel (1/3 width) ────────────────────────────── */}
+      <div className="lg:col-span-1">
+        {selectedDay ? (
+          <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+            {/* Panel header */}
+            <div className="px-4 py-3 flex items-center justify-between"
+              style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
+              <div>
+                <p className="text-xs font-bold" style={{ color:"var(--accent)" }}>{fmtDate(selectedDay)}</p>
+                <p className="text-xs mt-0.5" style={{ color:"var(--text-muted)" }}>
+                  {selectedTrades.length} trade{selectedTrades.length!==1?"s":""}
+                  {selectedTrades.length > 0 && (
+                    <span style={{ color: selectedPnl>=0?"var(--accent-success)":"var(--accent-danger)", marginLeft:6 }}>
+                      {selectedPnl>=0?"+":""}${selectedPnl.toFixed(2)}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <button onClick={() => setSelectedDay(null)}
+                className="p-1 rounded-lg hover:opacity-70"
+                style={{ color:"var(--text-muted)" }}>
+                <X size={14}/>
+              </button>
+            </div>
+
+            {/* Day stats strip */}
+            {selectedTrades.length > 0 && (() => {
+              const wins   = selectedTrades.filter(t=>t.outcome==="WIN").length
+              const losses = selectedTrades.filter(t=>t.outcome==="LOSS").length
+              const wr     = Math.round(wins/selectedTrades.length*100)
+              return (
+                <div className="grid grid-cols-3 gap-0" style={{ borderBottom:"1px solid var(--border)" }}>
+                  {[
+                    { label:"Trades", value:selectedTrades.length, color:"var(--accent)" },
+                    { label:"Win Rate", value:`${wr}%`, color:wr>=50?"var(--accent-success)":"var(--accent-danger)" },
+                    { label:"Net P&L", value:`${selectedPnl>=0?"+":""}$${selectedPnl.toFixed(2)}`, color:selectedPnl>=0?"var(--accent-success)":"var(--accent-danger)" },
+                  ].map((s,i) => (
+                    <div key={s.label} className="py-2.5 text-center"
+                      style={{ borderRight: i<2?"1px solid var(--border)":"none" }}>
+                      <p className="text-sm font-bold" style={{ color:s.color, fontFamily:"var(--font-mono)" }}>{s.value}</p>
+                      <p className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</p>
                     </div>
-                    <div className="flex gap-1 mt-0.5 flex-wrap">
-                      {wins>0 && (
-                        <span className="text-xs px-1 rounded" style={{ background:"rgba(46,213,115,0.15)", color:"var(--accent-success)" }}>{wins}W</span>
-                      )}
-                      {losses>0 && (
-                        <span className="text-xs px-1 rounded" style={{ background:"rgba(255,71,87,0.15)", color:"var(--accent-danger)" }}>{losses}L</span>
-                      )}
+                  ))}
+                </div>
+              )
+            })()}
+
+            {/* Trade list */}
+            <div className="overflow-y-auto" style={{ maxHeight:520 }}>
+              {selectedTrades.length === 0 ? (
+                <div className="py-12 text-center">
+                  <CalendarDays size={28} className="mx-auto mb-2" style={{ color:"var(--text-muted)" }}/>
+                  <p className="text-sm" style={{ color:"var(--text-muted)" }}>No trades on this day</p>
+                  <button onClick={() => { onNewTrade && onNewTrade() }}
+                    className="mt-3 text-xs px-3 py-1.5 rounded-lg"
+                    style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)" }}>
+                    + Log a trade
+                  </button>
+                </div>
+              ) : selectedTrades.map((trade, idx) => {
+                const pnl    = parseFloat(trade.pnl||0)
+                const pnlClr = pnl>=0?"var(--accent-success)":"var(--accent-danger)"
+                const dp     = (trade.entry_price||0) < 10 ? 5 : 2
+
+                return (
+                  <div key={trade.id || idx}
+                    className="px-4 py-3"
+                    style={{ borderBottom: idx<selectedTrades.length-1?"1px solid var(--border)":"none" }}>
+
+                    {/* Trade header row */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm" style={{ color:"var(--accent)", fontFamily:"var(--font-mono)" }}>
+                          {trade.symbol}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-xs font-bold"
+                          style={{ background:trade.direction==="BUY"?"rgba(46,213,115,0.12)":"rgba(255,71,87,0.12)",
+                            color:trade.direction==="BUY"?"var(--accent-success)":"var(--accent-danger)" }}>
+                          {trade.direction==="BUY"?"▲":"▼"} {trade.direction}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold"
+                          style={{ background:trade.outcome==="WIN"?"rgba(46,213,115,0.12)":trade.outcome==="LOSS"?"rgba(255,71,87,0.12)":"rgba(108,99,255,0.12)",
+                            color:trade.outcome==="WIN"?"var(--accent-success)":trade.outcome==="LOSS"?"var(--accent-danger)":"var(--accent)" }}>
+                          {trade.outcome}
+                        </span>
+                      </div>
+                      <span className="font-bold text-sm" style={{ color:pnlClr, fontFamily:"var(--font-mono)" }}>
+                        {pnl>=0?"+":""}${pnl.toFixed(2)}
+                      </span>
+                    </div>
+
+                    {/* Trade details grid */}
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 mb-2">
+                      {[
+                        { label:"Entry", value:parseFloat(trade.entry_price||0).toFixed(dp) },
+                        { label:"Exit",  value:parseFloat(trade.exit_price||0).toFixed(dp)  },
+                        { label:"Pips",  value:trade.pips||"—"   },
+                        { label:"Vol",   value:trade.volume||"—" },
+                        { label:"TF",    value:trade.timeframe||"—" },
+                        { label:"Session",value:trade.session||"—"  },
+                        { label:"Quality",value:`${trade.quality||"—"}/10` },
+                        { label:"Time",  value:trade.entry_time ? new Date(trade.entry_time).toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",hour12:false}) : "—" },
+                      ].map(s => (
+                        <div key={s.label} className="flex justify-between">
+                          <span className="text-xs" style={{ color:"var(--text-muted)" }}>{s.label}</span>
+                          <span className="text-xs font-medium" style={{ color:"var(--text-secondary)", fontFamily:"var(--font-mono)" }}>{s.value}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Tags */}
+                    {Array.isArray(trade.tags) && trade.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {trade.tags.map(tag => (
+                          <span key={tag} className="px-1.5 py-0.5 rounded-full text-xs"
+                            style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)", fontSize:10 }}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Notes */}
+                    {trade.notes && (
+                      <p className="text-xs mb-2" style={{ color:"var(--text-muted)", lineHeight:1.5 }}>
+                        {trade.notes}
+                      </p>
+                    )}
+
+                    {/* Action buttons */}
+                    <div className="flex gap-1.5 mt-2">
+                      <button onClick={() => onAI && onAI(trade)}
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-semibold"
+                        style={{ background:"rgba(0,212,170,0.1)", color:"var(--accent-secondary)", border:"1px solid rgba(0,212,170,0.2)" }}>
+                        <Brain size={11}/> AI Review
+                      </button>
+                      <button onClick={() => onEdit && onEdit(trade)}
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-semibold"
+                        style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.2)" }}>
+                        <Pencil size={11}/> Edit
+                      </button>
+                      <button onClick={() => onDelete && onDelete(trade)}
+                        className="px-2 py-1.5 rounded-lg text-xs"
+                        style={{ background:"rgba(255,71,87,0.08)", color:"var(--accent-danger)", border:"1px solid rgba(255,71,87,0.15)" }}>
+                        <Trash2 size={11}/>
+                      </button>
                     </div>
                   </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+                )
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl flex flex-col items-center justify-center py-16 gap-3"
+            style={{ background:"var(--bg-card)", border:"1px solid var(--border)", border:"1px dashed var(--border)" }}>
+            <CalendarDays size={36} style={{ color:"var(--text-muted)" }}/>
+            <p className="text-sm font-medium" style={{ color:"var(--text-secondary)" }}>Click any day to see trades</p>
+            <p className="text-xs text-center px-6" style={{ color:"var(--text-muted)" }}>
+              Days with trades show P&L and win/loss counts
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -2677,7 +2872,7 @@ export default function Journal() {
 
       {/* Content */}
       {viewMode==="calendar"
-        ? <CalendarView trades={filtered} onNewTrade={openNew}/>
+        ? <CalendarView trades={filtered} onNewTrade={openNew} onEdit={handleEdit} onDelete={setDeleteTrade} onAI={setAiFeedbackTrade} playbooks={playbooks}/>
         : <TableView trades={filtered} onEdit={handleEdit} onDelete={setDeleteTrade} onAI={setAiFeedbackTrade} playbooks={playbooks}/>
       }
 
