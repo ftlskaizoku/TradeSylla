@@ -820,15 +820,6 @@ function LotSection({ trades }) {
 }
 
 // ─── PERIOD FILTER ─────────────────────────────────────────────────────────────
-const PERIODS = [
-  { id:"all", label:t("period_all") },
-  { id:"ytd", label:t("period_ytd") },
-  { id:"1y",  label:t("period_1y") },
-  { id:"6m",  label:t("period_6m") },
-  { id:"3m",  label:t("period_3m") },
-  { id:"1m",  label:t("period_1m") },
-  { id:"1w",  label:t("period_1w") },
-]
 
 function applyPeriod(trades, id) {
   if (id === "all") return trades
@@ -845,6 +836,17 @@ function applyPeriod(trades, id) {
 // ─── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function Reports() {
   const { t } = useLanguage()
+
+  const PERIODS = [
+    { id:"all", label:t("period_all") },
+    { id:"ytd", label:t("period_ytd") },
+    { id:"1y",  label:t("period_1y") },
+    { id:"6m",  label:t("period_6m") },
+    { id:"3m",  label:t("period_3m") },
+    { id:"1m",  label:t("period_1m") },
+    { id:"1w",  label:t("period_1w") },
+  ]
+
   const [allTrades,  setAllTrades]  = useState([])
   const [period,     setPeriod]     = useState("all")
   const [filterSym,  setFilterSym]  = useState("ALL")
