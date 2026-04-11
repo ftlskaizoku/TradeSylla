@@ -53,7 +53,7 @@ function SessionModal({ open, onClose, onSaved, editSession }) {
         <div className="p-6 space-y-4">
           <div>
             <label className="stat-card-label block mb-1">Session Name *</label>
-            <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder=t("bt_session_ph")
+            <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder={t("bt_session_ph")}
               className="w-full h-10 rounded-xl px-3 text-sm border"
               style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)" }}/>
           </div>
@@ -76,7 +76,7 @@ function SessionModal({ open, onClose, onSaved, editSession }) {
           </div>
           <div>
             <label className="stat-card-label block mb-1">Strategy Summary</label>
-            <textarea rows={2} value={form.strategy} onChange={e=>set("strategy",e.target.value)} placeholder=t("bt_strategy_ph")
+            <textarea rows={2} value={form.strategy} onChange={e=>set("strategy",e.target.value)} placeholder={t("bt_strategy_ph")}
               className="w-full rounded-xl px-3 py-2 text-sm border resize-none"
               style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)" }}/>
           </div>

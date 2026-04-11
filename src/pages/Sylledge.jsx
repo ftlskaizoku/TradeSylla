@@ -483,7 +483,7 @@ export default function Sylledge() {
               value={input}
               onChange={e=>setInput(e.target.value)}
               onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()} }}
-              placeholder=t("sylledge_placeholder")
+              placeholder={t("sylledge_placeholder")}
               rows={1}
               className="flex-1 rounded-xl px-4 py-3 text-sm resize-none"
               style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)", minHeight:46, maxHeight:120 }}

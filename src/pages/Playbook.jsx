@@ -214,7 +214,7 @@ function PlaybookModal({ open, onClose, onSaved, editItem }) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-1">
               <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>Strategy Name *</label>
-              <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder=t("pb_strategy_ph")
+              <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder={t("pb_strategy_ph")}
                 className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
             </div>
             <div>
@@ -243,21 +243,21 @@ function PlaybookModal({ open, onClose, onSaved, editItem }) {
           {/* Description */}
           <div>
             <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>Description</label>
-            <textarea rows={2} value={form.description} onChange={e=>set("description",e.target.value)} placeholder=t("pb_desc_ph")
+            <textarea rows={2} value={form.description} onChange={e=>set("description",e.target.value)} placeholder={t("pb_desc_ph")}
               className="w-full rounded-lg px-3 py-2 text-sm border resize-none" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
           </div>
 
           {/* Sessions, Timeframes, Pairs */}
           <div className="rounded-xl p-4" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <MultiToggle label=t("pb_sessions")   options={SESSIONS}   selected={form.sessions}   onChange={v=>set("sessions",v)}/>
-              <MultiToggle label=t("pb_timeframes") options={TIMEFRAMES} selected={form.timeframes} onChange={v=>set("timeframes",v)}/>
-              <MultiToggle label=t("pb_pairs")      options={PAIRS}      selected={form.pairs}      onChange={v=>set("pairs",v)}/>
+              <MultiToggle label={t("pb_sessions")}   options={SESSIONS}   selected={form.sessions}   onChange={v=>set("sessions",v)}/>
+              <MultiToggle label={t("pb_timeframes")} options={TIMEFRAMES} selected={form.timeframes} onChange={v=>set("timeframes",v)}/>
+              <MultiToggle label={t("pb_pairs")}      options={PAIRS}      selected={form.pairs}      onChange={v=>set("pairs",v)}/>
             </div>
             {form.pairs.includes("CUSTOM") && (
               <div className="mt-3">
                 <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>Custom pairs/assets (comma separated)</label>
-                <input value={form.custom_pairs} onChange={e=>set("custom_pairs",e.target.value)} placeholder=t("pb_custom_ph")
+                <input value={form.custom_pairs} onChange={e=>set("custom_pairs",e.target.value)} placeholder={t("pb_custom_ph")}
                   className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-primary)", borderColor:"var(--accent)", color:"var(--text-primary)" }}/>
               </div>
             )}
@@ -265,9 +265,9 @@ function PlaybookModal({ open, onClose, onSaved, editItem }) {
 
           {/* General Rules */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <RuleList label=t("pb_entry_rules")  icon={TrendingUp}  color="#2ed573" rules={form.entry_rules} onChange={v=>set("entry_rules",v)}/>
-            <RuleList label=t("pb_exit_rules")   icon={Target}      color="#ff4757" rules={form.exit_rules}  onChange={v=>set("exit_rules",v)}/>
-            <RuleList label=t("pb_risk_rules")   icon={Shield}      color="#ffa502" rules={form.risk_rules}  onChange={v=>set("risk_rules",v)}/>
+            <RuleList label={t("pb_entry_rules")}  icon={TrendingUp}  color="#2ed573" rules={form.entry_rules} onChange={v=>set("entry_rules",v)}/>
+            <RuleList label={t("pb_exit_rules")}   icon={Target}      color="#ff4757" rules={form.exit_rules}  onChange={v=>set("exit_rules",v)}/>
+            <RuleList label={t("pb_risk_rules")}   icon={Shield}      color="#ffa502" rules={form.risk_rules}  onChange={v=>set("risk_rules",v)}/>
           </div>
 
           {/* Per-direction rules + images */}

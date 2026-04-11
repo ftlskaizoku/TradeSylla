@@ -269,7 +269,7 @@ function AccountPage({ user, updateUser, signOut, stats }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="stat-card-label block mb-1">{ t("settings_display_name") }</label>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder=t("settings_name_ph")
+              <input value={name} onChange={e => setName(e.target.value)} placeholder={t("settings_name_ph")}
                 className="w-full h-10 rounded-xl px-3 text-sm border"
                 style={{ background: "var(--bg-elevated)", borderColor: "var(--border)", color: "var(--text-primary)", fontFamily: "var(--font-display)" }}/>
             </div>
@@ -596,7 +596,7 @@ function APIKeysPage({ user }) {
               type={showKey ? "text" : "password"}
               value={apiKey}
               onChange={e => setApiKey(e.target.value)}
-              placeholder=t("settings_key_ph")
+              placeholder={t("settings_key_ph")}
               className="flex-1 h-10 rounded-xl px-3 text-sm border mono"
               style={{ background: "var(--bg-elevated)", borderColor: keySaved ? "rgba(46,213,115,0.4)" : "var(--border)", color: "var(--text-primary)" }}/>
             <button type="button" onClick={() => setShowKey(!showKey)}
@@ -621,7 +621,7 @@ function APIKeysPage({ user }) {
       {/* ── Sync EA Token ─────────────────────────────────────────────────── */}
       {/* TokenCard is a TOP-LEVEL component — safe to render here */}
       <TokenCard
-        title=t("settings_user_token")
+        title={t("settings_user_token")}
         subtitle="Trade journal sync — imports your closed positions"
         token={userToken}
         show={showUT}
@@ -637,7 +637,7 @@ function APIKeysPage({ user }) {
 
       {/* ── Market Data EA Token ───────────────────────────────────────────── */}
       <TokenCard
-        title=t("settings_admin_token")
+        title={t("settings_admin_token")}
         subtitle="OHLCV feed — powers SYLLEDGE AI market analysis"
         token={adminToken}
         show={showAT}

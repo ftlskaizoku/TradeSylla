@@ -325,7 +325,7 @@ export default function Notebook() {
                 <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_watchlist") }</p>
                 <input value={watchlist}
                   onChange={e => handleField(setWatchlist, "watchlist")(e.target.value)}
-                  placeholder=t("notebook_watchlist_ph")
+                  placeholder={t("notebook_watchlist_ph")}
                   className="w-full h-9 rounded-xl px-4 text-sm border outline-none"
                   style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}
                   onFocus={e => e.target.style.borderColor="var(--accent)"}

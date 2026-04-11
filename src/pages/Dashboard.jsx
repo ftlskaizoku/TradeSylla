@@ -313,7 +313,7 @@ function QuickTradeModal({ open, onClose, onSaved }) {
             </div>
             <div className="col-span-2">
               <label className="text-xs mb-1 block font-medium" style={{ color:"var(--text-secondary)" }}>Notes</label>
-              <textarea rows={2} placeholder=t("dash_setup_notes") value={form.notes}
+              <textarea rows={2} placeholder={t("dash_setup_notes")} value={form.notes}
                 onChange={e=>set("notes",e.target.value)}
                 className="w-full rounded-lg px-3 py-2 text-sm border resize-none"
                 style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
@@ -659,7 +659,7 @@ export default function Dashboard() {
       {/* ── Charts row ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         {/* SYLLA Radar */}
-        <ChartCard title=t("dash_sylla_score") tooltip={TOOLTIPS.syllaRadar}>
+        <ChartCard title={t("dash_sylla_score")} tooltip={TOOLTIPS.syllaRadar}>
           {realTrades.length >= 2 ? (
             <>
               <ResponsiveContainer width="100%" height={160}>
@@ -725,7 +725,7 @@ export default function Dashboard() {
         </div>
 
         {/* Daily P&L */}
-        <ChartCard title=t("dash_daily_pnl") tooltip={TOOLTIPS.dailyPnl}>
+        <ChartCard title={t("dash_daily_pnl")} tooltip={TOOLTIPS.dailyPnl}>
           {dailyPnlData.length > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={dailyPnlData}>

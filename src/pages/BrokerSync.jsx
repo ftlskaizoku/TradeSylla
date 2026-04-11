@@ -285,17 +285,17 @@ function DirectMT5Form() {
           <div>
             <label style={labelStyle}>Broker name</label>
             <input style={inputStyle} value={form.broker_name}
-              onChange={e => set('broker_name', e.target.value)} placeholder=t("bs_broker_ph")/>
+              onChange={e => set('broker_name', e.target.value)} placeholder={t("bs_broker_ph")}/>
           </div>
           <div>
             <label style={labelStyle}>MT5 Account Login *</label>
             <input style={inputStyle} value={form.mt5_login}
-              onChange={e => set('mt5_login', e.target.value)} placeholder=t("bs_login_ph") type="number"/>
+              onChange={e => set('mt5_login', e.target.value)} placeholder={t("bs_login_ph")} type="number"/>
           </div>
           <div>
             <label style={labelStyle}>Broker Server *</label>
             <input style={inputStyle} value={form.mt5_server}
-              onChange={e => set('mt5_server', e.target.value)} placeholder=t("bs_server_ph")/>
+              onChange={e => set('mt5_server', e.target.value)} placeholder={t("bs_server_ph")}/>
           </div>
           <div>
             <label style={labelStyle}>Investor Password *</label>

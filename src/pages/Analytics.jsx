@@ -830,13 +830,13 @@ export default function Analytics() {
 
       {/* Summary stats bar */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-5">
-        <StatBox label=t("analytics_net_pnl")      value={`${netPnl>=0?"+":""}$${netPnl.toFixed(2)}`} color={netPnl>=0?"var(--accent-success)":"var(--accent-danger)"}/>
-        <StatBox label=t("analytics_win_rate")     value={`${winRate.toFixed(1)}%`} sub={`${wins.length}W / ${losses.length}L`} color={winRate>=50?"var(--accent-success)":"var(--accent-danger)"}/>
-        <StatBox label=t("analytics_profit_factor")value={pf>=99?"∞":pf.toFixed(2)} color={pf>=1?"var(--accent-success)":"var(--accent-danger)"}/>
-        <StatBox label=t("analytics_expectancy")   value={`${exp>=0?"+":""}$${exp.toFixed(2)}`} sub="Per trade" color={exp>=0?"var(--accent-success)":"var(--accent-danger)"}/>
-        <StatBox label=t("analytics_max_dd") value={`${mDD.toFixed(1)}%`} color="var(--accent-warning)"/>
-        <StatBox label=t("analytics_avg_rr")      value={avgLoss>0?(avgWin/avgLoss).toFixed(2):"—"} color="var(--accent)"/>
-        <StatBox label=t("analytics_total_fees")   value={totalComm!==0?`$${Math.abs(totalComm).toFixed(2)}`:"—"} color="var(--text-muted)"/>
+        <StatBox label={t("analytics_net_pnl")}      value={`${netPnl>=0?"+":""}$${netPnl.toFixed(2)}`} color={netPnl>=0?"var(--accent-success)":"var(--accent-danger)"}/>
+        <StatBox label={t("analytics_win_rate")}     value={`${winRate.toFixed(1)}%`} sub={`${wins.length}W / ${losses.length}L`} color={winRate>=50?"var(--accent-success)":"var(--accent-danger)"}/>
+        <StatBox label={t("analytics_profit_factor")}value={pf>=99?"∞":pf.toFixed(2)} color={pf>=1?"var(--accent-success)":"var(--accent-danger)"}/>
+        <StatBox label={t("analytics_expectancy")}   value={`${exp>=0?"+":""}$${exp.toFixed(2)}`} sub="Per trade" color={exp>=0?"var(--accent-success)":"var(--accent-danger)"}/>
+        <StatBox label={t("analytics_max_dd")} value={`${mDD.toFixed(1)}%`} color="var(--accent-warning)"/>
+        <StatBox label={t("analytics_avg_rr")}      value={avgLoss>0?(avgWin/avgLoss).toFixed(2):"—"} color="var(--accent)"/>
+        <StatBox label={t("analytics_total_fees")}   value={totalComm!==0?`$${Math.abs(totalComm).toFixed(2)}`:"—"} color="var(--text-muted)"/>
       </div>
 
       {/* Tabs */}
