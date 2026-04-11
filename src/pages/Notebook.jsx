@@ -300,7 +300,7 @@ export default function Notebook() {
         <div className="lg:col-span-2 flex flex-col gap-4">
 
           {/* Pre-market plan */}
-          <Section icon={Sun} title=t("notebook_premarket") color="var(--accent-warning)">
+          <Section icon={Sun} title={t("notebook_premarket")} color="var(--accent-warning)">
             <div className="flex flex-col gap-4">
               {/* Market bias */}
               <div>
@@ -349,7 +349,7 @@ export default function Notebook() {
           </Section>
 
           {/* Post-market review */}
-          <Section icon={Sunset} title=t("notebook_postmarket") color="var(--accent-secondary)">
+          <Section icon={Sunset} title={t("notebook_postmarket")} color="var(--accent-secondary)">
             <div className="flex flex-col gap-4">
               <div>
                 <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>How did the day go?</p>
@@ -370,7 +370,7 @@ export default function Notebook() {
           </Section>
 
           {/* Mindset & Discipline */}
-          <Section icon={Brain} title=t("notebook_mindset") color="var(--accent)">
+          <Section icon={Brain} title={t("notebook_mindset")} color="var(--accent)">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Mindset */}
               <div>
