@@ -31,7 +31,7 @@ const BIAS_OPTS = [
   { value:"ranging",  label:"Ranging",  color:"var(--accent-warning)" },
 ]
 
-const DISCIPLINE_LABELS = ["", t("notebook_poor"), "Below Avg", "Average", "Good", t("notebook_excellent")]
+const DISCIPLINE_LABELS = ["", "notebook_poor", "below_avg", "average", "good", "notebook_excellent"]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function toDateKey(date) {
@@ -398,7 +398,7 @@ export default function Notebook() {
               {/* Discipline */}
               <div>
                 <p className="text-xs font-medium mb-3" style={{ color:"var(--text-muted)" }}>
-                  Rule Discipline — <span style={{ color:"var(--text-primary)" }}>{DISCIPLINE_LABELS[discipline]}</span>
+                  Rule Discipline — <span style={{ color:"var(--text-primary)" }}>{t(DISCIPLINE_LABELS[discipline]) || DISCIPLINE_LABELS[discipline]}</span>
                 </p>
                 <div className="flex gap-1.5">
                   {[1,2,3,4,5].map(n => (
@@ -488,7 +488,7 @@ export default function Notebook() {
             <div className="flex items-center gap-2 mb-3">
               <Zap size={14} style={{ color:"var(--accent-warning)" }}/>
               <h3 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>
-                Discipline — {DISCIPLINE_LABELS[discipline]}
+                Discipline — {t(DISCIPLINE_LABELS[discipline]) || DISCIPLINE_LABELS[discipline]}
               </h3>
             </div>
             <div className="flex gap-1.5 mt-2">
