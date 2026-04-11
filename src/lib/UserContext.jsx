@@ -10,10 +10,21 @@ export const UserProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // FIX: setLoading(false) must fire AFTER buildProfileWithPlan resolves,
+    // not before. Previously the race was:
+    //   1. getSession() resolves  → setLoading(false) immediately
+    //   2. buildProfileWithPlan() still pending (async DB call)
+    //   3. ProtectedRoute sees loading=false + user=null → redirect to /auth
+    //   4. Profile resolves too late — user already kicked out
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session)
-      if (session) { buildProfileWithPlan(session.user).then(setUser) } else { setUser(null) }
-      setLoading(false)
+      if (session) {
+        const profile = await buildProfileWithPlan(session.user)
+        setUser(profile)
+      } else {
+        setUser(null)
+      }
+      setLoading(false) // ← only after user is fully resolved
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -56,20 +67,6 @@ export const UserProvider = ({ children }) => {
     return base
   }
 
-  function buildProfile(u) {
-    const m = u.user_metadata || {}
-    return {
-      id:         u.id,
-      email:      u.email,
-      full_name:  m.full_name || m.name || u.email?.split('@')[0] || 'Trader',
-      avatar_url: m.avatar_url || m.picture || null,
-      currency:   m.currency || 'USD',
-      bio:        m.bio || '',
-      created_at: u.created_at,
-      plan:       'free',
-    }
-  }
-
   const updateUser = async (data) => {
     if (!session) return
     await supabase.auth.updateUser({ data })
@@ -78,7 +75,6 @@ export const UserProvider = ({ children }) => {
 
   const signOut = () => authHelpers.signOut()
 
-  // Plan helpers
   const ADMIN_EMAILS = ["khalifadylla@gmail.com", "zoumxyz@gmail.com"]
   const isAdmin = ADMIN_EMAILS.includes(user?.email)
   const isPro   = isAdmin || user?.plan === "pro" || user?.plan === "elite"
