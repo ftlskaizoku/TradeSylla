@@ -233,7 +233,7 @@ function QuickTradeModal({ open, onClose, onSaved }) {
         style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
         <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
           style={{ borderBottom:"1px solid var(--border)" }}>
-          <h2 className="text-base font-bold" style={{ color:"var(--text-primary)" }}>Log New Trade</h2>
+          <h2 className="text-base font-bold" style={{ color:"var(--text-primary)" }}>{ t("dash_log_trade") }</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)" }}><X size={16}/></button>
         </div>
         <div className="overflow-y-auto flex-1 px-5 py-4">
@@ -313,7 +313,7 @@ function QuickTradeModal({ open, onClose, onSaved }) {
             </div>
             <div className="col-span-2">
               <label className="text-xs mb-1 block font-medium" style={{ color:"var(--text-secondary)" }}>Notes</label>
-              <textarea rows={2} placeholder="Setup, reasoning, lessons learned..." value={form.notes}
+              <textarea rows={2} placeholder=t("dash_setup_notes") value={form.notes}
                 onChange={e=>set("notes",e.target.value)}
                 className="w-full rounded-lg px-3 py-2 text-sm border resize-none"
                 style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
@@ -644,7 +644,7 @@ export default function Dashboard() {
             letterSpacing:"-0.03em", lineHeight:1,
             color: syllaScore>=70?"var(--accent-success)":syllaScore>=40?"var(--accent-warning)":"var(--accent-danger)"
           }}>{syllaScore}</div>
-          <div style={{ fontFamily:"var(--font-mono)", fontSize:10, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:"0.12em" }}>SYLLA Score</div>
+          <div style={{ fontFamily:"var(--font-mono)", fontSize:10, color:"var(--text-muted)", textTransform:"uppercase", letterSpacing:"0.12em" }}>{ t("dash_sylla_score") }</div>
           <div style={{ height:3, borderRadius:100, background:"rgba(255,255,255,0.05)", overflow:"hidden" }}>
             <div style={{
               height:"100%", borderRadius:100,
@@ -659,7 +659,7 @@ export default function Dashboard() {
       {/* ── Charts row ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         {/* SYLLA Radar */}
-        <ChartCard title="SYLLA Score" tooltip={TOOLTIPS.syllaRadar}>
+        <ChartCard title=t("dash_sylla_score") tooltip={TOOLTIPS.syllaRadar}>
           {realTrades.length >= 2 ? (
             <>
               <ResponsiveContainer width="100%" height={160}>
@@ -675,7 +675,7 @@ export default function Dashboard() {
             </>
           ) : (
             <div className="h-40 flex items-center justify-center">
-              <p className="text-sm text-center" style={{ color:"var(--text-muted)" }}>Log 2+ trades to see score</p>
+              <p className="text-sm text-center" style={{ color:"var(--text-muted)" }}>{ t("dash_log_2_trades") }</p>
             </div>
           )}
         </ChartCard>
@@ -719,13 +719,13 @@ export default function Dashboard() {
             </ResponsiveContainer>
           ) : (
             <div className="h-36 flex items-center justify-center">
-              <p className="text-sm" style={{ color:"var(--text-muted)" }}>Log trades to see chart</p>
+              <p className="text-sm" style={{ color:"var(--text-muted)" }}>{ t("dash_log_to_see") }</p>
             </div>
           )}
         </div>
 
         {/* Daily P&L */}
-        <ChartCard title="Daily P&L" tooltip={TOOLTIPS.dailyPnl}>
+        <ChartCard title=t("dash_daily_pnl") tooltip={TOOLTIPS.dailyPnl}>
           {dailyPnlData.length > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={dailyPnlData}>
@@ -739,7 +739,7 @@ export default function Dashboard() {
             </ResponsiveContainer>
           ) : (
             <div className="h-44 flex items-center justify-center">
-              <p className="text-sm" style={{ color:"var(--text-muted)" }}>No daily data yet</p>
+              <p className="text-sm" style={{ color:"var(--text-muted)" }}>{ t("dash_no_daily") }</p>
             </div>
           )}
         </ChartCard>
@@ -749,7 +749,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         <div className="lg:col-span-2 rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>Activity Feed</h2>
+            <h2 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>{ t("dash_activity") }</h2>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
               <span className="text-xs" style={{ color:"var(--accent-success)" }}>Live</span>
@@ -760,7 +760,7 @@ export default function Dashboard() {
 
         <div className="lg:col-span-3 rounded-xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
-            <h2 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>Recent Trades</h2>
+            <h2 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>{ t("dash_recent_trades") }</h2>
             <Link to={createPageUrl("Journal")} className="text-xs flex items-center gap-1" style={{ color:"var(--accent)" }}>
               View All <ChevronRight size={12}/>
             </Link>

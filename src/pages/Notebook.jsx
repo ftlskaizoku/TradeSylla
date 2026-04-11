@@ -31,7 +31,7 @@ const BIAS_OPTS = [
   { value:"ranging",  label:"Ranging",  color:"var(--accent-warning)" },
 ]
 
-const DISCIPLINE_LABELS = ["", "Poor", "Below Avg", "Average", "Good", "Excellent"]
+const DISCIPLINE_LABELS = ["", t("notebook_poor"), "Below Avg", "Average", "Good", t("notebook_excellent")]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function toDateKey(date) {
@@ -304,7 +304,7 @@ export default function Notebook() {
             <div className="flex flex-col gap-4">
               {/* Market bias */}
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Market Bias</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_bias") }</p>
                 <div className="flex gap-2 flex-wrap">
                   {BIAS_OPTS.map(b => (
                     <button key={b.value} onClick={() => { setBias(b.value); autoSave({ bias: b.value }) }}
@@ -322,10 +322,10 @@ export default function Notebook() {
 
               {/* Watchlist */}
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Symbols to Watch</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_watchlist") }</p>
                 <input value={watchlist}
                   onChange={e => handleField(setWatchlist, "watchlist")(e.target.value)}
-                  placeholder="XAUUSD, UK100, EURUSD…"
+                  placeholder=t("notebook_watchlist_ph")
                   className="w-full h-9 rounded-xl px-4 text-sm border outline-none"
                   style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}
                   onFocus={e => e.target.style.borderColor="var(--accent)"}
@@ -334,14 +334,14 @@ export default function Notebook() {
 
               {/* Plan */}
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Trading Plan & Key Levels</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_plan") }</p>
                 <NoteArea value={preMarket} onChange={handleField(setPreMarket, "preMarket")}
                   placeholder="What setups am I looking for today? Key levels, news events, session focus…" minRows={5}/>
               </div>
 
               {/* Daily goals */}
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Goals for Today</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_goals") }</p>
                 <NoteArea value={goals} onChange={handleField(setGoals, "goals")}
                   placeholder="Max loss limit, target setups, habits to maintain…" minRows={3}/>
               </div>
@@ -357,12 +357,12 @@ export default function Notebook() {
                   placeholder="What happened today? Did the market respect key levels? Any surprises?" minRows={5}/>
               </div>
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Lessons Learned</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_lessons") }</p>
                 <NoteArea value={lessons} onChange={handleField(setLessons, "lessons")}
                   placeholder="What would I do differently? What confirmed my edge today?" minRows={3}/>
               </div>
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Mistakes to Fix</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_mistakes") }</p>
                 <NoteArea value={mistakes} onChange={handleField(setMistakes, "mistakes")}
                   placeholder="Any rule breaks, emotional decisions, or execution errors…" minRows={3}/>
               </div>
@@ -422,8 +422,8 @@ export default function Notebook() {
                   ))}
                 </div>
                 <div className="flex justify-between mt-1">
-                  <span className="text-xs" style={{ color:"var(--accent-danger)", fontSize:9 }}>Poor</span>
-                  <span className="text-xs" style={{ color:"var(--accent-success)", fontSize:9 }}>Excellent</span>
+                  <span className="text-xs" style={{ color:"var(--accent-danger)", fontSize:9 }}>{ t("notebook_poor") }</span>
+                  <span className="text-xs" style={{ color:"var(--accent-success)", fontSize:9 }}>{ t("notebook_excellent") }</span>
                 </div>
               </div>
             </div>
@@ -437,13 +437,13 @@ export default function Notebook() {
           <div className="rounded-2xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
             <div className="flex items-center gap-2 mb-4">
               <BarChart2 size={14} style={{ color:"var(--accent)" }}/>
-              <h3 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>Day Summary</h3>
+              <h3 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>{ t("notebook_day_summary") }</h3>
             </div>
 
             {dayTrades.length === 0 ? (
               <div className="text-center py-6">
                 <Calendar size={28} className="mx-auto mb-2" style={{ color:"var(--text-muted)" }}/>
-                <p className="text-sm" style={{ color:"var(--text-muted)" }}>No trades this day</p>
+                <p className="text-sm" style={{ color:"var(--text-muted)" }}>{ t("notebook_no_trades") }</p>
               </div>
             ) : (
               <>
@@ -457,7 +457,7 @@ export default function Notebook() {
                   }}>
                     {dayPnl>=0?"+":""}${dayPnl.toFixed(2)}
                   </p>
-                  <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>Day P&L</p>
+                  <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>{ t("notebook_day_pnl") }</p>
                 </div>
 
                 {/* Stats grid */}

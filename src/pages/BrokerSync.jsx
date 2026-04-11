@@ -1,3 +1,4 @@
+import { useLanguage } from "@/lib/LanguageContext"
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useUser } from '@/lib/UserContext';
@@ -241,11 +242,11 @@ function DirectMT5Form() {
       <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(46,213,115,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
         <Icon d={D.tick} size={20} stroke="#2ed573" sw={2.5}/>
       </div>
-      <p style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '6px', color: 'var(--accent-success)' }}>Connected!</p>
+      <p style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '6px', color: 'var(--accent-success)' }}>{ t("bs_connected") }</p>
       <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
         {imported > 0 ? `${imported} trades imported from ${form.broker_name || form.mt5_server}` : message}
       </p>
-      <button className="btn btn-secondary" onClick={reset} style={{ fontSize: '12px' }}>Connect another account</button>
+      <button className="btn btn-secondary" onClick={reset} style={{ fontSize: '12px' }}>{ t("bs_connect_another") }</button>
     </div>
   )
 
@@ -254,9 +255,9 @@ function DirectMT5Form() {
       <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(255,71,87,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
         <Icon d={D.warn} size={20} stroke="#ff4757"/>
       </div>
-      <p style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '6px', color: 'var(--accent-danger)' }}>Connection Failed</p>
+      <p style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '6px', color: 'var(--accent-danger)' }}>{ t("bs_failed") }</p>
       <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '1.5rem', maxWidth: 380, margin: '0 auto 1.5rem' }}>{message}</p>
-      <button className="btn btn-secondary" onClick={reset} style={{ fontSize: '12px' }}>Try again</button>
+      <button className="btn btn-secondary" onClick={reset} style={{ fontSize: '12px' }}>{ t("bs_try_again") }</button>
     </div>
   )
 
@@ -284,17 +285,17 @@ function DirectMT5Form() {
           <div>
             <label style={labelStyle}>Broker name</label>
             <input style={inputStyle} value={form.broker_name}
-              onChange={e => set('broker_name', e.target.value)} placeholder="e.g. Exness"/>
+              onChange={e => set('broker_name', e.target.value)} placeholder=t("bs_broker_ph")/>
           </div>
           <div>
             <label style={labelStyle}>MT5 Account Login *</label>
             <input style={inputStyle} value={form.mt5_login}
-              onChange={e => set('mt5_login', e.target.value)} placeholder="409913367" type="number"/>
+              onChange={e => set('mt5_login', e.target.value)} placeholder=t("bs_login_ph") type="number"/>
           </div>
           <div>
             <label style={labelStyle}>Broker Server *</label>
             <input style={inputStyle} value={form.mt5_server}
-              onChange={e => set('mt5_server', e.target.value)} placeholder="Exness-MT5Real10"/>
+              onChange={e => set('mt5_server', e.target.value)} placeholder=t("bs_server_ph")/>
           </div>
           <div>
             <label style={labelStyle}>Investor Password *</label>
@@ -347,7 +348,7 @@ export default function BrokerSync({ userToken = null }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-display, Syne, sans-serif)', fontSize: '1.75rem', fontWeight: 700, margin: '0 0 6px' }}>
-            <span className="gradient-text">BrokerSync</span>
+            <span className="gradient-text">{ t("bs_title") }</span>
           </h1>
           <p style={{ color: 'var(--color-text-secondary)', margin: 0, fontSize: '0.875rem' }}>
             Connect your MT5 account and let trades flow in automatically.
@@ -377,15 +378,15 @@ export default function BrokerSync({ userToken = null }) {
       {/* Connected accounts */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: accounts.length ? '1rem' : 0 }}>
-          <h2 style={{ fontFamily: 'var(--font-display, Syne, sans-serif)', fontSize: '1rem', fontWeight: 600, margin: 0 }}>Connected accounts</h2>
+          <h2 style={{ fontFamily: 'var(--font-display, Syne, sans-serif)', fontSize: '1rem', fontWeight: 600, margin: 0 }}>{ t("bs_connected_accounts") }</h2>
           <span className="badge">{accounts.length} active</span>
         </div>
 
         {accounts.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '2.5rem 1rem', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '10px', marginTop: '1rem' }}>
             <Icon d={D.link} size={36} stroke="rgba(255,255,255,0.15)" sw={1.2} />
-            <p style={{ color: 'var(--color-text-secondary)', margin: '1rem 0', fontSize: '0.875rem' }}>No accounts connected yet</p>
-            <button className="btn btn-primary" onClick={() => setGuideOpen(true)}>Connect your first account</button>
+            <p style={{ color: 'var(--color-text-secondary)', margin: '1rem 0', fontSize: '0.875rem' }}>{ t("bs_no_accounts") }</p>
+            <button className="btn btn-primary" onClick={() => setGuideOpen(true)}>{ t("bs_connect_first") }</button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -404,7 +405,7 @@ export default function BrokerSync({ userToken = null }) {
                   <span className="badge">{acc.market}</span>
                   <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', padding: '2px 7px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}>{acc.method}</span>
                   <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: acc.status === 'active' ? '#22c55e' : '#ef4444', display: 'inline-block' }} />
-                  <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }}>Manage</button>
+                  <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }}>{ t("bs_manage") }</button>
                 </div>
               </div>
             ))}
@@ -421,7 +422,7 @@ export default function BrokerSync({ userToken = null }) {
           onClick={() => setGuideOpen(v => !v)}
         >
           <div>
-            <h2 style={{ fontFamily: 'var(--font-display, Syne, sans-serif)', fontSize: '1rem', fontWeight: 600, margin: '0 0 3px' }}>How to connect MT5</h2>
+            <h2 style={{ fontFamily: 'var(--font-display, Syne, sans-serif)', fontSize: '1rem', fontWeight: 600, margin: '0 0 3px' }}>{ t("bs_how_to") }</h2>
             <p style={{ color: 'var(--color-text-secondary)', fontSize: '12px', margin: 0 }}>Choose a connection method</p>
           </div>
           <div style={{ transform: guideOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', opacity: 0.5 }}>
@@ -449,7 +450,7 @@ export default function BrokerSync({ userToken = null }) {
                     <Icon d={D.robot} size={15} stroke={method === 'ea' ? '#a78bfa' : 'var(--color-text-secondary)'} />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: '13px', color: method === 'ea' ? '#a78bfa' : 'var(--color-text-primary)' }}>EA Connection</div>
+                    <div style={{ fontWeight: 600, fontSize: '13px', color: method === 'ea' ? '#a78bfa' : 'var(--color-text-primary)' }}>{ t("bs_ea_connection") }</div>
                     <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>Expert Advisor · Real-time</div>
                   </div>
                   {method === 'ea' && <span className="badge" style={{ fontSize: '10px' }}>Active</span>}
@@ -475,7 +476,7 @@ export default function BrokerSync({ userToken = null }) {
                     <Icon d={D.server} size={15} stroke={method === 'direct' ? '#a78bfa' : 'var(--color-text-secondary)'} />
                   </div>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: '13px', color: method === 'direct' ? '#a78bfa' : 'var(--color-text-primary)' }}>Direct Credentials</div>
+                    <div style={{ fontWeight: 600, fontSize: '13px', color: method === 'direct' ? '#a78bfa' : 'var(--color-text-primary)' }}>{ t("bs_direct") }</div>
                     <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>MT5 login · No EA needed</div>
                   </div>
                 </div>

@@ -1,3 +1,4 @@
+import { useLanguage } from "@/lib/LanguageContext"
 import { useState, useEffect } from "react"
 import { Playbook as PlaybookEntity } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
@@ -203,7 +204,7 @@ function PlaybookModal({ open, onClose, onSaved, editItem }) {
       <div className="relative w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-2xl z-10 max-h-[92vh] flex flex-col" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom:"1px solid var(--border)" }}>
-          <h2 className="text-lg font-bold" style={{ color:"var(--text-primary)" }}>{isEdit?"Edit Strategy":"New Strategy"}</h2>
+          <h2 className="text-lg font-bold" style={{ color:"var(--text-primary)" }}>{isEdit?"Edit Strategy":t("pb_new")}</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)" }}><X size={16}/></button>
         </div>
 
@@ -213,7 +214,7 @@ function PlaybookModal({ open, onClose, onSaved, editItem }) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-1">
               <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>Strategy Name *</label>
-              <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="e.g. London Breakout"
+              <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder=t("pb_strategy_ph")
                 className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
             </div>
             <div>
@@ -242,21 +243,21 @@ function PlaybookModal({ open, onClose, onSaved, editItem }) {
           {/* Description */}
           <div>
             <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>Description</label>
-            <textarea rows={2} value={form.description} onChange={e=>set("description",e.target.value)} placeholder="Brief overview of this strategy..."
+            <textarea rows={2} value={form.description} onChange={e=>set("description",e.target.value)} placeholder=t("pb_desc_ph")
               className="w-full rounded-lg px-3 py-2 text-sm border resize-none" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
           </div>
 
           {/* Sessions, Timeframes, Pairs */}
           <div className="rounded-xl p-4" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <MultiToggle label="Sessions"   options={SESSIONS}   selected={form.sessions}   onChange={v=>set("sessions",v)}/>
-              <MultiToggle label="Timeframes" options={TIMEFRAMES} selected={form.timeframes} onChange={v=>set("timeframes",v)}/>
-              <MultiToggle label="Pairs"      options={PAIRS}      selected={form.pairs}      onChange={v=>set("pairs",v)}/>
+              <MultiToggle label=t("pb_sessions")   options={SESSIONS}   selected={form.sessions}   onChange={v=>set("sessions",v)}/>
+              <MultiToggle label=t("pb_timeframes") options={TIMEFRAMES} selected={form.timeframes} onChange={v=>set("timeframes",v)}/>
+              <MultiToggle label=t("pb_pairs")      options={PAIRS}      selected={form.pairs}      onChange={v=>set("pairs",v)}/>
             </div>
             {form.pairs.includes("CUSTOM") && (
               <div className="mt-3">
                 <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>Custom pairs/assets (comma separated)</label>
-                <input value={form.custom_pairs} onChange={e=>set("custom_pairs",e.target.value)} placeholder="e.g. BTCUSD, ETHUSD, TSLA"
+                <input value={form.custom_pairs} onChange={e=>set("custom_pairs",e.target.value)} placeholder=t("pb_custom_ph")
                   className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-primary)", borderColor:"var(--accent)", color:"var(--text-primary)" }}/>
               </div>
             )}
@@ -264,9 +265,9 @@ function PlaybookModal({ open, onClose, onSaved, editItem }) {
 
           {/* General Rules */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <RuleList label="Entry Rules"  icon={TrendingUp}  color="#2ed573" rules={form.entry_rules} onChange={v=>set("entry_rules",v)}/>
-            <RuleList label="Exit Rules"   icon={Target}      color="#ff4757" rules={form.exit_rules}  onChange={v=>set("exit_rules",v)}/>
-            <RuleList label="Risk Rules"   icon={Shield}      color="#ffa502" rules={form.risk_rules}  onChange={v=>set("risk_rules",v)}/>
+            <RuleList label=t("pb_entry_rules")  icon={TrendingUp}  color="#2ed573" rules={form.entry_rules} onChange={v=>set("entry_rules",v)}/>
+            <RuleList label=t("pb_exit_rules")   icon={Target}      color="#ff4757" rules={form.exit_rules}  onChange={v=>set("exit_rules",v)}/>
+            <RuleList label=t("pb_risk_rules")   icon={Shield}      color="#ffa502" rules={form.risk_rules}  onChange={v=>set("risk_rules",v)}/>
           </div>
 
           {/* Per-direction rules + images */}
@@ -332,7 +333,7 @@ function PlaybookModal({ open, onClose, onSaved, editItem }) {
 
         {/* Footer */}
         <div className="flex gap-3 px-6 py-4 flex-shrink-0" style={{ borderTop:"1px solid var(--border)" }}>
-          <button onClick={onClose} className="flex-1 h-9 rounded-lg text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>Cancel</button>
+          <button onClick={onClose} className="flex-1 h-9 rounded-lg text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>{ t("cancel") }</button>
           <button onClick={save} disabled={saving} className="flex-1 h-9 rounded-lg text-sm font-semibold text-white"
             style={{ background:"linear-gradient(135deg,#6c63ff,#5a52d5)", opacity:saving?0.7:1 }}>
             {saving?"Saving...": isEdit?"Update Strategy":"Add Strategy"}
@@ -413,7 +414,7 @@ function PlaybookCard({ item, onEdit, onDelete }) {
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <CheckCircle size={13} style={{ color:"var(--accent-success)" }}/>
-                <span className="text-xs font-semibold" style={{ color:"var(--accent-success)" }}>Entry Rules</span>
+                <span className="text-xs font-semibold" style={{ color:"var(--accent-success)" }}>{ t("pb_entry_rules") }</span>
               </div>
               <ul className="space-y-1.5">
                 {item.entry_rules.map((r,i)=>(
@@ -430,7 +431,7 @@ function PlaybookCard({ item, onEdit, onDelete }) {
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <XCircle size={13} style={{ color:"var(--accent-danger)" }}/>
-                <span className="text-xs font-semibold" style={{ color:"var(--accent-danger)" }}>Exit Rules</span>
+                <span className="text-xs font-semibold" style={{ color:"var(--accent-danger)" }}>{ t("pb_exit_rules") }</span>
               </div>
               <ul className="space-y-1.5">
                 {item.exit_rules.map((r,i)=>(
@@ -447,7 +448,7 @@ function PlaybookCard({ item, onEdit, onDelete }) {
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <AlertCircle size={13} style={{ color:"var(--accent-warning)" }}/>
-                <span className="text-xs font-semibold" style={{ color:"var(--accent-warning)" }}>Risk Rules</span>
+                <span className="text-xs font-semibold" style={{ color:"var(--accent-warning)" }}>{ t("pb_risk_rules") }</span>
               </div>
               <ul className="space-y-1.5">
                 {item.risk_rules.map((r,i)=>(
@@ -483,8 +484,8 @@ function DeleteConfirm({ item, onCancel, onConfirm }) {
           <strong style={{ color:"var(--text-primary)" }}>{item?.name}</strong> will be permanently removed.
         </p>
         <div className="flex gap-3">
-          <button onClick={onCancel} className="flex-1 h-9 rounded-lg text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>Cancel</button>
-          <button onClick={onConfirm} className="flex-1 h-9 rounded-lg text-sm font-semibold text-white" style={{ background:"var(--accent-danger)" }}>Delete</button>
+          <button onClick={onCancel} className="flex-1 h-9 rounded-lg text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)" }}>{ t("cancel") }</button>
+          <button onClick={onConfirm} className="flex-1 h-9 rounded-lg text-sm font-semibold text-white" style={{ background:"var(--accent-danger)" }}>{ t("delete") }</button>
         </div>
       </div>
     </div>
@@ -493,6 +494,7 @@ function DeleteConfirm({ item, onCancel, onConfirm }) {
 
 // ─── Main Playbook Page ───────────────────────────────────────────────────────
 export default function Playbook() {
+  const { t } = useLanguage()
   const [items,       setItems]       = useState([])
   const [modalOpen,   setModalOpen]   = useState(false)
   const [editItem,    setEditItem]    = useState(null)
@@ -537,7 +539,7 @@ export default function Playbook() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>Playbook</h1>
+          <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>{ t("pb_title") }</h1>
           <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>
             {items.length} strateg{items.length!==1?"ies":"y"} · {statusCounts.active} active
           </p>

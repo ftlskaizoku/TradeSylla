@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Trade, Playbook, subscribeToTable } from "@/api/supabaseStore"
 import { supabase } from "@/lib/supabase"

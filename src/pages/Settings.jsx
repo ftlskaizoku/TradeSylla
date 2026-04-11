@@ -242,7 +242,7 @@ function AccountPage({ user, updateUser, signOut, stats }) {
           <div>
             <p className="text-lg font-black" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>{name || "Trader"}</p>
             <p className="text-xs mono" style={{ color: "var(--text-muted)" }}>{email}</p>
-            <span className="badge mt-1" style={{ background: "rgba(108,99,255,0.12)", color: "var(--accent)" }}>Free Plan</span>
+            <span className="badge mt-1" style={{ background: "rgba(108,99,255,0.12)", color: "var(--accent)" }}>{ t("settings_free_plan") }</span>
           </div>
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
@@ -263,13 +263,13 @@ function AccountPage({ user, updateUser, signOut, stats }) {
 
       <div className="card overflow-hidden">
         <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
-          <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>Profile Information</h3>
+          <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>{ t("settings_profile") }</h3>
         </div>
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="stat-card-label block mb-1">Display Name</label>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Your name"
+              <label className="stat-card-label block mb-1">{ t("settings_display_name") }</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder=t("settings_name_ph")
                 className="w-full h-10 rounded-xl px-3 text-sm border"
                 style={{ background: "var(--bg-elevated)", borderColor: "var(--border)", color: "var(--text-primary)", fontFamily: "var(--font-display)" }}/>
             </div>
@@ -313,7 +313,7 @@ function AccountPage({ user, updateUser, signOut, stats }) {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Crown size={16} style={{ color: "var(--accent)" }}/>
-              <p className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>Upgrade to Pro</p>
+              <p className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>{ t("settings_upgrade") }</p>
             </div>
             <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Unlimited trades, SYLLEDGE AI unlimited, advanced analytics</p>
           </div>
@@ -352,7 +352,7 @@ function AppearancePage() {
     <div className="space-y-4">
       <div className="card overflow-hidden">
         <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
-          <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>Theme</h3>
+          <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>{ t("settings_theme") }</h3>
         </div>
         <div className="p-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
           {THEMES.map(t => (
@@ -371,7 +371,7 @@ function AppearancePage() {
       </div>
       <div className="card overflow-hidden">
         <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
-          <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>Custom Colors</h3>
+          <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>{ t("settings_custom_colors") }</h3>
           <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Override individual colors on top of any theme.</p>
         </div>
         <div className="p-5 grid grid-cols-2 gap-4">
@@ -445,7 +445,7 @@ function DataPage({ stats }) {
     <div className="space-y-4">
       <div className="card overflow-hidden">
         <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
-          <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>Data Summary</h3>
+          <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>{ t("settings_data_summary") }</h3>
         </div>
         <div className="p-5">
           <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-5">
@@ -474,7 +474,7 @@ function DataPage({ stats }) {
 
       <div className="card overflow-hidden" style={{ border: "1px solid rgba(255,71,87,0.25)" }}>
         <div className="px-5 py-4" style={{ borderBottom: "1px solid rgba(255,71,87,0.15)" }}>
-          <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--accent-danger)" }}>Danger Zone</h3>
+          <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--accent-danger)" }}>{ t("settings_danger") }</h3>
         </div>
         <div className="p-5 space-y-2">
           {CLEAR_OPTIONS.map(opt => (
@@ -492,7 +492,7 @@ function DataPage({ stats }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setClearTarget(null)}/>
           <div className="relative card p-6 w-full max-w-sm z-10">
-            <h3 className="font-bold mb-2" style={{ fontFamily: "var(--font-display)", color: "var(--accent-danger)" }}>Are you sure?</h3>
+            <h3 className="font-bold mb-2" style={{ fontFamily: "var(--font-display)", color: "var(--accent-danger)" }}>{ t("settings_sure") }</h3>
             <p className="text-sm mb-5" style={{ color: "var(--text-muted)" }}>
               This permanently deletes <strong style={{ color: "var(--text-primary)" }}>{CLEAR_OPTIONS.find(o => o.key === clearTarget)?.label}</strong>. Export a backup first.
             </p>
@@ -596,7 +596,7 @@ function APIKeysPage({ user }) {
               type={showKey ? "text" : "password"}
               value={apiKey}
               onChange={e => setApiKey(e.target.value)}
-              placeholder="sk-ant-api03-..."
+              placeholder=t("settings_key_ph")
               className="flex-1 h-10 rounded-xl px-3 text-sm border mono"
               style={{ background: "var(--bg-elevated)", borderColor: keySaved ? "rgba(46,213,115,0.4)" : "var(--border)", color: "var(--text-primary)" }}/>
             <button type="button" onClick={() => setShowKey(!showKey)}
@@ -621,7 +621,7 @@ function APIKeysPage({ user }) {
       {/* ── Sync EA Token ─────────────────────────────────────────────────── */}
       {/* TokenCard is a TOP-LEVEL component — safe to render here */}
       <TokenCard
-        title="TradeSylla_Sync EA Token"
+        title=t("settings_user_token")
         subtitle="Trade journal sync — imports your closed positions"
         token={userToken}
         show={showUT}
@@ -637,7 +637,7 @@ function APIKeysPage({ user }) {
 
       {/* ── Market Data EA Token ───────────────────────────────────────────── */}
       <TokenCard
-        title="SYLLEDGE Market Data EA Token"
+        title=t("settings_admin_token")
         subtitle="OHLCV feed — powers SYLLEDGE AI market analysis"
         token={adminToken}
         show={showAT}
@@ -669,7 +669,7 @@ function NotificationsPage() {
   return (
     <div className="card overflow-hidden">
       <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
-        <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>Notification Preferences</h3>
+        <h3 className="font-bold" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>{ t("settings_notif_prefs") }</h3>
         <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Coming soon — notifications will be delivered via email.</p>
       </div>
       <div className="p-5 space-y-3">
@@ -774,6 +774,7 @@ function LanguagePage({ lang, setLang, tl, langSaved, setLangSaved }) {
 }
 
 export default function Settings() {
+  const { t } = useLanguage()
   const { user, updateUser, signOut } = useUser()
   const { lang, setLang, t: tl } = useLanguage()
   const [activePage, setActivePage]  = useState(() => localStorage.getItem("ts_settings_page") || "account")

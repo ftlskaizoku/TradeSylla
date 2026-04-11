@@ -1,4 +1,5 @@
 // src/pages/Backtesting.jsx  — Visual Upgrade v2
+import { useLanguage } from "@/lib/LanguageContext"
 import { useState, useEffect } from "react"
 import { BacktestSession, Playbook } from "@/api/supabaseStore"
 import { toast } from "@/components/ui/toast"
@@ -52,7 +53,7 @@ function SessionModal({ open, onClose, onSaved, editSession }) {
         <div className="p-6 space-y-4">
           <div>
             <label className="stat-card-label block mb-1">Session Name *</label>
-            <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="e.g. XAUUSD London Breakout Q1"
+            <input value={form.name} onChange={e=>set("name",e.target.value)} placeholder=t("bt_session_ph")
               className="w-full h-10 rounded-xl px-3 text-sm border"
               style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)" }}/>
           </div>
@@ -75,7 +76,7 @@ function SessionModal({ open, onClose, onSaved, editSession }) {
           </div>
           <div>
             <label className="stat-card-label block mb-1">Strategy Summary</label>
-            <textarea rows={2} value={form.strategy} onChange={e=>set("strategy",e.target.value)} placeholder="Describe the strategy being tested…"
+            <textarea rows={2} value={form.strategy} onChange={e=>set("strategy",e.target.value)} placeholder=t("bt_strategy_ph")
               className="w-full rounded-xl px-3 py-2 text-sm border resize-none"
               style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)" }}/>
           </div>
@@ -87,7 +88,7 @@ function SessionModal({ open, onClose, onSaved, editSession }) {
           </div>
         </div>
         <div className="flex gap-3 px-6 pb-6">
-          <button onClick={onClose} className="btn btn-secondary flex-1">Cancel</button>
+          <button onClick={onClose} className="btn btn-secondary flex-1">{ t("cancel") }</button>
           <button onClick={save} disabled={saving} className="btn btn-primary flex-1" style={{ opacity:saving?0.7:1 }}>
             {saving?"Saving…":isEdit?"Update":"Create Session"}
           </button>
@@ -107,8 +108,8 @@ function DeleteConfirm({ label, onCancel, onConfirm }) {
           <strong style={{ color:"var(--text-primary)" }}>{label}</strong> and all its trades will be permanently removed.
         </p>
         <div className="flex gap-3">
-          <button onClick={onCancel} className="btn btn-secondary flex-1">Cancel</button>
-          <button onClick={onConfirm} className="btn flex-1 text-white" style={{ background:"var(--accent-danger)" }}>Delete</button>
+          <button onClick={onCancel} className="btn btn-secondary flex-1">{ t("cancel") }</button>
+          <button onClick={onConfirm} className="btn flex-1 text-white" style={{ background:"var(--accent-danger)" }}>{ t("delete") }</button>
         </div>
       </div>
     </div>
@@ -268,7 +269,7 @@ function SessionDetail({ session, onBack, onUpdate }) {
       {curve.length>1 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
           <div className="card p-5">
-            <h3 className="text-sm font-bold mb-3" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>Equity Curve</h3>
+            <h3 className="text-sm font-bold mb-3" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>{ t("bt_equity_curve") }</h3>
             <ResponsiveContainer width="100%" height={160}>
               <AreaChart data={curve}>
                 <defs><linearGradient id="eCurve" x1="0" y1="0" x2="0" y2="1">
@@ -284,7 +285,7 @@ function SessionDetail({ session, onBack, onUpdate }) {
             </ResponsiveContainer>
           </div>
           <div className="card p-5">
-            <h3 className="text-sm font-bold mb-3" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>Trade P&L</h3>
+            <h3 className="text-sm font-bold mb-3" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>{ t("bt_trade_pnl") }</h3>
             <ResponsiveContainer width="100%" height={160}>
               <BarChart data={barData}>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3"/>
@@ -327,8 +328,8 @@ function SessionDetail({ session, onBack, onUpdate }) {
             </div>
           </div>
           <div className="col-span-2 sm:col-span-4 flex gap-2">
-            <button onClick={addTrade} className="btn btn-primary flex-1">Save Trade</button>
-            <button onClick={()=>setAdding(false)} className="btn btn-secondary">Cancel</button>
+            <button onClick={addTrade} className="btn btn-primary flex-1">{ t("bt_save_trade") }</button>
+            <button onClick={()=>setAdding(false)} className="btn btn-secondary">{ t("cancel") }</button>
           </div>
         </div>
       )}
@@ -371,7 +372,7 @@ function SessionDetail({ session, onBack, onUpdate }) {
         </div>
       ) : (
         <div className="card py-12 text-center">
-          <p className="text-sm" style={{ color:"var(--text-muted)" }}>No trades yet — click "Add Trade" to start logging backtest results.</p>
+          <p className="text-sm" style={{ color:"var(--text-muted)" }}>No trades yet — click t("bt_add_trade") to start logging backtest results.</p>
         </div>
       )}
     </div>
@@ -380,6 +381,7 @@ function SessionDetail({ session, onBack, onUpdate }) {
 
 // ─── Main Backtesting Page ─────────────────────────────────────────────────────
 export default function Backtesting() {
+  const { t } = useLanguage()
   const [sessions,     setSessions]     = useState([])
   const [playbooks,    setPlaybooks]    = useState([])
   const [activeSession,setActiveSession]= useState(null)
@@ -423,7 +425,7 @@ export default function Backtesting() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
         <div>
-          <h1 className="gradient-text font-black" style={{ fontFamily:"var(--font-display)", fontSize:28 }}>Backtesting</h1>
+          <h1 className="gradient-text font-black" style={{ fontFamily:"var(--font-display)", fontSize:28 }}>{ t("bt_title") }</h1>
           <p className="mono text-xs mt-1" style={{ color:"var(--text-muted)" }}>
             {sessions.length} session{sessions.length!==1?"s":""} · {totalTrades} trades logged
           </p>

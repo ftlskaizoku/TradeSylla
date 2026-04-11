@@ -1,4 +1,5 @@
 // src/pages/Sylledge.jsx  — SYLLEDGE AI v3.1 — Visual Upgrade
+import { useLanguage } from "@/lib/LanguageContext"
 import { useState, useEffect, useRef } from "react"
 import { useUser }  from "@/lib/UserContext"
 import { supabase } from "@/lib/supabase"
@@ -256,6 +257,7 @@ function MessageBubble({ msg, onSave }) {
 }
 
 export default function Sylledge() {
+  const { t } = useLanguage()
   const { user } = useUser()
   const [tab,        setTab]        = useState("chat")
   const [messages,   setMessages]   = useState([])
@@ -382,7 +384,7 @@ export default function Sylledge() {
             <Brain size={22} className="text-white"/>
           </div>
           <div>
-            <h1 className="gradient-text font-black" style={{ fontFamily:"var(--font-display)", fontSize:26 }}>SYLLEDGE AI</h1>
+            <h1 className="gradient-text font-black" style={{ fontFamily:"var(--font-display)", fontSize:26 }}>{t("sylledge_title")}</h1>
             <p className="mono text-xs" style={{ color:"var(--text-muted)" }}>
               {trades.length} trades · {playbooks.length} strategies · {backtests.length} backtests
             </p>
@@ -399,7 +401,7 @@ export default function Sylledge() {
           <select value={selPlaybook} onChange={e=>setSelPlaybook(e.target.value)}
             className="h-8 rounded-xl px-3 text-xs border"
             style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-secondary)", fontFamily:"var(--font-display)" }}>
-            <option value="">No active playbook</option>
+            <option value="">{t("sylledge_no_playbook")}</option>
             {playbooks.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <button onClick={clearChat} className="btn btn-secondary h-8 gap-1.5 text-xs">
@@ -481,7 +483,7 @@ export default function Sylledge() {
               value={input}
               onChange={e=>setInput(e.target.value)}
               onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()} }}
-              placeholder="Ask SYLLEDGE anything about your trading…"
+              placeholder=t("sylledge_placeholder")
               rows={1}
               className="flex-1 rounded-xl px-4 py-3 text-sm resize-none"
               style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)", color:"var(--text-primary)", fontFamily:"var(--font-display)", minHeight:46, maxHeight:120 }}
@@ -503,7 +505,7 @@ export default function Sylledge() {
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background:"rgba(108,99,255,0.1)" }}>
                 <Brain size={22} style={{ color:"var(--accent)" }}/>
               </div>
-              <p className="font-bold mb-1" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>No saved insights yet</p>
+              <p className="font-bold mb-1" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>{t("sylledge_no_insights")}</p>
               <p className="text-sm" style={{ color:"var(--text-muted)" }}>Click "Save insight" on any AI response to save it here.</p>
             </div>
           ) : (
@@ -539,7 +541,7 @@ export default function Sylledge() {
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background:"rgba(108,99,255,0.1)" }}>
               <LineChart size={22} style={{ color:"var(--accent)" }}/>
             </div>
-            <p className="font-bold mb-1" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>Market Charts</p>
+            <p className="font-bold mb-1" style={{ fontFamily:"var(--font-display)", color:"var(--text-primary)" }}>{t("sylledge_market")}</p>
             <p className="text-sm mb-4" style={{ color:"var(--text-muted)" }}>Ask SYLLEDGE to generate a report — it will create downloadable HTML charts you can open in any browser.</p>
             <button onClick={()=>{ setTab("chat"); sendMessage("Generate a comprehensive performance report as a downloadable HTML file with interactive charts.") }}
               className="btn btn-primary">

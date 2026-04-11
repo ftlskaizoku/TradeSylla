@@ -2,6 +2,7 @@
 // Three calculators in one: Position Size, Risk/Reward, Pip Value
 // Works with live trade data for personalized suggestions
 
+import { useLanguage } from "@/lib/LanguageContext"
 import { useState, useMemo } from "react"
 import { useUser } from "@/lib/UserContext"
 import {
@@ -172,7 +173,7 @@ function PositionSizeCalc() {
           <CalcIcon size={15} style={{ color:"var(--accent)" }}/>
         </div>
         <div>
-          <h2 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>Position Size Calculator</h2>
+          <h2 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{ t("calc_title") }</h2>
           <p className="text-xs" style={{ color:"var(--text-muted)" }}>How many lots to risk a fixed % of your account</p>
         </div>
       </div>
@@ -196,15 +197,15 @@ function PositionSizeCalc() {
         </div>
         <div>
           <Label>Entry Price</Label>
-          <Input value={entryPrice} onChange={setEntryPrice} placeholder="e.g. 2340.50"/>
+          <Input value={entryPrice} onChange={setEntryPrice} placeholder=t("calc_entry_ph")/>
         </div>
         <div>
           <Label>Stop Loss Price</Label>
-          <Input value={slPrice} onChange={setSlPrice} placeholder="e.g. 2330.00"/>
+          <Input value={slPrice} onChange={setSlPrice} placeholder=t("calc_sl_ph")/>
         </div>
         <div>
           <Label>Current/Market Price (optional)</Label>
-          <Input value={currentPrice} onChange={setCurrentPrice} placeholder="For accurate pip value"/>
+          <Input value={currentPrice} onChange={setCurrentPrice} placeholder=t("calc_market_desc")/>
         </div>
       </div>
 
@@ -217,11 +218,11 @@ function PositionSizeCalc() {
               <span className="text-xs ml-2" style={{ color:"var(--text-muted)" }}>{riskPct}% of account</span>
             </div>
           </div>
-          <ResultRow label="Lot Size"      value={calc.lotSize + " lots"}  color="var(--accent)" large/>
-          <ResultRow label="Risk Amount"   value={`$${calc.riskAmt}`}      color="var(--accent-danger)"/>
-          <ResultRow label="Stop Distance" value={`${calc.pipDiff} pips`}  color="var(--text-primary)"/>
-          <ResultRow label="Pip Value"     value={`$${calc.pipVal}`}       color="var(--text-primary)"/>
-          <ResultRow label="Units"         value={calc.units}              color="var(--text-muted)"/>
+          <ResultRow label=t("calc_lot_size")      value={calc.lotSize + " lots"}  color="var(--accent)" large/>
+          <ResultRow label=t("calc_risk_amount")   value={`$${calc.riskAmt}`}      color="var(--accent-danger)"/>
+          <ResultRow label=t("calc_stop_dist") value={`${calc.pipDiff} pips`}  color="var(--text-primary)"/>
+          <ResultRow label=t("calc_pip_value")     value={`$${calc.pipVal}`}       color="var(--text-primary)"/>
+          <ResultRow label=t("calc_units")         value={calc.units}              color="var(--text-muted)"/>
         </div>
       ) : (
         <div className="rounded-xl p-4 text-center" style={{ background:"var(--bg-elevated)" }}>
@@ -282,7 +283,7 @@ function RRCalc() {
           <Target size={15} style={{ color:"var(--accent-success)" }}/>
         </div>
         <div>
-          <h2 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>Risk / Reward Calculator</h2>
+          <h2 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{ t("calc_rr_title") }</h2>
           <p className="text-xs" style={{ color:"var(--text-muted)" }}>Analyse a trade's R:R and expectancy before entering</p>
         </div>
       </div>
@@ -335,13 +336,13 @@ function RRCalc() {
 
       {calc ? (
         <div className="rounded-xl p-4" style={{ background:"var(--bg-elevated)" }}>
-          <ResultRow label="R:R Ratio"        value={`1 : ${calc.rr}`}       color={rrColor} large/>
-          <ResultRow label="Reward"           value={`$${calc.reward}`}      color="var(--accent-success)"/>
+          <ResultRow label=t("calc_rr_ratio")        value={`1 : ${calc.rr}`}       color={rrColor} large/>
+          <ResultRow label=t("calc_reward")           value={`$${calc.reward}`}      color="var(--accent-success)"/>
           <ResultRow label="Expectancy"       value={`$${calc.expectancy}`}  color={calc.positive ? "var(--accent-success)" : "var(--accent-danger)"}
             sub={calc.positive ? "Positive edge ✓" : "Negative edge ✗"}/>
-          <ResultRow label="Breakeven Win Rate" value={`${calc.breakevenWR}%`} color="var(--text-secondary)"/>
-          <ResultRow label="Risk Distance"    value={calc.riskDist}           color="var(--text-muted)"/>
-          <ResultRow label="Reward Distance"  value={calc.rewardDist}         color="var(--text-muted)"/>
+          <ResultRow label=t("calc_breakeven_wr") value={`${calc.breakevenWR}%`} color="var(--text-secondary)"/>
+          <ResultRow label=t("calc_risk_dist")    value={calc.riskDist}           color="var(--text-muted)"/>
+          <ResultRow label=t("calc_reward_dist")  value={calc.rewardDist}         color="var(--text-muted)"/>
         </div>
       ) : (
         <div className="rounded-xl p-4 text-center" style={{ background:"var(--bg-elevated)" }}>
@@ -385,7 +386,7 @@ function PipValueCalc() {
           <DollarSign size={15} style={{ color:"var(--accent-warning)" }}/>
         </div>
         <div>
-          <h2 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>Pip Value Calculator</h2>
+          <h2 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{ t("calc_pip_title") }</h2>
           <p className="text-xs" style={{ color:"var(--text-muted)" }}>How much is each pip worth in USD</p>
         </div>
       </div>
@@ -409,16 +410,16 @@ function PipValueCalc() {
         </div>
         <div className="col-span-2">
           <Label>Current Price (for cross pairs)</Label>
-          <Input value={price} onChange={setPrice} placeholder="Optional — improves accuracy"/>
+          <Input value={price} onChange={setPrice} placeholder=t("calc_cross_desc")/>
         </div>
       </div>
 
       {calc ? (
         <div className="rounded-xl p-4" style={{ background:"var(--bg-elevated)" }}>
-          <ResultRow label="Value per Pip"   value={`$${calc.pipVal}`}  color="var(--accent)" large/>
+          <ResultRow label=t("calc_value_per_pip")   value={`$${calc.pipVal}`}  color="var(--accent)" large/>
           <ResultRow label={`${pips} Pips Total`} value={`$${calc.total}`} color="var(--accent-success)"/>
-          <ResultRow label="Pip Size"        value={calc.pipSize}       color="var(--text-muted)"/>
-          <ResultRow label="Instrument"      value={calc.name}          color="var(--text-muted)"/>
+          <ResultRow label=t("calc_pip_size")        value={calc.pipSize}       color="var(--text-muted)"/>
+          <ResultRow label=t("calc_instrument")      value={calc.name}          color="var(--text-muted)"/>
         </div>
       ) : (
         <div className="rounded-xl p-4 text-center" style={{ background:"var(--bg-elevated)" }}>
@@ -454,7 +455,7 @@ function DailyRiskPanel({ accountSize, setAccountSize }) {
           <AlertTriangle size={15} style={{ color:"var(--accent-danger)" }}/>
         </div>
         <div>
-          <h2 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>Daily Risk Manager</h2>
+          <h2 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{ t("calc_risk_title") }</h2>
           <p className="text-xs" style={{ color:"var(--text-muted)" }}>Keep your daily drawdown under control</p>
         </div>
       </div>
@@ -504,10 +505,10 @@ function DailyRiskPanel({ accountSize, setAccountSize }) {
               {safe ? "Within daily risk limit ✓" : "Exceeds daily risk limit ✗"}
             </span>
           </div>
-          <ResultRow label="Max Daily Loss"      value={`$${maxRiskAmt.toFixed(2)}`}       color="var(--accent-danger)"/>
-          <ResultRow label="Planned Risk Today"  value={`$${totalPlanned.toFixed(2)}`}     color={safe ? "var(--accent-success)" : "var(--accent-danger)"}/>
-          <ResultRow label="Risk per Trade"      value={`$${riskPerTrAmt.toFixed(2)}`}     color="var(--text-primary)"/>
-          <ResultRow label="Max Trades Allowed"  value={`${tradesAllowed} trades`}         color={trades <= tradesAllowed ? "var(--accent-success)" : "var(--accent-danger)"}/>
+          <ResultRow label=t("calc_max_daily")      value={`$${maxRiskAmt.toFixed(2)}`}       color="var(--accent-danger)"/>
+          <ResultRow label=t("calc_planned_risk")  value={`$${totalPlanned.toFixed(2)}`}     color={safe ? "var(--accent-success)" : "var(--accent-danger)"}/>
+          <ResultRow label=t("calc_risk_pct")      value={`$${riskPerTrAmt.toFixed(2)}`}     color="var(--text-primary)"/>
+          <ResultRow label=t("calc_max_trades")  value={`${tradesAllowed} trades`}         color={trades <= tradesAllowed ? "var(--accent-success)" : "var(--accent-danger)"}/>
           {/* Progress bar */}
           <div className="mt-3">
             <div className="flex justify-between text-xs mb-1" style={{ color:"var(--text-muted)" }}>
@@ -532,6 +533,7 @@ function DailyRiskPanel({ accountSize, setAccountSize }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Calculator() {
+  const { t } = useLanguage()
   const [accountSize, setAccountSize] = useState("10000")
 
   return (
