@@ -5,7 +5,7 @@
 import { useState, useMemo } from "react"
 import { useUser } from "@/lib/UserContext"
 import {
-  Calculator, Target, TrendingUp, TrendingDown,
+  Calculator as CalcIcon, Target, TrendingUp, TrendingDown,
   DollarSign, Percent, AlertTriangle, CheckCircle,
   BarChart2, Zap, Info
 } from "lucide-react"
@@ -169,7 +169,7 @@ function PositionSizeCalc() {
       <div className="flex items-center gap-2 mb-4">
         <div className="w-8 h-8 rounded-xl flex items-center justify-center"
           style={{ background:"rgba(108,99,255,0.15)" }}>
-          <Calculator size={15} style={{ color:"var(--accent)" }}/>
+          <CalcIcon size={15} style={{ color:"var(--accent)" }}/>
         </div>
         <div>
           <h2 className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>Position Size Calculator</h2>

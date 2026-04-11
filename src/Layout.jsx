@@ -48,19 +48,20 @@ export default function Layout({ children, currentPageName }) {
   }
 
   // Nav items with icon emoji and optional badge
+  // Nav items — each has its own accent color for a professional look
   const navItems = [
-    { label:t("nav_dashboard"),   Icon:LayoutDashboard, page:"Dashboard",             emoji:"📊" },
-    { label:t("nav_journal"),     Icon:BookOpen,        page:"Journal",               emoji:"📒", badge: tradeCount > 0 ? tradeCount.toLocaleString() : null },
-    { label:t("nav_notebook"),    Icon:PenLine,         page:"Notebook",              emoji:"✍️" },
-    { label:t("nav_calendar"),    Icon:CalendarDays,    page:"Journal?view=calendar", emoji:"📅" },
-    { label:t("nav_analytics"),   Icon:BarChart3,       page:"Analytics",             emoji:"📈" },
-    { label:t("nav_reports"),     Icon:FileBarChart2,   page:"Reports",               emoji:"📋" },
-    { label:t("nav_calculator"),  Icon:Calculator,      page:"Calculator",            emoji:"🧮" },
-    { label:t("nav_playbook"),    Icon:Shield,          page:"Playbook",              emoji:"🛡️" },
-    { label:t("nav_sylledge"),    Icon:Brain,           page:"Sylledge",              emoji:"🤖", badge:"AI" },
-    { label:t("nav_backtesting"), Icon:FlaskConical,    page:"Backtesting",           emoji:"⚗️" },
-    { label:t("nav_brokersync"),  Icon:Wifi,            page:"BrokerSync",            emoji:"🔄" },
-    { label:t("nav_settings"),    Icon:Settings,        page:"Settings",              emoji:"⚙️" },
+    { label:t("nav_dashboard"),   Icon:LayoutDashboard, page:"Dashboard",             color:"#6c63ff" },
+    { label:t("nav_journal"),     Icon:BookOpen,        page:"Journal",               color:"#ffa502", badge: tradeCount > 0 ? tradeCount.toLocaleString() : null },
+    { label:t("nav_notebook"),    Icon:PenLine,         page:"Notebook",              color:"#00d4aa" },
+    { label:t("nav_calendar"),    Icon:CalendarDays,    page:"Journal?view=calendar", color:"#00d4aa" },
+    { label:t("nav_analytics"),   Icon:BarChart3,       page:"Analytics",             color:"#2ed573" },
+    { label:t("nav_reports"),     Icon:FileBarChart2,   page:"Reports",               color:"#2ed573" },
+    { label:t("nav_calculator"),  Icon:Calculator,      page:"Calculator",            color:"#6c63ff" },
+    { label:t("nav_playbook"),    Icon:Shield,          page:"Playbook",              color:"#ff6b35" },
+    { label:t("nav_sylledge"),    Icon:Brain,           page:"Sylledge",              color:"#a29bfe", badge:"New" },
+    { label:t("nav_backtesting"), Icon:FlaskConical,    page:"Backtesting",           color:"#fd79a8" },
+    { label:t("nav_brokersync"),  Icon:Wifi,            page:"BrokerSync",            color:"#74b9ff" },
+    { label:t("nav_settings"),    Icon:Settings,        page:"Settings",              color:"#636e72" },
   ]
 
   const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email)
@@ -100,25 +101,26 @@ export default function Layout({ children, currentPageName }) {
             return (
               <Link key={item.page} to={createPageUrl(item.page)} onClick={closeSidebar}
                 className={"sidebar-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium " + (active ? "active" : "")}
-                style={{ color: active ? "var(--accent)" : "var(--text-secondary)", background: active ? "rgba(108,99,255,0.1)" : "transparent" }}>
-                {/* Icon container */}
+                style={{ color: active ? item.color : "var(--text-secondary)", background: active ? `${item.color}15` : "transparent",
+                  transition:"all 0.15s" }}>
+                {/* Icon container with per-item color */}
                 <div style={{
-                  width:28, height:28, borderRadius:8,
-                  background: active ? "rgba(108,99,255,0.15)" : "rgba(255,255,255,0.04)",
+                  width:30, height:30, borderRadius:9, flexShrink:0,
+                  background: active ? `${item.color}22` : "rgba(255,255,255,0.04)",
                   display:"flex", alignItems:"center", justifyContent:"center",
-                  flexShrink:0, fontSize:14,
-                  transition:"background 0.15s"
+                  border: active ? `1px solid ${item.color}40` : "1px solid transparent",
+                  transition:"all 0.15s",
                 }}>
-                  {item.emoji}
+                  <item.Icon size={15} style={{ color: active ? item.color : "var(--text-muted)" }}/>
                 </div>
                 <span className="flex-1">{item.label}</span>
-                {item.badge && item.label === "Journal" && (
+                {item.badge && item.badge !== "New" && (
                   <span className="nav-badge">{item.badge}</span>
                 )}
-                {item.badge && item.label === "SYLLEDGE AI" && (
-                  <span className="nav-badge success">New</span>
+                {item.badge === "New" && (
+                  <span className="nav-badge success" style={{ background:`${item.color}25`, color:item.color, border:`1px solid ${item.color}40`, fontSize:9, padding:"1px 6px", borderRadius:20 }}>New</span>
                 )}
-                {active && <ChevronRight size={12} style={{ color:"var(--accent)", flexShrink:0 }}/>}
+                {active && <ChevronRight size={12} style={{ color:item.color, flexShrink:0 }}/>}
               </Link>
             )
           })}
@@ -133,8 +135,10 @@ export default function Layout({ children, currentPageName }) {
                   color:      isActive("MarketCharts") ? "#00d4aa" : "var(--text-muted)",
                   background: isActive("MarketCharts") ? "rgba(0,212,170,0.1)" : "transparent",
                 }}>
-                <div style={{ width:28, height:28, borderRadius:8, background:"rgba(0,212,170,0.08)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, flexShrink:0 }}>📊</div>
-                <span className="flex-1">Market Charts</span>
+                <div style={{ width:30, height:30, borderRadius:9, background:isActive("MarketCharts")?"rgba(0,212,170,0.15)":"rgba(255,255,255,0.04)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, border:isActive("MarketCharts")?"1px solid rgba(0,212,170,0.3)":"1px solid transparent" }}>
+                  <BarChart2 size={15} style={{ color:isActive("MarketCharts")?"#00d4aa":"var(--text-muted)" }}/>
+                </div>
+                <span className="flex-1">{t("nav_market_charts")}</span>
                 {isActive("MarketCharts") && <ChevronRight size={12} style={{ color:"#00d4aa" }}/>}
               </Link>
               <Link to="/Admin" onClick={closeSidebar}
@@ -143,8 +147,10 @@ export default function Layout({ children, currentPageName }) {
                   color:      isActive("Admin") ? "#ffa502" : "var(--text-muted)",
                   background: isActive("Admin") ? "rgba(255,165,2,0.1)" : "transparent",
                 }}>
-                <div style={{ width:28, height:28, borderRadius:8, background:"rgba(255,165,2,0.08)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, flexShrink:0 }}>⚡</div>
-                <span className="flex-1">Admin Panel</span>
+                <div style={{ width:30, height:30, borderRadius:9, background:isActive("Admin")?"rgba(255,165,2,0.15)":"rgba(255,255,255,0.04)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, border:isActive("Admin")?"1px solid rgba(255,165,2,0.3)":"1px solid transparent" }}>
+                  <Zap size={15} style={{ color:isActive("Admin")?"#ffa502":"var(--text-muted)" }}/>
+                </div>
+                <span className="flex-1">{t("nav_admin")}</span>
                 {isActive("Admin") && <ChevronRight size={12} style={{ color:"#ffa502" }}/>}
               </Link>
             </>

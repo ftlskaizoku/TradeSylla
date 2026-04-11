@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { Trade } from "@/api/supabaseStore"
+import { useLanguage } from "@/lib/LanguageContext"
 import {
   BarChart, Bar, AreaChart, Area, LineChart, Line,
   ScatterChart, Scatter, PieChart, Pie, Cell,
@@ -820,13 +821,13 @@ function LotSection({ trades }) {
 
 // ─── PERIOD FILTER ─────────────────────────────────────────────────────────────
 const PERIODS = [
-  { id:"all", label:"All Time" },
-  { id:"ytd", label:"YTD" },
-  { id:"1y",  label:"1 Year" },
-  { id:"6m",  label:"6 Months" },
-  { id:"3m",  label:"3 Months" },
-  { id:"1m",  label:"1 Month" },
-  { id:"1w",  label:"1 Week" },
+  { id:"all", label:t("period_all") },
+  { id:"ytd", label:t("period_ytd") },
+  { id:"1y",  label:t("period_1y") },
+  { id:"6m",  label:t("period_6m") },
+  { id:"3m",  label:t("period_3m") },
+  { id:"1m",  label:t("period_1m") },
+  { id:"1w",  label:t("period_1w") },
 ]
 
 function applyPeriod(trades, id) {
@@ -843,6 +844,7 @@ function applyPeriod(trades, id) {
 
 // ─── MAIN PAGE ─────────────────────────────────────────────────────────────────
 export default function Reports() {
+  const { t } = useLanguage()
   const [allTrades,  setAllTrades]  = useState([])
   const [period,     setPeriod]     = useState("all")
   const [filterSym,  setFilterSym]  = useState("ALL")
@@ -877,7 +879,7 @@ export default function Reports() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
         <div>
           <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)", fontFamily:"var(--font-display)" }}>
-            Advanced Reports
+            {t("reports_title")}
           </h1>
           <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>
             {trades.length} trades · 50+ dimensions

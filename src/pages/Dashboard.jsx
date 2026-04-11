@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { Trade, Playbook, BrokerConnection, subscribeToTable } from "@/api/supabaseStore"
 import { useUser } from "@/lib/UserContext"
+import { useLanguage } from "@/lib/LanguageContext"
 import { toast } from "@/components/ui/toast"
 import { InfoTooltip, TOOLTIPS } from "@/components/ui/InfoTooltip"
 import {
@@ -160,7 +161,7 @@ function PnlToggle({ mode, onChange }) {
           color:       mode === "net" ? "var(--accent)" : "var(--accent-secondary)",
         }}>
         {mode === "net" ? <ToggleRight size={13}/> : <ToggleLeft size={13}/>}
-        {mode === "net" ? "Net P&L" : "Gross P&L"}
+        {mode === "net" ? t("dash_net_pnl") : "Gross P&L"}
       </button>
       <span className="text-xs" style={{ color:"var(--text-muted)" }}>
         {mode === "net" ? "(after fees)" : "(before fees)"}
@@ -385,6 +386,7 @@ function ChartCard({ title, tooltip, children }) {
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user } = useUser()
+  const { t } = useLanguage()
   const [trades,          setTrades]         = useState([])
   const [tradeModalOpen,  setTradeModalOpen]  = useState(false)
   const [eaAccounts,      setEaAccounts]      = useState([])
@@ -593,7 +595,7 @@ export default function Dashboard() {
           gradient={netPnl>=0?["#2ed573","#00d4aa"]:["#ff4757","#ff6b81"]}
         />
         <StatCard
-          label="Win Rate"
+          label=t("dash_win_rate")
           value={`${winRate}%`}
           icon={Target}
           color="var(--accent)"
@@ -604,7 +606,7 @@ export default function Dashboard() {
           gradient={["#6c63ff","#4facfe"]}
         />
         <StatCard
-          label="Profit Factor"
+          label=t("dash_profit_factor")
           value={profitFactor}
           icon={BarChart3}
           color="var(--accent-secondary)"
@@ -615,7 +617,7 @@ export default function Dashboard() {
           gradient={["#00d4aa","#0fd"]}
         />
         <StatCard
-          label="Expectancy"
+          label=t("dash_expectancy")
           value={`$${expectancy}`}
           icon={Activity}
           color="var(--accent-warning)"

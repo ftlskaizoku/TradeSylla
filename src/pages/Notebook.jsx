@@ -7,6 +7,7 @@ import { Link } from "react-router-dom"
 import { createPageUrl } from "@/utils"
 import { supabase } from "@/lib/supabase"
 import { useUser } from "@/lib/UserContext"
+import { useLanguage } from "@/lib/LanguageContext"
 import { Trade } from "@/api/supabaseStore"
 import {
   ChevronLeft, ChevronRight, Calendar, BookOpen,
@@ -134,6 +135,7 @@ function TradeMiniRow({ trade }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Notebook() {
   const { user } = useUser()
+  const { t } = useLanguage()
   const [dateStr,   setDateStr]  = useState(toDateKey(new Date()))
   const [dayTrades, setDayTrades]= useState([])
   const [saving,    setSaving]   = useState(false)
@@ -247,7 +249,7 @@ export default function Notebook() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)", fontFamily:"var(--font-display)" }}>
-            Daily Notebook
+            {t("notebook_title")}
           </h1>
           <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>
             {fmtDateLong(dateStr)}
@@ -288,7 +290,7 @@ export default function Notebook() {
           <button onClick={() => saveNote({})}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
             style={{ background:"linear-gradient(135deg,var(--accent),var(--accent-secondary))" }}>
-            <Save size={13}/> Save
+            <Save size={13}/> {t("save")}
           </button>
         </div>
       </div>
@@ -298,7 +300,7 @@ export default function Notebook() {
         <div className="lg:col-span-2 flex flex-col gap-4">
 
           {/* Pre-market plan */}
-          <Section icon={Sun} title="Pre-Market Plan" color="var(--accent-warning)">
+          <Section icon={Sun} title=t("notebook_premarket") color="var(--accent-warning)">
             <div className="flex flex-col gap-4">
               {/* Market bias */}
               <div>
@@ -347,7 +349,7 @@ export default function Notebook() {
           </Section>
 
           {/* Post-market review */}
-          <Section icon={Sunset} title="Post-Market Review" color="var(--accent-secondary)">
+          <Section icon={Sunset} title=t("notebook_postmarket") color="var(--accent-secondary)">
             <div className="flex flex-col gap-4">
               <div>
                 <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>How did the day go?</p>
@@ -368,7 +370,7 @@ export default function Notebook() {
           </Section>
 
           {/* Mindset & Discipline */}
-          <Section icon={Brain} title="Mindset & Discipline" color="var(--accent)">
+          <Section icon={Brain} title=t("notebook_mindset") color="var(--accent)">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* Mindset */}
               <div>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Trade, Playbook, subscribeToTable } from "@/api/supabaseStore"
 import { supabase } from "@/lib/supabase"
+import { useLanguage } from "@/lib/LanguageContext"
 import { toast } from "@/components/ui/toast"
 import {
   Plus, Pencil, Trash2, X, List, CalendarDays,
@@ -1462,7 +1463,7 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI, playbooks = []
               <button onClick={()=>onAI(trade)}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold"
                 style={{ background:"rgba(0,212,170,0.1)", color:"var(--accent-secondary)", border:"1px solid rgba(0,212,170,0.2)" }}>
-                <Brain size={12}/> AI Review
+                <Brain size={12}/> {t("journal_ai_review")}
               </button>
               <button onClick={()=>onEdit(trade)}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold"
@@ -2361,6 +2362,7 @@ function CSVImportModal({ open, onClose, onImported }) {
 }
 
 export default function Journal() {
+  const { t } = useLanguage()
   const [searchParams, setSearchParams] = useSearchParams()
   const viewMode = searchParams.get("view") === "calendar" ? "calendar" : "table"
 
@@ -2462,9 +2464,9 @@ export default function Journal() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>Trade Journal</h1>
+          <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>{t("journal_title")}</h1>
           <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>
-            {trades.length} trade{trades.length!==1?"s":""} logged &middot; {filtered.length} shown
+            {trades.length} {t("journal_logged")} · {filtered.length} {t("journal_shown")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -2472,17 +2474,17 @@ export default function Journal() {
           <div className="flex rounded-lg overflow-hidden" style={{ border:"1px solid var(--border)" }}>
             <button onClick={()=>setView("table")} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-all"
               style={{ background:viewMode==="table"?"var(--accent)":"var(--bg-elevated)", color:viewMode==="table"?"#fff":"var(--text-secondary)" }}>
-              <List size={13}/> Table
+              <List size={13}/> {t("journal_table")}
             </button>
             <button onClick={()=>setView("calendar")} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-all"
               style={{ background:viewMode==="calendar"?"var(--accent)":"var(--bg-elevated)", color:viewMode==="calendar"?"#fff":"var(--text-secondary)" }}>
-              <CalendarDays size={13}/> Calendar
+              <CalendarDays size={13}/> {t("journal_calendar")}
             </button>
           </div>
           {/* New Trade */}
           <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white"
             style={{ background:"linear-gradient(135deg,#6c63ff,#5a52d5)" }}>
-            <Plus size={14}/> New Trade
+            <Plus size={14}/> {t("journal_new_trade")}
           </button>
         </div>
       </div>
@@ -2495,7 +2497,7 @@ export default function Journal() {
           style={{ borderBottom: filtersOpen ? "1px solid var(--border)" : "none" }}>
           <div className="flex items-center gap-2">
             <Activity size={13} style={{ color:"var(--accent)" }}/>
-            <span className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>Filters</span>
+            <span className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>{t("journal_filters")}</span>
             {activeFilters > 0 && (
               <span className="px-2 py-0.5 rounded-full text-xs font-bold"
                 style={{ background:"var(--accent)", color:"#fff" }}>{activeFilters}</span>
@@ -2506,7 +2508,7 @@ export default function Journal() {
               <button onClick={e => { e.stopPropagation(); resetFilters() }}
                 className="text-xs px-2 py-1 rounded-lg hover:opacity-70"
                 style={{ color:"var(--accent-danger)", background:"rgba(255,71,87,0.08)" }}>
-                Clear all
+                {t("journal_clear_all")}
               </button>
             )}
             {filtersOpen ? <ChevronUp size={14} style={{ color:"var(--text-muted)" }}/> : <ChevronDown size={14} style={{ color:"var(--text-muted)" }}/>}
