@@ -201,6 +201,7 @@ const BREAKDOWN_MODES = [
 ]
 
 function BreakdownTab({ trades }) {
+  const { t } = useLanguage()
   const C = useThemeColors()
   const [mode, setMode] = useState("monthly")
 
@@ -317,6 +318,7 @@ function BreakdownTab({ trades }) {
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({ trades }) {
+  const { t } = useLanguage()
   const C = useThemeColors()
   const sorted = [...trades].sort((a,b)=>new Date(a.entry_time)-new Date(b.entry_time))
   let cum = 0
@@ -409,6 +411,7 @@ function OverviewTab({ trades }) {
 
 // ─── PERFORMANCE TAB ──────────────────────────────────────────────────────────
 function PerformanceTab({ trades }) {
+  const { t } = useLanguage()
   const C = useThemeColors()
 
   const group = (key, label) => {
@@ -500,6 +503,7 @@ function PerformanceTab({ trades }) {
 
 // ─── PATTERNS TAB ─────────────────────────────────────────────────────────────
 function PatternsTab({ trades }) {
+  const { t } = useLanguage()
   const C = useThemeColors()
 
   const dowMap = {0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"}
@@ -596,6 +600,7 @@ function PatternsTab({ trades }) {
 
 // ─── ADVANCED TAB ─────────────────────────────────────────────────────────────
 function AdvancedTab({ trades }) {
+  const { t } = useLanguage()
   const C = useThemeColors()
   const sorted=[...trades].sort((a,b)=>new Date(a.entry_time)-new Date(b.entry_time))
 

@@ -216,6 +216,7 @@ function TokenCard({ title, subtitle, token, show, setShow, onGenerate, genKey, 
 
 // ─── Account Page ─────────────────────────────────────────────────────────────
 function AccountPage({ user, updateUser, signOut, stats }) {
+  const { t } = useLanguage()
   const [name,     setName]     = useState(user?.full_name || "")
   const [email,    setEmail]    = useState(user?.email || "")
   const [bio,      setBio]      = useState(user?.bio || "")
@@ -326,6 +327,7 @@ function AccountPage({ user, updateUser, signOut, stats }) {
 
 // ─── Appearance Page ──────────────────────────────────────────────────────────
 function AppearancePage() {
+  const { t } = useLanguage()
   const [activeTheme,  setActiveTheme]  = useState(() => localStorage.getItem("ts_theme") || "dark")
   const [customColors, setCustomColors] = useState(() => JSON.parse(localStorage.getItem("ts_custom_colors") || "{}"))
 
@@ -393,6 +395,7 @@ function AppearancePage() {
 
 // ─── Data Page ────────────────────────────────────────────────────────────────
 function DataPage({ stats }) {
+  const { t } = useLanguage()
   const [clearTarget, setClearTarget] = useState(null)
   const [clearing,    setClearing]    = useState(false)
 
@@ -513,6 +516,7 @@ function DataPage({ stats }) {
 // NOTE: TokenCard is defined at the TOP LEVEL of this file (above),
 // NOT inside this function. That's the fix for the scroll/copy bug.
 function APIKeysPage({ user }) {
+  const { t } = useLanguage()
   const [apiKey,       setApiKey]       = useState("")
   const [showKey,      setShowKey]      = useState(false)
   const [keySaved,     setKeySaved]     = useState(false)
@@ -656,6 +660,7 @@ function APIKeysPage({ user }) {
 
 // ─── Notifications Page ───────────────────────────────────────────────────────
 function NotificationsPage() {
+  const { t } = useLanguage()
   const PREFS = [
     { key: "notif_daily_summary",  label: "Daily P&L Summary",        desc: "Morning recap of yesterday's performance" },
     { key: "notif_win_streak",     label: "Win Streak Alerts",         desc: "Alert when you hit a 3+ win streak" },

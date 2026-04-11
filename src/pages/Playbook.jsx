@@ -132,6 +132,7 @@ function PlaybookImageUploader({ images, onChange }) {
 
 // ─── Playbook Form Modal ──────────────────────────────────────────────────────
 function PlaybookModal({ open, onClose, onSaved, editItem }) {
+  const { t } = useLanguage()
   const [form, setForm]   = useState(EMPTY)
   const [saving, setSaving]= useState(false)
   const isEdit = !!editItem
@@ -346,6 +347,7 @@ function PlaybookModal({ open, onClose, onSaved, editItem }) {
 
 // ─── Playbook Card ────────────────────────────────────────────────────────────
 function PlaybookCard({ item, onEdit, onDelete }) {
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState(false)
   const st = STATUS_STYLE[item.status] || STATUS_STYLE.active
 
@@ -475,6 +477,7 @@ function PlaybookCard({ item, onEdit, onDelete }) {
 
 // ─── Delete Confirm ───────────────────────────────────────────────────────────
 function DeleteConfirm({ item, onCancel, onConfirm }) {
+  const { t } = useLanguage()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel}/>

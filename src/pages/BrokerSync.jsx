@@ -178,6 +178,7 @@ const MARKETS = [
 
 // ── Direct MT5 Connection Form ────────────────────────────────────────────────
 function DirectMT5Form() {
+  const { t } = useLanguage()
   const { user } = useUser()
   const [form, setForm] = useState({
     broker_name: '', mt5_login: '', mt5_server: '', investor_password: '',
@@ -324,6 +325,7 @@ function DirectMT5Form() {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function BrokerSync({ userToken = null }) {
+  const { t } = useLanguage()
   const { user }    = useUser();
   const [method,    setMethod]    = useState('ea');
   const [openStep,  setOpenStep]  = useState(1);

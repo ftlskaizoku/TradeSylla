@@ -194,6 +194,7 @@ const SYMBOLS  = ["EURUSD","GBPUSD","USDJPY","XAUUSD","AUDUSD","GBPJPY","USDCAD"
 const SESSIONS = ["LONDON","NEW_YORK","ASIAN","SYDNEY"]
 
 function QuickTradeModal({ open, onClose, onSaved }) {
+  const { t } = useLanguage()
   const empty = {
     symbol:"EURUSD", customSymbol:"", direction:"BUY",
     entry_price:"", exit_price:"", pnl:"", pips:"",

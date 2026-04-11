@@ -18,6 +18,7 @@ const EMPTY_SESSION = {
 }
 
 function SessionModal({ open, onClose, onSaved, editSession }) {
+  const { t } = useLanguage()
   const [form,  setForm]  = useState(EMPTY_SESSION)
   const [saving,setSaving]= useState(false)
   const [playbooks,setPlaybooks] = useState([])
@@ -99,6 +100,7 @@ function SessionModal({ open, onClose, onSaved, editSession }) {
 }
 
 function DeleteConfirm({ label, onCancel, onConfirm }) {
+  const { t } = useLanguage()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel}/>
@@ -197,6 +199,7 @@ function SessionCard({ session, onOpen, onEdit, onDelete }) {
 
 // ─── Session Detail ───────────────────────────────────────────────────────────
 function SessionDetail({ session, onBack, onUpdate }) {
+  const { t } = useLanguage()
   const [trades,  setTrades]  = useState(session.trades || [])
   const [adding,  setAdding]  = useState(false)
   const [newTrade,setNewTrade]= useState({ symbol:"EURUSD",direction:"BUY",outcome:"WIN",pnl:"",pips:"",session:"LONDON",timeframe:"H1",notes:"" })

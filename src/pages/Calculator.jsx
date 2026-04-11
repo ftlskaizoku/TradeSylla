@@ -127,6 +127,7 @@ function ResultRow({ label, value, color, large, sub }) {
 
 // ─── 1. Position Size Calculator ──────────────────────────────────────────────
 function PositionSizeCalc() {
+  const { t } = useLanguage()
   const [accountSize, setAccountSize] = useState("10000")
   const [riskPct,     setRiskPct]     = useState("1")
   const [symbol,      setSymbol]      = useState("XAUUSD")
@@ -235,6 +236,7 @@ function PositionSizeCalc() {
 
 // ─── 2. Risk/Reward Calculator ────────────────────────────────────────────────
 function RRCalc() {
+  const { t } = useLanguage()
   const [entry,  setEntry]  = useState("")
   const [sl,     setSl]     = useState("")
   const [tp,     setTp]     = useState("")
@@ -355,6 +357,7 @@ function RRCalc() {
 
 // ─── 3. Pip Value Calculator ──────────────────────────────────────────────────
 function PipValueCalc() {
+  const { t } = useLanguage()
   const [symbol,   setSymbol]   = useState("EURUSD")
   const [lotSize,  setLotSize]  = useState("0.1")
   const [pips,     setPips]     = useState("20")
@@ -432,6 +435,7 @@ function PipValueCalc() {
 
 // ─── 4. Daily Risk Dashboard ──────────────────────────────────────────────────
 function DailyRiskPanel({ accountSize, setAccountSize }) {
+  const { t } = useLanguage()
   const [maxDailyRisk, setMaxDailyRisk] = useState("3")
   const [tradesPlanned,setTradesPlanned]= useState("3")
   const [riskPerTrade, setRiskPerTrade] = useState("1")
