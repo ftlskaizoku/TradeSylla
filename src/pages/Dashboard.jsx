@@ -150,6 +150,7 @@ function StatCard({ label, value, sub, icon: Icon, color, positive, tooltip, bar
 
 // ─── P&L Mode Toggle ──────────────────────────────────────────────────────────
 function PnlToggle({ mode, onChange }) {
+  const { t } = useLanguage()
   return (
     <div className="flex items-center gap-2">
       <InfoTooltip content={TOOLTIPS.commissionToggle} position="bottom" />

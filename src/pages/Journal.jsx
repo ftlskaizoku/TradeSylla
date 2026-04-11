@@ -565,7 +565,7 @@ function CalendarView({ trades, onNewTrade, onEdit, onDelete, onAI, playbooks = 
           </div>
         ) : (
           <div className="rounded-2xl flex flex-col items-center justify-center py-16 gap-3"
-            style={{ background:"var(--bg-card)", border:"1px solid var(--border)", border:"1px dashed var(--border)" }}>
+            style={{ background:"var(--bg-card)", border:"1px dashed var(--border)" }}>
             <CalendarDays size={36} style={{ color:"var(--text-muted)" }}/>
             <p className="text-sm font-medium" style={{ color:"var(--text-secondary)" }}>Click any day to see trades</p>
             <p className="text-xs text-center px-6" style={{ color:"var(--text-muted)" }}>
@@ -1396,6 +1396,7 @@ function TradeReplay({ trade, candles, onClose }) {
 
 // ─── Inline Trade Detail Row ──────────────────────────────────────────────────
 function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI, playbooks = [] }) {
+  const { t } = useLanguage()
   const [candles,   setCandles]  = useState(null)
   const [loading,   setLoading]  = useState(true)
   const [replaying, setReplaying]= useState(false)
