@@ -88,7 +88,8 @@ const EMPTY_FORM = {
   symbol:"EURUSD", direction:"BUY", entry_price:"", exit_price:"",
   pnl:"", pips:"", session:"LONDON", timeframe:"H1",
   outcome:"WIN", quality:"7", notes:"",
-  entry_time: new Date().toISOString().slice(0,16)
+  entry_time: new Date().toISOString().slice(0,16),
+  mae:"", mfe:"", mae_pips:"", mfe_pips:"",
 }
 
 function TradeModal({ open, onClose, onSaved, editTrade }) {
@@ -105,6 +106,10 @@ function TradeModal({ open, onClose, onSaved, editTrade }) {
         pnl:         editTrade.pnl         ?? "",
         pips:        editTrade.pips        ?? "",
         quality:     editTrade.quality     ?? "7",
+        mae:         editTrade.mae         != null ? editTrade.mae      : "",
+        mfe:         editTrade.mfe         != null ? editTrade.mfe      : "",
+        mae_pips:    editTrade.mae_pips    != null ? editTrade.mae_pips : "",
+        mfe_pips:    editTrade.mfe_pips    != null ? editTrade.mfe_pips : "",
         entry_time:  editTrade.entry_time
           ? new Date(editTrade.entry_time).toISOString().slice(0,16)
           : new Date().toISOString().slice(0,16),
@@ -127,6 +132,10 @@ function TradeModal({ open, onClose, onSaved, editTrade }) {
         pnl:         parseFloat(form.pnl)         || 0,
         pips:        parseFloat(form.pips)        || 0,
         quality:     parseInt(form.quality)       || 5,
+        mae:         form.mae      !== "" ? parseFloat(form.mae)      : null,
+        mfe:         form.mfe      !== "" ? parseFloat(form.mfe)      : null,
+        mae_pips:    form.mae_pips !== "" ? parseFloat(form.mae_pips) : null,
+        mfe_pips:    form.mfe_pips !== "" ? parseFloat(form.mfe_pips) : null,
         entry_time:  new Date(form.entry_time).toISOString(),
       }
       if (isEdit) {
@@ -247,6 +256,43 @@ function TradeModal({ open, onClose, onSaved, editTrade }) {
             <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>Notes</label>
             <textarea rows={3} placeholder="Setup, reasoning, lessons learned..." value={form.notes} onChange={e=>set("notes",e.target.value)}
               className="w-full rounded-lg px-3 py-2 text-sm border resize-none" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+          </div>
+
+          {/* MAE / MFE */}
+          <div className="col-span-2 pt-2" style={{ borderTop:"1px solid var(--border)" }}>
+            <div className="flex items-center gap-2 mb-2 mt-1">
+              <span className="text-xs font-semibold" style={{ color:"var(--text-primary)" }}>MAE / MFE</span>
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)" }}>optional</span>
+              <span className="text-xs" style={{ color:"var(--text-muted)" }}>improves analytics accuracy</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs mb-1 flex items-center gap-1" style={{ color:"var(--accent-danger)" }}>
+                  <span>↓ MAE (price)</span>
+                  <span style={{ color:"var(--text-muted)", fontWeight:400 }}>max adverse excursion</span>
+                </label>
+                <input type="number" step="any" placeholder="e.g. 10.5" value={form.mae} onChange={e=>set("mae",e.target.value)}
+                  className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+              </div>
+              <div>
+                <label className="text-xs mb-1 flex items-center gap-1" style={{ color:"var(--accent-success)" }}>
+                  <span>↑ MFE (price)</span>
+                  <span style={{ color:"var(--text-muted)", fontWeight:400 }}>max favorable excursion</span>
+                </label>
+                <input type="number" step="any" placeholder="e.g. 25.0" value={form.mfe} onChange={e=>set("mfe",e.target.value)}
+                  className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+              </div>
+              <div>
+                <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>MAE (pips)</label>
+                <input type="number" step="any" placeholder="e.g. 10" value={form.mae_pips} onChange={e=>set("mae_pips",e.target.value)}
+                  className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+              </div>
+              <div>
+                <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>MFE (pips)</label>
+                <input type="number" step="any" placeholder="e.g. 25" value={form.mfe_pips} onChange={e=>set("mfe_pips",e.target.value)}
+                  className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1547,6 +1593,60 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI, playbooks = []
               ))}
               {/* Quality — inline editable */}
               <QualityEditor trade={trade} onUpdate={onEdit}/>
+
+              {/* MAE / MFE */}
+              {(trade.mae != null || trade.mfe != null) && (() => {
+                const mae = parseFloat(trade.mae) || 0
+                const mfe = parseFloat(trade.mfe) || 0
+                const pnl = parseFloat(trade.pnl) || 0
+                const captureRatio = mfe > 0 ? (pnl / mfe * 100).toFixed(1) : null
+                const entryEff = mfe > 0 ? Math.max(0, Math.min(100, pnl / mfe * 100)).toFixed(1) : null
+                return (
+                  <div className="col-span-2 rounded-xl p-3 mt-1" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+                    <p className="text-xs font-bold mb-2" style={{ color:"var(--text-primary)" }}>MAE / MFE Analysis</p>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      {trade.mae != null && (
+                        <div className="rounded-lg p-2" style={{ background:"rgba(255,71,87,0.07)", border:"1px solid rgba(255,71,87,0.2)" }}>
+                          <p className="text-xs font-bold font-mono" style={{ color:"var(--accent-danger)" }}>
+                            -{parseFloat(trade.mae).toFixed(2)}{trade.mae_pips ? ` (${trade.mae_pips}p)` : ""}
+                          </p>
+                          <p className="text-xs" style={{ color:"var(--text-muted)" }}>↓ MAE (adverse)</p>
+                        </div>
+                      )}
+                      {trade.mfe != null && (
+                        <div className="rounded-lg p-2" style={{ background:"rgba(46,213,115,0.07)", border:"1px solid rgba(46,213,115,0.2)" }}>
+                          <p className="text-xs font-bold font-mono" style={{ color:"var(--accent-success)" }}>
+                            +{parseFloat(trade.mfe).toFixed(2)}{trade.mfe_pips ? ` (${trade.mfe_pips}p)` : ""}
+                          </p>
+                          <p className="text-xs" style={{ color:"var(--text-muted)" }}>↑ MFE (favorable)</p>
+                        </div>
+                      )}
+                    </div>
+                    {captureRatio !== null && (
+                      <div className="space-y-1.5">
+                        <div>
+                          <div className="flex justify-between text-xs mb-0.5">
+                            <span style={{ color:"var(--text-muted)" }}>Capture Ratio</span>
+                            <span style={{ color: parseFloat(captureRatio) >= 50 ? "var(--accent-success)" : "var(--accent-warning)" }}>
+                              {captureRatio}%
+                            </span>
+                          </div>
+                          <div className="h-1.5 rounded-full overflow-hidden" style={{ background:"var(--bg-elevated)" }}>
+                            <div className="h-full rounded-full transition-all"
+                              style={{ width:`${Math.min(100, Math.max(0, parseFloat(captureRatio)))}%`,
+                                background: parseFloat(captureRatio) >= 50 ? "var(--accent-success)" : "var(--accent-warning)" }}/>
+                          </div>
+                        </div>
+                        <p className="text-xs" style={{ color:"var(--text-muted)" }}>
+                          {parseFloat(captureRatio) >= 70 ? "🎯 Excellent exit timing" :
+                           parseFloat(captureRatio) >= 40 ? "📊 Average capture — left some on the table" :
+                           "⚠️ Early exit — missed much of the move"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
 
             {/* Star Rating */}

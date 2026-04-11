@@ -1,5 +1,5 @@
-import { useLanguage } from "@/lib/LanguageContext"
 import { useState, useEffect, useMemo } from "react"
+import { useLanguage } from "@/lib/LanguageContext"
 import { Trade, BrokerConnection } from "@/api/supabaseStore"
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
@@ -257,7 +257,7 @@ function BreakdownTab({ trades }) {
       {/* Summary strip */}
       {groups.length > 0 && (
         <div className="flex flex-wrap gap-4 rounded-xl px-4 py-3" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>{t("analytics_net_pnl")}</p><p className="text-sm font-bold" style={{ color:cssClr(totalPnl) }}>{fmtPnl(totalPnl)}</p></div>
+          <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Net P&L</p><p className="text-sm font-bold" style={{ color:cssClr(totalPnl) }}>{fmtPnl(totalPnl)}</p></div>
           <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Periods</p><p className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>{groups.length}</p></div>
           <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Profitable</p><p className="text-sm font-bold" style={{ color:"var(--accent-success)" }}>{groups.filter(g=>g.pnl>0).length}</p></div>
           <div><p className="text-xs" style={{ color:"var(--text-muted)" }}>Unprofitable</p><p className="text-sm font-bold" style={{ color:"var(--accent-danger)" }}>{groups.filter(g=>g.pnl<0).length}</p></div>
@@ -298,7 +298,7 @@ function BreakdownTab({ trades }) {
             <table className="w-full">
               <thead>
                 <tr style={{ background:"var(--bg-elevated)", borderBottom:"1px solid var(--border)" }}>
-                  {["Group","Trades",t("analytics_net_pnl"),t("analytics_win_rate"),t("analytics_expectancy"),"W / L", hasComm?"Fees":""].filter(Boolean).map(h=>(
+                  {["Group","Trades","Net P&L","Win Rate","Expectancy","W / L", hasComm?"Fees":""].filter(Boolean).map(h=>(
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold" style={{ color:"var(--text-muted)" }}>{h}</th>
                   ))}
                 </tr>
@@ -344,7 +344,7 @@ function OverviewTab({ trades }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="md:col-span-2 rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>{t("analytics_equity_curve")}</h3>
+          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>Equity Curve</h3>
           {equityCurve.length>1 ? (
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={equityCurve}>
@@ -365,7 +365,7 @@ function OverviewTab({ trades }) {
         </div>
 
         <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>{t("analytics_outcome_dist")}</h3>
+          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>Outcome Distribution</h3>
           {donut.length>0 ? (
             <>
               <ResponsiveContainer width="100%" height={170}>
@@ -390,7 +390,7 @@ function OverviewTab({ trades }) {
       </div>
 
       <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-        <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>{t("analytics_daily_pnl")}</h3>
+        <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>Daily P&L</h3>
         {dailyBars.length>0 ? (
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={dailyBars}>
@@ -441,15 +441,15 @@ function PerformanceTab({ trades }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-3" style={{ color:"var(--text-primary)" }}>{t("analytics_by_session")}</h3>
+          <h3 className="font-semibold text-sm mb-3" style={{ color:"var(--text-primary)" }}>By Session</h3>
           {sessionData.length>0 ? <MiniChart data={sessionData} key1="session"/> : <Empty/>}
         </div>
         <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-3" style={{ color:"var(--text-primary)" }}>{t("analytics_by_pair")}</h3>
+          <h3 className="font-semibold text-sm mb-3" style={{ color:"var(--text-primary)" }}>By Pair</h3>
           {symbolData.length>0 ? <MiniChart data={symbolData.slice(0,8)} key1="symbol"/> : <Empty/>}
         </div>
         <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-3" style={{ color:"var(--text-primary)" }}>{t("analytics_by_tf")}</h3>
+          <h3 className="font-semibold text-sm mb-3" style={{ color:"var(--text-primary)" }}>By Timeframe</h3>
           {tfData.length>0 ? <MiniChart data={tfData} key1="tf"/> : <Empty/>}
         </div>
       </div>
@@ -457,12 +457,12 @@ function PerformanceTab({ trades }) {
       {/* Symbol table */}
       <div className="rounded-xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
         <div className="px-5 py-3" style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
-          <h3 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>{t("analytics_perf_pair")}</h3>
+          <h3 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>Performance by Pair</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr style={{ background:"var(--bg-elevated)", borderBottom:"1px solid var(--border)" }}>
-              {["Pair","Trades",t("analytics_net_pnl"),t("analytics_win_rate"),"Avg Win","Avg Loss",t("analytics_expectancy")].map(h=>(
+              {["Pair","Trades","Net P&L","Win Rate","Avg Win","Avg Loss","Expectancy"].map(h=>(
                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold" style={{ color:"var(--text-muted)" }}>{h}</th>
               ))}
             </tr></thead>
@@ -523,14 +523,14 @@ function PatternsTab({ trades }) {
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>{t("analytics_wr_dow")}</h3>
+          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>Win Rate by Day of Week</h3>
           {dowData.length>0 ? (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={dowData}>
                 <CartesianGrid stroke={C.border} strokeDasharray="3 3"/>
                 <XAxis dataKey="day" tick={{ fill:C.textMuted, fontSize:10 }}/>
                 <YAxis tick={{ fill:C.textMuted, fontSize:10 }} tickFormatter={v=>`${v}%`} domain={[0,100]}/>
-                <Tooltip {...tip(C)} formatter={v=>[`${v}%`,t("analytics_win_rate")]}/>
+                <Tooltip {...tip(C)} formatter={v=>[`${v}%`,"Win Rate"]}/>
                 <Bar dataKey="winRate" radius={[3,3,0,0]}>
                   {dowData.map((d,i)=><Cell key={i} fill={d.winRate>=50?C.success:C.danger}/>)}
                 </Bar>
@@ -540,7 +540,7 @@ function PatternsTab({ trades }) {
         </div>
 
         <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>{t("analytics_buy_sell")}</h3>
+          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>BUY vs SELL</h3>
           <div className="space-y-3 mt-2">
             {dirData.map(d=>(
               <div key={d.dir} className="rounded-xl p-4" style={{ background:"var(--bg-elevated)", border:"1px solid var(--border)" }}>
@@ -564,7 +564,7 @@ function PatternsTab({ trades }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>{t("analytics_quality_pnl")}</h3>
+          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>Quality vs P&L</h3>
           {qualityScatter.length>1 ? (
             <ResponsiveContainer width="100%" height={200}>
               <ScatterChart>
@@ -579,7 +579,7 @@ function PatternsTab({ trades }) {
         </div>
 
         <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>{t("analytics_streaks")}</h3>
+          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>Streaks</h3>
           <div className="space-y-3">
             {[
               { label:"Best Win Streak",  value:maxW, color:"var(--accent-success)", bg:"rgba(46,213,115,0.1)"  },
@@ -630,12 +630,12 @@ function AdvancedTab({ trades }) {
         {[
           { label:"Avg Win",       value:`$${avgWin.toFixed(2)}`,   color:"var(--accent-success)"  },
           { label:"Avg Loss",      value:`$${avgLoss.toFixed(2)}`,  color:"var(--accent-danger)"   },
-          { label:t("analytics_profit_factor"), value:avgLoss>0?(grossP/grossL).toFixed(2):avgWin>0?"∞":"0", color:"var(--accent)" },
-          { label:t("analytics_expectancy"),    value:trades.length?`$${(trades.reduce((s,t)=>s+(t.pnl||0),0)/trades.length).toFixed(2)}`:"—", color:"var(--text-primary)" },
-          { label:t("analytics_max_dd"),  value:`${maxDD.toFixed(1)}%`,    color:"var(--accent-warning)"  },
+          { label:"Profit Factor", value:avgLoss>0?(grossP/grossL).toFixed(2):avgWin>0?"∞":"0", color:"var(--accent)" },
+          { label:"Expectancy",    value:trades.length?`$${(trades.reduce((s,t)=>s+(t.pnl||0),0)/trades.length).toFixed(2)}`:"—", color:"var(--text-primary)" },
+          { label:"Max Drawdown",  value:`${maxDD.toFixed(1)}%`,    color:"var(--accent-warning)"  },
           { label:"Gross Profit",  value:`$${grossP.toFixed(2)}`,   color:"var(--accent-success)"  },
           { label:"Gross Loss",    value:`$${grossL.toFixed(2)}`,   color:"var(--accent-danger)"   },
-          { label:t("analytics_total_fees"),    value:`$${Math.abs(totalComm+totalSwap).toFixed(2)}`, color:"var(--text-muted)" },
+          { label:"Total Fees",    value:`$${Math.abs(totalComm+totalSwap).toFixed(2)}`, color:"var(--text-muted)" },
         ].map(m=>(
           <div key={m.label} className="rounded-xl p-4" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
             <p className="text-xs mb-1" style={{ color:"var(--text-muted)" }}>{m.label}</p>
@@ -646,7 +646,7 @@ function AdvancedTab({ trades }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>{t("analytics_drawdown")}</h3>
+          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>Drawdown (%)</h3>
           {drawdownData.length>1 ? (
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={drawdownData}>
@@ -667,7 +667,7 @@ function AdvancedTab({ trades }) {
         </div>
 
         <div className="rounded-xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>{t("analytics_pnl_dist")}</h3>
+          <h3 className="font-semibold text-sm mb-4" style={{ color:"var(--text-primary)" }}>P&L Distribution</h3>
           {trades.length>2 ? (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={hist}>
@@ -688,12 +688,12 @@ function AdvancedTab({ trades }) {
       {monthlyData.length>0 && (
         <div className="rounded-xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
           <div className="px-5 py-3" style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
-            <h3 className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>{t("analytics_monthly")}</h3>
+            <h3 className="text-sm font-semibold" style={{ color:"var(--text-primary)" }}>Monthly Breakdown</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr style={{ background:"var(--bg-elevated)", borderBottom:"1px solid var(--border)" }}>
-                {["Month","Trades",t("analytics_net_pnl"),t("analytics_win_rate"),"Fees"].map(h=>(
+                {["Month","Trades","Net P&L","Win Rate","Fees"].map(h=>(
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold" style={{ color:"var(--text-muted)" }}>{h}</th>
                 ))}
               </tr></thead>
@@ -727,12 +727,259 @@ function AdvancedTab({ trades }) {
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 const TABS = [
-  { id:"Breakdown", label:"📊 Breakdown" },
-  { id:"Overview",  label:"Overview"  },
-  { id:"Performance",label:"Performance" },
-  { id:"Patterns",  label:"Patterns"  },
-  { id:"Advanced",  label:"Advanced"  },
+  { id:"Breakdown",  label:"📊 Breakdown" },
+  { id:"Overview",   label:"Overview"   },
+  { id:"Performance",label:"Performance"},
+  { id:"Patterns",   label:"Patterns"   },
+  { id:"Advanced",   label:"Advanced"   },
+  { id:"MAE/MFE",    label:"📐 MAE/MFE"  },
 ]
+
+
+// ─── MAE / MFE Tab ────────────────────────────────────────────────────────────
+function MaeMfeTab({ trades }) {
+  const { t } = useLanguage()
+  const C = useThemeColors()
+
+  // Filter to trades that have MAE/MFE data
+  const withData = trades.filter(tr => tr.mae != null && tr.mfe != null)
+
+  // Derived metrics per trade
+  const enriched = withData.map(tr => {
+    const pnl = parseFloat(tr.pnl)  || 0
+    const mae = parseFloat(tr.mae)  || 0
+    const mfe = parseFloat(tr.mfe)  || 0
+    const captureRatio  = mfe > 0 ? Math.max(0, Math.min(100, pnl / mfe * 100)) : null
+    const entryEff      = mfe > 0 ? Math.max(0, Math.min(100, pnl / mfe * 100)) : null
+    const exitEff       = (mfe - (-mae)) > 0
+      ? Math.max(0, Math.min(100, (pnl - (-mae)) / (mfe - (-mae)) * 100))
+      : null
+    return { ...tr, pnl, mae, mfe, captureRatio, entryEff, exitEff }
+  })
+
+  // Averages
+  const avgCaptureRatio = enriched.length
+    ? enriched.filter(t => t.captureRatio !== null).reduce((s,t) => s + (t.captureRatio||0), 0) / enriched.filter(t => t.captureRatio !== null).length
+    : 0
+  const avgExitEff = enriched.length
+    ? enriched.filter(t => t.exitEff !== null).reduce((s,t) => s + (t.exitEff||0), 0) / enriched.filter(t => t.exitEff !== null).length
+    : 0
+  const avgMae = enriched.length
+    ? enriched.reduce((s,t) => s + t.mae, 0) / enriched.length : 0
+  const avgMfe = enriched.length
+    ? enriched.reduce((s,t) => s + t.mfe, 0) / enriched.length : 0
+
+  // Capture ratio histogram buckets
+  const buckets = [
+    { label:"0-20%",  min:0,  max:20  },
+    { label:"20-40%", min:20, max:40  },
+    { label:"40-60%", min:40, max:60  },
+    { label:"60-80%", min:60, max:80  },
+    { label:"80-100%",min:80, max:100 },
+  ].map(b => ({
+    ...b,
+    count: enriched.filter(t => t.captureRatio !== null && t.captureRatio >= b.min && t.captureRatio < b.max).length
+  }))
+
+  // MFE vs PnL scatter
+  const mfeScatter = enriched.map(t => ({ x: t.mfe, y: t.pnl, outcome: t.outcome }))
+  // MAE vs PnL scatter
+  const maeScatter = enriched.map(t => ({ x: t.mae, y: t.pnl, outcome: t.outcome }))
+
+  if (withData.length === 0) {
+    return (
+      <div className="rounded-2xl p-12 text-center" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background:"rgba(108,99,255,0.1)" }}>
+          <Target size={28} style={{ color:"var(--accent)" }}/>
+        </div>
+        <p className="text-lg font-bold mb-2" style={{ color:"var(--text-primary)" }}>No MAE/MFE Data Yet</p>
+        <p className="text-sm" style={{ color:"var(--text-muted)", maxWidth:380, margin:"0 auto" }}>
+          Start recording Maximum Adverse & Favorable Excursion when logging trades.
+          Open any trade → Edit → fill in MAE/MFE fields.
+        </p>
+        <div className="grid grid-cols-2 gap-4 mt-8 max-w-md mx-auto text-left">
+          <div className="rounded-xl p-4" style={{ background:"rgba(255,71,87,0.07)", border:"1px solid rgba(255,71,87,0.2)" }}>
+            <p className="text-sm font-bold mb-1" style={{ color:"var(--accent-danger)" }}>↓ MAE</p>
+            <p className="text-xs" style={{ color:"var(--text-muted)" }}>How far price moved against you before turning. Measures stop placement quality.</p>
+          </div>
+          <div className="rounded-xl p-4" style={{ background:"rgba(46,213,115,0.07)", border:"1px solid rgba(46,213,115,0.2)" }}>
+            <p className="text-sm font-bold mb-1" style={{ color:"var(--accent-success)" }}>↑ MFE</p>
+            <p className="text-xs" style={{ color:"var(--text-muted)" }}>How far price moved in your favor. Measures exit timing & profit capture.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-2xl p-4" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+          <p className="text-xs mb-1" style={{ color:"var(--text-muted)" }}>Trades with data</p>
+          <p className="text-2xl font-bold" style={{ color:"var(--accent)" }}>{withData.length}</p>
+          <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>of {trades.length} total</p>
+        </div>
+        <div className="rounded-2xl p-4" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+          <p className="text-xs mb-1" style={{ color:"var(--text-muted)" }}>Avg Capture Ratio</p>
+          <p className="text-2xl font-bold" style={{ color: avgCaptureRatio >= 50 ? C.success : C.warning }}>
+            {avgCaptureRatio.toFixed(1)}%
+          </p>
+          <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>PnL / MFE</p>
+        </div>
+        <div className="rounded-2xl p-4" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+          <p className="text-xs mb-1" style={{ color:"var(--text-muted)" }}>Avg MAE</p>
+          <p className="text-2xl font-bold" style={{ color:"var(--accent-danger)" }}>
+            -{avgMae.toFixed(2)}
+          </p>
+          <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>price units avg adverse</p>
+        </div>
+        <div className="rounded-2xl p-4" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+          <p className="text-xs mb-1" style={{ color:"var(--text-muted)" }}>Avg MFE</p>
+          <p className="text-2xl font-bold" style={{ color:"var(--accent-success)" }}>
+            +{avgMfe.toFixed(2)}
+          </p>
+          <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>price units avg favorable</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Capture Ratio Distribution */}
+        <div className="rounded-2xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+          <p className="font-semibold text-sm mb-1" style={{ color:"var(--text-primary)" }}>Capture Ratio Distribution</p>
+          <p className="text-xs mb-4" style={{ color:"var(--text-muted)" }}>% of MFE you captured as final PnL</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={buckets} barCategoryGap="30%">
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false}/>
+              <XAxis dataKey="label" tick={{ fontSize:11, fill:C.textMuted }} axisLine={false} tickLine={false}/>
+              <YAxis tick={{ fontSize:11, fill:C.textMuted }} axisLine={false} tickLine={false} allowDecimals={false}/>
+              <Tooltip contentStyle={{ background:C.bgElev, border:`1px solid ${C.border}`, borderRadius:8 }} labelStyle={{ color:C.textPri }} itemStyle={{ color:C.accent }}/>
+              <Bar dataKey="count" name="Trades" radius={[6,6,0,0]}>
+                {buckets.map((b, i) => (
+                  <Cell key={i} fill={
+                    b.min >= 60 ? C.success :
+                    b.min >= 40 ? C.accent  :
+                    b.min >= 20 ? C.warning : C.danger
+                  }/>
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* MFE vs PnL Scatter */}
+        <div className="rounded-2xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+          <p className="font-semibold text-sm mb-1" style={{ color:"var(--text-primary)" }}>MFE vs P&L</p>
+          <p className="text-xs mb-4" style={{ color:"var(--text-muted)" }}>Points above diagonal = left money on the table</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <ScatterChart margin={{ top:4, right:8, bottom:4, left:0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
+              <XAxis dataKey="x" name="MFE" type="number" tick={{ fontSize:10, fill:C.textMuted }} axisLine={false} tickLine={false} label={{ value:"MFE", position:"insideRight", offset:0, fontSize:10, fill:C.textMuted }}/>
+              <YAxis dataKey="y" name="PnL" type="number" tick={{ fontSize:10, fill:C.textMuted }} axisLine={false} tickLine={false} label={{ value:"P&L", angle:-90, position:"insideLeft", offset:10, fontSize:10, fill:C.textMuted }}/>
+              <Tooltip cursor={{ strokeDasharray:"3 3" }} contentStyle={{ background:C.bgElev, border:`1px solid ${C.border}`, borderRadius:8 }}
+                formatter={(v, n) => [`${v.toFixed(2)}`, n]}/>
+              <Scatter data={mfeScatter} fill={C.success} opacity={0.7}
+                shape={props => <circle cx={props.cx} cy={props.cy} r={4} fill={props.payload.outcome==="WIN"?C.success:C.danger} opacity={0.75}/>}/>
+            </ScatterChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* MAE vs PnL Scatter */}
+        <div className="rounded-2xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+          <p className="font-semibold text-sm mb-1" style={{ color:"var(--text-primary)" }}>MAE vs P&L</p>
+          <p className="text-xs mb-4" style={{ color:"var(--text-muted)" }}>Large MAE + small PnL = tight stop or bad entry</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <ScatterChart margin={{ top:4, right:8, bottom:4, left:0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
+              <XAxis dataKey="x" name="MAE" type="number" tick={{ fontSize:10, fill:C.textMuted }} axisLine={false} tickLine={false} label={{ value:"MAE (adverse)", position:"insideRight", offset:0, fontSize:10, fill:C.textMuted }}/>
+              <YAxis dataKey="y" name="PnL" type="number" tick={{ fontSize:10, fill:C.textMuted }} axisLine={false} tickLine={false} label={{ value:"P&L", angle:-90, position:"insideLeft", offset:10, fontSize:10, fill:C.textMuted }}/>
+              <Tooltip cursor={{ strokeDasharray:"3 3" }} contentStyle={{ background:C.bgElev, border:`1px solid ${C.border}`, borderRadius:8 }}
+                formatter={(v, n) => [`${v.toFixed(2)}`, n]}/>
+              <Scatter data={maeScatter}
+                shape={props => <circle cx={props.cx} cy={props.cy} r={4} fill={props.payload.outcome==="WIN"?C.success:C.danger} opacity={0.75}/>}/>
+            </ScatterChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Exit Efficiency Gauge */}
+        <div className="rounded-2xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+          <p className="font-semibold text-sm mb-1" style={{ color:"var(--text-primary)" }}>Exit Efficiency</p>
+          <p className="text-xs mb-4" style={{ color:"var(--text-muted)" }}>(PnL − (−MAE)) / (MFE − (−MAE)) × 100%</p>
+          <div className="flex flex-col items-center justify-center h-36 gap-3">
+            <div className="relative w-32 h-32">
+              <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
+                <circle cx="60" cy="60" r="48" fill="none" stroke="var(--bg-elevated)" strokeWidth="12"/>
+                <circle cx="60" cy="60" r="48" fill="none"
+                  stroke={avgExitEff >= 60 ? C.success : avgExitEff >= 35 ? C.warning : C.danger}
+                  strokeWidth="12"
+                  strokeDasharray={`${2 * Math.PI * 48 * Math.min(avgExitEff,100) / 100} 999`}
+                  strokeLinecap="round"/>
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <p className="text-2xl font-black" style={{ color: avgExitEff >= 60 ? "var(--accent-success)" : avgExitEff >= 35 ? "var(--accent-warning)" : "var(--accent-danger)" }}>
+                  {avgExitEff.toFixed(0)}%
+                </p>
+                <p className="text-xs" style={{ color:"var(--text-muted)" }}>avg exit eff.</p>
+              </div>
+            </div>
+            <p className="text-xs text-center" style={{ color:"var(--text-muted)" }}>
+              {avgExitEff >= 65 ? "🎯 Strong exit discipline — you capture most of the move" :
+               avgExitEff >= 40 ? "📊 Average — consider holding winning trades longer" :
+               "⚠️ Early exits — you exit before capturing the full potential"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Per-trade table */}
+      <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+        <div className="px-5 py-4" style={{ borderBottom:"1px solid var(--border)" }}>
+          <p className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>Per-Trade MAE/MFE Breakdown</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ background:"var(--bg-elevated)", borderBottom:"1px solid var(--border)" }}>
+                {["Symbol","Date","Outcome","PnL","MAE","MFE","Capture %","Exit Eff %"].map(h=>(
+                  <th key={h} className="px-4 py-3 text-left font-semibold" style={{ color:"var(--text-muted)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {enriched.slice(0,20).map(tr=>(
+                <tr key={tr.id} style={{ borderBottom:"1px solid var(--border)" }}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <td className="px-4 py-3 font-bold" style={{ color:"var(--text-primary)" }}>{tr.symbol}</td>
+                  <td className="px-4 py-3" style={{ color:"var(--text-muted)" }}>
+                    {tr.entry_time ? new Date(tr.entry_time).toLocaleDateString() : "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="px-2 py-0.5 rounded-full font-semibold" style={{
+                      background: tr.outcome==="WIN"?"rgba(46,213,115,0.12)":"rgba(255,71,87,0.12)",
+                      color: tr.outcome==="WIN"?"var(--accent-success)":"var(--accent-danger)"
+                    }}>{tr.outcome}</span>
+                  </td>
+                  <td className="px-4 py-3 font-bold font-mono" style={{ color:tr.pnl>=0?"var(--accent-success)":"var(--accent-danger)" }}>
+                    {tr.pnl>=0?"+":""}${tr.pnl.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-3 font-mono" style={{ color:"var(--accent-danger)" }}>-{tr.mae.toFixed(2)}</td>
+                  <td className="px-4 py-3 font-mono" style={{ color:"var(--accent-success)" }}>+{tr.mfe.toFixed(2)}</td>
+                  <td className="px-4 py-3 font-mono" style={{ color: tr.captureRatio >= 50 ? C.success : C.warning }}>
+                    {tr.captureRatio !== null ? `${tr.captureRatio.toFixed(1)}%` : "—"}
+                  </td>
+                  <td className="px-4 py-3 font-mono" style={{ color: tr.exitEff >= 50 ? C.success : C.warning }}>
+                    {tr.exitEff !== null ? `${tr.exitEff.toFixed(1)}%` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function Analytics() {
   const { t } = useLanguage()
@@ -780,7 +1027,7 @@ export default function Analytics() {
       <div className="flex flex-col gap-3 mb-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>{t("analytics_title")}</h1>
+            <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)" }}>Analytics</h1>
             <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>
               {trades.length} trades{filterAcct!=="ALL"&&activeAcctInfo?` · ${activeAcctInfo.broker_name} #${filterAcct}`:""}
               {period!=="all" ? ` · ${PERIODS.find(p=>p.id===period)?.label}` : ""}
@@ -835,13 +1082,13 @@ export default function Analytics() {
 
       {/* Summary stats bar */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-5">
-        <StatBox label={t("analytics_net_pnl")}      value={`${netPnl>=0?"+":""}$${netPnl.toFixed(2)}`} color={netPnl>=0?"var(--accent-success)":"var(--accent-danger)"}/>
-        <StatBox label={t("analytics_win_rate")}     value={`${winRate.toFixed(1)}%`} sub={`${wins.length}W / ${losses.length}L`} color={winRate>=50?"var(--accent-success)":"var(--accent-danger)"}/>
-        <StatBox label={t("analytics_profit_factor")}value={pf>=99?"∞":pf.toFixed(2)} color={pf>=1?"var(--accent-success)":"var(--accent-danger)"}/>
-        <StatBox label={t("analytics_expectancy")}   value={`${exp>=0?"+":""}$${exp.toFixed(2)}`} sub="Per trade" color={exp>=0?"var(--accent-success)":"var(--accent-danger)"}/>
-        <StatBox label={t("analytics_max_dd")} value={`${mDD.toFixed(1)}%`} color="var(--accent-warning)"/>
-        <StatBox label={t("analytics_avg_rr")}      value={avgLoss>0?(avgWin/avgLoss).toFixed(2):"—"} color="var(--accent)"/>
-        <StatBox label={t("analytics_total_fees")}   value={totalComm!==0?`$${Math.abs(totalComm).toFixed(2)}`:"—"} color="var(--text-muted)"/>
+        <StatBox label="Net P&L"      value={`${netPnl>=0?"+":""}$${netPnl.toFixed(2)}`} color={netPnl>=0?"var(--accent-success)":"var(--accent-danger)"}/>
+        <StatBox label="Win Rate"     value={`${winRate.toFixed(1)}%`} sub={`${wins.length}W / ${losses.length}L`} color={winRate>=50?"var(--accent-success)":"var(--accent-danger)"}/>
+        <StatBox label="Profit Factor"value={pf>=99?"∞":pf.toFixed(2)} color={pf>=1?"var(--accent-success)":"var(--accent-danger)"}/>
+        <StatBox label="Expectancy"   value={`${exp>=0?"+":""}$${exp.toFixed(2)}`} sub="Per trade" color={exp>=0?"var(--accent-success)":"var(--accent-danger)"}/>
+        <StatBox label="Max Drawdown" value={`${mDD.toFixed(1)}%`} color="var(--accent-warning)"/>
+        <StatBox label="Avg R:R"      value={avgLoss>0?(avgWin/avgLoss).toFixed(2):"—"} color="var(--accent)"/>
+        <StatBox label="Total Fees"   value={totalComm!==0?`$${Math.abs(totalComm).toFixed(2)}`:"—"} color="var(--text-muted)"/>
       </div>
 
       {/* Tabs */}
@@ -860,6 +1107,7 @@ export default function Analytics() {
       {activeTab==="Performance"&& <PerformanceTab trades={trades}/>}
       {activeTab==="Patterns"   && <PatternsTab    trades={trades}/>}
       {activeTab==="Advanced"   && <AdvancedTab    trades={trades}/>}
+      {activeTab==="MAE/MFE"    && <MaeMfeTab      trades={trades}/>}
       <HelpOverlay page="analytics"/>
     </div>
   )
