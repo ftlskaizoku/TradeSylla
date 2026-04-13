@@ -164,7 +164,7 @@ Always be specific and data-driven. Reference actual numbers from the trader's d
 
 
 function parseResp(text) {
-  const files=[]; let clean=text
+  const files=[]; let clean=text; let mdReq=null
   // Match with or without closing tag (handles truncated responses)
   const htmlM=text.match(/<<<HTML_FILE>>>([\s\S]*?)(?:<<<END_HTML>>>|$)/)
   if(htmlM && htmlM[1].trim().startsWith("<!")) {
@@ -304,16 +304,13 @@ export default function Sylledge() {
       const jwt    = await getSessionToken()
       const marketCtx = await fetchMarketContext(trades, supabase)
       const system = buildSystemPrompt(trades, playbooks, backtests, memory, selPlaybook, attachments, marketCtx)
-      // Keep last 14 messages for context (7 back-and-forth exchanges)
       const history = messages.slice(-14).map(m => ({ role: m.role, content: m.content }))
       let msgContent = userMsg
       if (extraContent?.length) {
         msgContent = [{ type: "text", text: userMsg }, ...extraContent]
       }
-
       const controller = new AbortController()
-      const timeout    = setTimeout(() => controller.abort(), 45000)  // 45s timeout
-
+      const timeout    = setTimeout(() => controller.abort(), 45000)
       const res = await fetch("/api/sylledge-chat", {
         method:  "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${jwt}` },
@@ -324,27 +321,22 @@ export default function Sylledge() {
           max_tokens: 2048,
         })
       })
-
       clearTimeout(timeout)
-
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        return `⚠️ SYLLEDGE error: ${err.error || `Status ${res.status}`}`
+        return `⚠️ SYLLEDGE error (${res.status}): ${err.error || "Request failed"}`
       }
-
       const data = await res.json()
       if (data.error) return `⚠️ ${data.error}`
-
       const text = data.content?.map(b => b.text || "").join("") || ""
-      if (!text) return "⚠️ No response received. Please try again."
-
+      if (!text) return "⚠️ Empty response. Please try again."
       const { clean, files, mdReq, memUpdate } = parseResp(text)
       if (memUpdate) setMemory(m => m ? m + "\n" + memUpdate : memUpdate)
       if (mdReq) { setEaStatus("requested"); toast.info("SYLLEDGE requested market data from your MT5 EA") }
       return { clean, files }
     } catch (e) {
       if (e.name === "AbortError") return "⚠️ Request timed out (45s). Try a shorter question."
-      return `⚠️ Connection error: ${e.message}`
+      return `⚠️ Error: ${e.message}`
     }
   }
 
@@ -357,7 +349,6 @@ export default function Sylledge() {
     try {
       const result = await callAI(msg, extraContent)
       if (typeof result === "string") {
-        // Error string returned
         setMessages(prev => [...prev, { role: "assistant", content: result, timestamp: new Date().toISOString() }])
       } else if (result?.clean !== undefined) {
         setMessages(prev => [...prev, {
@@ -368,11 +359,11 @@ export default function Sylledge() {
     } catch (e) {
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `⚠️ Unexpected error: ${e.message}`,
+        content: `⚠️ Unexpected error: ${e.message}. Please try again.`,
         timestamp: new Date().toISOString()
       }])
     } finally {
-      setLoading(false)  // ALWAYS resets — no more infinite spinner
+      setLoading(false)
       inputRef.current?.focus()
     }
   }
