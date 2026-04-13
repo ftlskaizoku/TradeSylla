@@ -624,7 +624,19 @@ function SessionModal({open,onClose,onSaved,editSession}){
     if(!form.name.trim()){toast.error("Session name required");return}
     setSaving(true)
     try{
-      const payload={...form,initial_balance:parseFloat(form.initial_balance)||10000,trades:editSession?.trades||[],status:"active"}
+      const payload={
+        name:            form.name.trim(),
+        symbol:          form.symbol || "XAUUSD",
+        timeframe:       form.timeframe || "H1",
+        description:     form.description || "",
+        date_from:       form.date_from || null,
+        date_to:         form.date_to   || null,
+        initial_balance: parseFloat(form.initial_balance) || 10000,
+        playbook_id:     form.playbook_id || null,
+        notes:           form.notes || "",
+        status:          "active",
+        trades:          editSession?.trades || [],
+      }
       if(isEdit){await BacktestSession.update(editSession.id,payload);toast.success("Session updated!")}
       else{await BacktestSession.create(payload);toast.success("Session created!")}
       onSaved();onClose()
