@@ -145,18 +145,36 @@ YOUR CAPABILITIES:
 6. STRATEGY INTEGRATION: cross-reference active playbook with live performance
 7. RISK MANAGEMENT: position sizing, session exposure, max daily drawdown
 
-⚠️ CRITICAL FILE GENERATION RULES — MUST FOLLOW EXACTLY:
-When the user asks for a report, file, HTML, or downloadable document you MUST:
-1. Output the COMPLETE file content wrapped in the tags below
-2. NEVER show raw code in the chat — always use the tags so the file auto-downloads
-3. The file must be COMPLETE and READY TO OPEN — not a snippet, not a template
+⚠️ CRITICAL FILE GENERATION RULES — FOLLOW EXACTLY OR THE FILE WILL BE EMPTY:
 
-• HTML report: <<<HTML_FILE>>><!DOCTYPE html><html>...(full complete HTML here)...</html><<<END_HTML>>>
-• CSV data:     <<<CSV_FILE>>>col1,col2\nrow1val1,row1val2<<<END_CSV>>>
-• JSON:         <<<JSON_FILE>>>{...full json...}<<<END_JSON>>>
-• Memory:       <<<MEMORY_UPDATE>>>key finding to remember<<<END_MEMORY>>>
+When the user asks for a report, HTML file, or any downloadable document:
+1. You MUST output the COMPLETE file content inside the special tags below
+2. The tags must be on their own — do NOT put them inside code blocks or backticks
+3. Start generating immediately after <<<HTML_FILE>>> — do not add any preamble
+4. The HTML must be COMPLETE — with opening <html> and closing </html>
+5. NEVER truncate or summarize — output every single line of the HTML
 
-When generating HTML reports: include inline CSS, all data embedded, charts using Chart.js CDN or SVG — no external dependencies except CDN links. Make it professional and dark-themed matching TradeSylla's aesthetic (#0a0b0f background, #6c63ff accent).
+FORMAT — copy exactly:
+<<<HTML_FILE>>>
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>TradeSylla Report</title></head>
+<body>
+... (complete content here, never cut short) ...
+</body>
+</html>
+<<<END_HTML>>>
+
+For CSV: <<<CSV_FILE>>>header1,header2\nval1,val2<<<END_CSV>>>
+For JSON: <<<JSON_FILE>>>{...}<<<END_JSON>>>
+For memory: <<<MEMORY_UPDATE>>>insight<<<END_MEMORY>>>
+
+HTML REPORT REQUIREMENTS:
+- Use Chart.js from CDN: <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+- ALL data must be embedded inline as JS variables — no external API calls
+- Dark theme: background #0a0b0f, cards #16181f, accent #6c63ff, success #2ed573, danger #ff4757
+- Include: summary stats cards, equity curve chart, win/loss by session, symbol breakdown
+- Make it PROFESSIONAL — this is a real trading report the trader will share
 
 Always be specific and data-driven. Reference actual numbers from the trader's data.`
 }
@@ -167,8 +185,10 @@ function parseResp(text) {
   const files=[]; let clean=text; let mdReq=null
   // Match with or without closing tag (handles truncated responses)
   const htmlM=text.match(/<<<HTML_FILE>>>([\s\S]*?)(?:<<<END_HTML>>>|$)/)
-  if(htmlM && htmlM[1].trim().startsWith("<!")) {
-    files.push({type:"html",name:"sylledge_report.html",content:htmlM[1].trim()})
+  if(htmlM && htmlM[1].trim().length > 50) {
+    // Accept any HTML content — don't require <!DOCTYPE
+    const htmlContent = htmlM[1].trim()
+    files.push({type:"html",name:"sylledge_report.html",content:htmlContent})
     clean=clean.replace(htmlM[0],"")
   }
   const csvM=text.match(/<<<CSV_FILE>>>([\s\S]*?)(?:<<<END_CSV>>>|$)/)
@@ -318,7 +338,7 @@ export default function Sylledge() {
         body:    JSON.stringify({
           system,
           messages: [...history, { role: "user", content: msgContent }],
-          max_tokens: 2048,
+          max_tokens: 6000,
         })
       })
       clearTimeout(timeout)
