@@ -300,89 +300,81 @@ export default function Sylledge() {
   }, [messages])
 
   const callAI = async (userMsg, extraContent) => {
-    const jwt   = await getSessionToken()
-    const marketCtx = await fetchMarketContext(trades, supabase)
-    const system = buildSystemPrompt(trades,playbooks,backtests,memory,selPlaybook,attachments,marketCtx)
-    const history = messages.slice(-14).map(m=>({ role:m.role, content:m.content }))
-    let msgContent = userMsg
-    if(extraContent?.length) {
-      msgContent = [{ type:"text", text:userMsg }, ...extraContent]
-    }
     try {
+      const jwt    = await getSessionToken()
+      const marketCtx = await fetchMarketContext(trades, supabase)
+      const system = buildSystemPrompt(trades, playbooks, backtests, memory, selPlaybook, attachments, marketCtx)
+      // Keep last 14 messages for context (7 back-and-forth exchanges)
+      const history = messages.slice(-14).map(m => ({ role: m.role, content: m.content }))
+      let msgContent = userMsg
+      if (extraContent?.length) {
+        msgContent = [{ type: "text", text: userMsg }, ...extraContent]
+      }
+
+      const controller = new AbortController()
+      const timeout    = setTimeout(() => controller.abort(), 45000)  // 45s timeout
+
       const res = await fetch("/api/sylledge-chat", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${jwt}` },
-        body: JSON.stringify({
+        method:  "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${jwt}` },
+        signal:  controller.signal,
+        body:    JSON.stringify({
           system,
-          messages:[...history,{ role:"user", content:msgContent }],
-          max_tokens:2048,
-          stream:true,
+          messages: [...history, { role: "user", content: msgContent }],
+          max_tokens: 2048,
         })
       })
-      if(!res.ok) {
-        const err = await res.json().catch(()=>({}))
-        return `SYLLEDGE error: ${err.error || res.status}`
+
+      clearTimeout(timeout)
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        return `⚠️ SYLLEDGE error: ${err.error || `Status ${res.status}`}`
       }
 
-      // ── Stream processing ──────────────────────────────────────────────
-      // Add a temporary streaming message then update it token by token
-      const streamId = Date.now().toString()
-      setMessages(prev => [...prev, {
-        role:"assistant", content:"", timestamp:new Date().toISOString(), _id:streamId, streaming:true
-      }])
+      const data = await res.json()
+      if (data.error) return `⚠️ ${data.error}`
 
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let fullText = ""
+      const text = data.content?.map(b => b.text || "").join("") || ""
+      if (!text) return "⚠️ No response received. Please try again."
 
-      while(true) {
-        const { done, value } = await reader.read()
-        if(done) break
-        const chunk = decoder.decode(value, { stream:true })
-        const lines = chunk.split("\n")
-        for(const line of lines) {
-          if(!line.startsWith("data: ")) continue
-          const data = line.slice(6).trim()
-          if(data === "[DONE]") continue
-          try {
-            const evt = JSON.parse(data)
-            if(evt.text) {
-              fullText += evt.text
-              // Update the streaming message in real time
-              setMessages(prev => prev.map(m =>
-                m._id === streamId ? { ...m, content:fullText } : m
-              ))
-            }
-          } catch {}
-        }
-      }
-
-      // Finalize: remove streaming flag
-      setMessages(prev => prev.map(m =>
-        m._id === streamId ? { ...m, content:fullText, streaming:false } : m
-      ))
-
-      return null  // already handled above via setMessages
-    } catch(e) { return "Connection error: "+e.message }
+      const { clean, files, mdReq, memUpdate } = parseResp(text)
+      if (memUpdate) setMemory(m => m ? m + "\n" + memUpdate : memUpdate)
+      if (mdReq) { setEaStatus("requested"); toast.info("SYLLEDGE requested market data from your MT5 EA") }
+      return { clean, files }
+    } catch (e) {
+      if (e.name === "AbortError") return "⚠️ Request timed out (45s). Try a shorter question."
+      return `⚠️ Connection error: ${e.message}`
+    }
   }
 
   const sendMessage = async (text, extraContent) => {
     const msg = text || input.trim()
-    if(!msg||loading) return
+    if (!msg || loading) return
     setInput(""); setAttachments([])
-    const userMsg = { role:"user", content:msg, timestamp:new Date().toISOString() }
-    setMessages(prev=>[...prev,userMsg])
+    setMessages(prev => [...prev, { role: "user", content: msg, timestamp: new Date().toISOString() }])
     setLoading(true)
-    const raw = await callAI(msg, extraContent)
-    // raw is null when streaming handled everything via setMessages
-    if(raw !== null) {
-      const { clean, files, mdReq, memUpdate } = parseResp(raw)
-      if(memUpdate) setMemory(m=>m?m+"\n"+memUpdate:memUpdate)
-      const assistantMsg = { role:"assistant", content:clean, files, timestamp:new Date().toISOString() }
-      setMessages(prev=>[...prev,assistantMsg])
-      if(mdReq) { setEaStatus("requested"); toast.info("SYLLEDGE requested market data from your MT5 EA") }
+    try {
+      const result = await callAI(msg, extraContent)
+      if (typeof result === "string") {
+        // Error string returned
+        setMessages(prev => [...prev, { role: "assistant", content: result, timestamp: new Date().toISOString() }])
+      } else if (result?.clean !== undefined) {
+        setMessages(prev => [...prev, {
+          role: "assistant", content: result.clean,
+          files: result.files, timestamp: new Date().toISOString()
+        }])
+      }
+    } catch (e) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `⚠️ Unexpected error: ${e.message}`,
+        timestamp: new Date().toISOString()
+      }])
+    } finally {
+      setLoading(false)  // ALWAYS resets — no more infinite spinner
+      inputRef.current?.focus()
     }
-    setLoading(false)
   }
 
   const handleAttach = async e => {
