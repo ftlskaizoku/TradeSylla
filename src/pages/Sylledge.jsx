@@ -169,12 +169,16 @@ For CSV: <<<CSV_FILE>>>header1,header2\nval1,val2<<<END_CSV>>>
 For JSON: <<<JSON_FILE>>>{...}<<<END_JSON>>>
 For memory: <<<MEMORY_UPDATE>>>insight<<<END_MEMORY>>>
 
-HTML REPORT REQUIREMENTS:
-- Use Chart.js from CDN: <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-- ALL data must be embedded inline as JS variables — no external API calls
+HTML REPORT REQUIREMENTS — CRITICAL:
+- DO NOT use Chart.js or any JavaScript charts — they require a <script> block at the end that gets cut off
+- Instead use PURE SVG or CSS bar charts that render inline inside the HTML body
+- ALL charts must be self-contained SVG elements drawn directly in the HTML — no JS needed
 - Dark theme: background #0a0b0f, cards #16181f, accent #6c63ff, success #2ed573, danger #ff4757
-- Include: summary stats cards, equity curve chart, win/loss by session, symbol breakdown
-- Make it PROFESSIONAL — this is a real trading report the trader will share
+- Include: summary stats cards, SVG equity curve, SVG bar charts for sessions/symbols, data tables
+- Every chart MUST be a raw <svg> element with hardcoded paths and rect elements using the actual data
+- CSS bar chart alternative: <div style="width:X%;background:#6c63ff;height:20px"> for percentage bars
+- Make it PROFESSIONAL and COMPLETE — close all tags properly with </body></html> at the end
+- The report must be fully self-contained — no external dependencies, no CDN links needed
 
 Always be specific and data-driven. Reference actual numbers from the trader's data.`
 }
@@ -338,7 +342,7 @@ export default function Sylledge() {
         body:    JSON.stringify({
           system,
           messages: [...history, { role: "user", content: msgContent }],
-          max_tokens: 6000,
+          max_tokens: 8000,
         })
       })
       clearTimeout(timeout)
