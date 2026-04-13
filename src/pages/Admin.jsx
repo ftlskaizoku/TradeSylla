@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 
 // ── Admin email — only this account can access the admin page ─────────────────
-const ADMIN_EMAIL = 'khalifadylla@gmail.com' // ← your email here
+const ADMIN_EMAILS = ["khalifadylla@gmail.com", "zoumxyz@gmail.com", "papeamdou48@gmail.com"]
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ icon: Icon, label, value, sub, color, trend }) {
@@ -72,7 +72,7 @@ export default function Admin() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const email = session?.user?.email
       if (!email) { navigate('/Dashboard'); return }
-      if (email !== ADMIN_EMAIL) { navigate('/Dashboard'); return }
+      if (!ADMIN_EMAILS.includes(email)) { navigate('/Dashboard'); return }
       setIsAdmin(true)
     })
   }, [])

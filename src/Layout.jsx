@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase"
 import InstallPrompt from "@/components/InstallPrompt"
 import { Trade } from "@/api/supabaseStore"
 
-const ADMIN_EMAILS = ["khalifadylla@gmail.com", "zoumxyz@gmail.com"]
+const ADMIN_EMAILS = ["khalifadylla@gmail.com", "zoumxyz@gmail.com", "papeamdou48@gmail.com"]
 
 export default function Layout({ children, currentPageName }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
