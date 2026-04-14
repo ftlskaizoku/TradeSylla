@@ -16,7 +16,7 @@ import {
   ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid
 } from "recharts"
 
-const SYMBOLS  = ["XAUUSD","EURUSD","GBPUSD","USDJPY","US30","NAS100","UK100","GER30","BTCUSD","AUDUSD","GBPJPY"]
+const SYMBOLS=["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD","GBPJPY","EURJPY","GBPAUD","GBPCAD","AUDJPY","EURGBP","EURNZD","XAUUSD","XAGUSD","US30","NAS100","SPX500","UK100","GER30","DE30","FRA40","JPN225","AUS200","BTCUSD","ETHUSD","BNBUSD","XRPUSD","USOIL","UKOIL"]
 const TFS      = ["M1","M5","M15","M30","H1","H4","D1"]
 const SPEEDS   = [{ label:"1×",ms:800 },{ label:"2×",ms:400 },{ label:"4×",ms:200 },{ label:"8×",ms:100 }]
 
@@ -645,7 +645,8 @@ function SessionModal({open,onClose,onSaved,editSession}){
   useEffect(()=>{
     Playbook.list().then(d=>setPlaybooks((d||[]).filter(p=>p.status==="active")))
     fetchAvailableSymbols(supabase).then(setAvailSymbols)
-  },[])useEffect(()=>{setForm(editSession?{...EMPTY_SESSION,...editSession}:EMPTY_SESSION)},[editSession,open])
+  },[])
+  useEffect(()=>{setForm(editSession?{...EMPTY_SESSION,...editSession}:EMPTY_SESSION)},[editSession,open])
   const set=(k,v)=>setForm(f=>({...f,[k]:v}))
   const save=async()=>{
     if(!form.name.trim()){toast.error("Session name required");return}
