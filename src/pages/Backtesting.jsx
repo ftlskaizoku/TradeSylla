@@ -60,9 +60,10 @@ function calcStats(trades,initialCapital) {
 // ─── Live Candlestick Chart ────────────────────────────────────────────────────
 function LiveCandleChart({candles,openTrade}){
   if(!candles||candles.length===0) return(
-    <div className="flex items-center justify-center h-full flex-col gap-3" style={{color:"var(--text-muted)"}}>
+    <div className="flex items-center justify-center h-full flex-col gap-3 text-center px-8" style={{color:"var(--text-muted)"}}>
       <BarChart2 size={32}/>
-      <p className="text-sm">No candle data — EA must sync this symbol first</p>
+      <p className="text-sm font-semibold" style={{color:"var(--text-primary)"}}>No candle data for {session?.symbol} {session?.timeframe}</p>
+      <p className="text-xs max-w-xs">Your MT5 EA ({`TradeSylla_MarketData.mq5`}) must sync data for this symbol/timeframe first.<br/>Go to Broker Sync → check the EA is running on a {session?.symbol} chart at {session?.timeframe}.</p>
     </div>
   )
   const W=900,H=340,PAD={top:12,right:72,bottom:28,left:8}
@@ -163,7 +164,7 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
         if(error)throw error
         const mapped=(data||[]).map(r=>({t:r.candle_time,o:r.open_price,h:r.high_price,l:r.low_price,c:r.close_price,v:r.volume||0}))
         setAllCandles(mapped)
-        setCandleIdx(Math.min(80,mapped.length))
+        setCandleIdx(1)  // Start from first candle so user controls the replay from scratch
       }catch(e){console.error("Candle load:",e)}
       setLoadingData(false)
     }
@@ -491,7 +492,21 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
                 </button>
               ))}
             </div>
-            {currentCandle&&<span className="text-xs" style={{color:"var(--text-muted)",fontFamily:"var(--font-mono)"}}>{new Date(currentCandle.t).toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"2-digit"})}</span>}
+            {/* Date display + jump to date */}
+            {currentCandle&&(
+              <span className="text-xs" style={{color:"var(--text-muted)",fontFamily:"var(--font-mono)"}}>
+                {new Date(currentCandle.t).toLocaleDateString("en-US",{month:"2-digit",day:"2-digit",year:"2-digit"})}
+              </span>
+            )}
+            <input type="date" onChange={e=>{
+              if(!e.target.value||!allCandles.length) return
+              const target = new Date(e.target.value).getTime()
+              let closest = 0
+              allCandles.forEach((c,i)=>{ if(Math.abs(new Date(c.t).getTime()-target)<Math.abs(new Date(allCandles[closest].t).getTime()-target)) closest=i })
+              setPlaying(false); setCandleIdx(closest+1)
+            }}
+            className="h-7 rounded px-2 text-xs border" title="Jump to date"
+            style={{background:"var(--bg-elevated)",borderColor:"var(--border)",color:"var(--text-primary)",width:120}}/>
           </div>
         </div>
 
@@ -611,11 +626,21 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
 // ─── Session Modal ─────────────────────────────────────────────────────────────
 const EMPTY_SESSION={name:"",symbol:"XAUUSD",timeframe:"H1",description:"",date_from:"",date_to:"",initial_balance:"10000",playbook_id:"",notes:""}
 
+async function fetchAvailableSymbols(supabase) {
+  try {
+    const { data } = await supabase.from('sylledge_market_data').select('symbol,timeframe').limit(1000)
+    if (!data?.length) return []
+    const seen = new Set()
+    return data.filter(r => { const k=r.symbol+'|'+r.timeframe; if(seen.has(k))return false; seen.add(k); return true })
+  } catch { return [] }
+}
+
 function SessionModal({open,onClose,onSaved,editSession}){
   const {t}=useLanguage()
   const [form,setForm]=useState(EMPTY_SESSION)
   const [saving,setSaving]=useState(false)
   const [playbooks,setPlaybooks]=useState([])
+  const [availSymbols,setAvailSymbols]=useState([])
   const isEdit=!!editSession
   useEffect(()=>{Playbook.list().then(d=>setPlaybooks((d||[]).filter(p=>p.status==="active")))},[])
   useEffect(()=>{setForm(editSession?{...EMPTY_SESSION,...editSession}:EMPTY_SESSION)},[editSession,open])
@@ -662,7 +687,9 @@ function SessionModal({open,onClose,onSaved,editSession}){
             <div>
               <label className="text-xs font-medium block mb-1" style={{color:"var(--text-muted)"}}>Symbol</label>
               <select value={form.symbol} onChange={e=>set("symbol",e.target.value)} className="w-full h-10 rounded-xl px-3 text-sm border" style={{background:"var(--bg-elevated)",borderColor:"var(--border)",color:"var(--text-primary)"}}>
-                {SYMBOLS.map(s=><option key={s}>{s}</option>)}
+                {(availSymbols.length>0 ? [...new Set(availSymbols.map(s=>s.symbol))] : SYMBOLS).map(s=>(
+                <option key={s} value={s}>{s}{availSymbols.some(x=>x.symbol===s)?' ✓':''}</option>
+              ))}
               </select>
             </div>
             <div>
