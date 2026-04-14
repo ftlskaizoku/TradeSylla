@@ -135,7 +135,6 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
   const [candleIdx,setCandleIdx]=useState(0)
   const [loadingData,setLoadingData]=useState(true)
   const [loadErrMsg,setLoadErrMsg]=useState(null)
-  const [loadErrMsg,setLoadErrMsg]=useState(null)
   const [playing,setPlaying]=useState(false)
   const [speedIdx,setSpeedIdx]=useState(0)
   const [trades,setTrades]=useState(session.trades||[])
