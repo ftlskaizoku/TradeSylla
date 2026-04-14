@@ -134,6 +134,8 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
   const [allCandles,setAllCandles]=useState([])
   const [candleIdx,setCandleIdx]=useState(0)
   const [loadingData,setLoadingData]=useState(true)
+  const [loadErrMsg,setLoadErrMsg]=useState(null)
+  const [loadErrMsg,setLoadErrMsg]=useState(null)
   const [playing,setPlaying]=useState(false)
   const [speedIdx,setSpeedIdx]=useState(0)
   const [trades,setTrades]=useState(session.trades||[])
@@ -161,11 +163,21 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
         if(session.date_from)q=q.gte("candle_time",session.date_from)
         if(session.date_to)q=q.lte("candle_time",session.date_to+"T23:59:59")
         const{data,error}=await q
-        if(error)throw error
+        if(error){
+          console.error("Supabase error:", error.message, {sym,tf})
+          setLoadErrMsg(`DB error: ${error.message}`)
+          setLoadingData(false)
+          return
+        }
+        console.log("Candles loaded:", data?.length, "for", sym, tf)
         const mapped=(data||[]).map(r=>({t:r.candle_time,o:r.open_price,h:r.high_price,l:r.low_price,c:r.close_price,v:r.volume||0}))
         setAllCandles(mapped)
-        setCandleIdx(1)  // Start from first candle so user controls the replay from scratch
-      }catch(e){console.error("Candle load:",e)}
+        setCandleIdx(mapped.length>0?1:0)
+        if(mapped.length===0) setLoadErrMsg(`No data for ${sym} ${tf} in sylledge_market_data. Is the EA syncing this symbol?`)
+      }catch(e){
+        console.error("Candle load exception:",e.message)
+        setLoadErrMsg(`Error: ${e.message}`)
+      }
       setLoadingData(false)
     }
     load()
@@ -378,6 +390,14 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
                   <div className="flex items-center justify-center h-full flex-col gap-3">
                     <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{borderColor:"var(--accent)"}}/>
                     <p className="text-xs" style={{color:"var(--text-muted)"}}>Loading {session.symbol} {session.timeframe}…</p>
+                  </div>
+                ):loadErrMsg?(
+                  <div className="flex items-center justify-center h-full flex-col gap-3 text-center px-8">
+                    <p className="text-sm font-semibold" style={{color:"var(--accent-danger)"}}>Failed to load candles</p>
+                    <p className="text-xs font-mono" style={{color:"var(--text-muted)"}}>{loadErrMsg}</p>
+                    <button onClick={()=>{setLoadErrMsg(null);setLoadingData(true);/* retrigger */}} 
+                      className="px-4 py-2 rounded-xl text-sm font-semibold text-white mt-2"
+                      style={{background:"var(--accent)"}}>Retry</button>
                   </div>
                 ):<LiveCandleChart candles={visibleCandles} openTrade={openTrade} sessionInfo={{symbol:session.symbol,timeframe:session.timeframe}}/>}
               </div>
