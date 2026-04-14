@@ -307,7 +307,10 @@ export default function Sylledge() {
       const jwt    = await getSessionToken()
       const marketCtx = await fetchMarketContext(trades, supabase)
       const system = buildSystemPrompt(trades, playbooks, backtests, memory, selPlaybook, attachments, marketCtx)
-      const history = messages.slice(-20)  // Keep 20 messages = 10 full exchanges.map(m => ({ role: m.role, content: m.content }))
+      const history = messages
+        .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
+        .slice(-20)
+        .map(m => ({ role: m.role, content: m.content }))  // ONLY role+content — Anthropic rejects timestamp/files/etc
       let msgContent = userMsg
       if (extraContent?.length) {
         msgContent = [{ type: "text", text: userMsg }, ...extraContent]

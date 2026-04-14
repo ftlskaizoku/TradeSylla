@@ -58,12 +58,12 @@ function calcStats(trades,initialCapital) {
 }
 
 // ─── Live Candlestick Chart ────────────────────────────────────────────────────
-function LiveCandleChart({candles,openTrade}){
+function LiveCandleChart({candles,openTrade,sessionInfo={}}){
   if(!candles||candles.length===0) return(
     <div className="flex items-center justify-center h-full flex-col gap-3 text-center px-8" style={{color:"var(--text-muted)"}}>
       <BarChart2 size={32}/>
-      <p className="text-sm font-semibold" style={{color:"var(--text-primary)"}}>No candle data for {session?.symbol} {session?.timeframe}</p>
-      <p className="text-xs max-w-xs">Your MT5 EA ({`TradeSylla_MarketData.mq5`}) must sync data for this symbol/timeframe first.<br/>Go to Broker Sync → check the EA is running on a {session?.symbol} chart at {session?.timeframe}.</p>
+      <p className="text-sm font-semibold" style={{color:"var(--text-primary)"}}>No candle data for {sessionInfo.symbol||"this symbol"} {sessionInfo.timeframe||""}</p>
+      <p className="text-xs max-w-xs">Your MT5 EA (TradeSylla_MarketData.mq5) must sync data for this symbol/timeframe first. Go to Broker Sync and check the EA is running on this chart.</p>
     </div>
   )
   const W=900,H=340,PAD={top:12,right:72,bottom:28,left:8}
@@ -379,7 +379,7 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
                     <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{borderColor:"var(--accent)"}}/>
                     <p className="text-xs" style={{color:"var(--text-muted)"}}>Loading {session.symbol} {session.timeframe}…</p>
                   </div>
-                ):<LiveCandleChart candles={visibleCandles} openTrade={openTrade}/>}
+                ):<LiveCandleChart candles={visibleCandles} openTrade={openTrade} sessionInfo={{symbol:session.symbol,timeframe:session.timeframe}}/>}
               </div>
             )}
             {activeChart==="balance"&&stats.curve.length>0&&(
@@ -642,8 +642,10 @@ function SessionModal({open,onClose,onSaved,editSession}){
   const [playbooks,setPlaybooks]=useState([])
   const [availSymbols,setAvailSymbols]=useState([])
   const isEdit=!!editSession
-  useEffect(()=>{Playbook.list().then(d=>setPlaybooks((d||[]).filter(p=>p.status==="active")))},[])
-  useEffect(()=>{setForm(editSession?{...EMPTY_SESSION,...editSession}:EMPTY_SESSION)},[editSession,open])
+  useEffect(()=>{
+    Playbook.list().then(d=>setPlaybooks((d||[]).filter(p=>p.status==="active")))
+    fetchAvailableSymbols(supabase).then(setAvailSymbols)
+  },[])useEffect(()=>{setForm(editSession?{...EMPTY_SESSION,...editSession}:EMPTY_SESSION)},[editSession,open])
   const set=(k,v)=>setForm(f=>({...f,[k]:v}))
   const save=async()=>{
     if(!form.name.trim()){toast.error("Session name required");return}
