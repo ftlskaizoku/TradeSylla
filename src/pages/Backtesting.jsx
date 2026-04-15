@@ -135,6 +135,7 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
   const [candleIdx,setCandleIdx]=useState(0)
   const [loadingData,setLoadingData]=useState(true)
   const [loadErrMsg,setLoadErrMsg]=useState(null)
+  const [loadKey,setLoadKey]=useState(0)  // increment to retrigger candle load
   const [playing,setPlaying]=useState(false)
   const [speedIdx,setSpeedIdx]=useState(0)
   const [trades,setTrades]=useState(session.trades||[])
@@ -183,7 +184,7 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
     if(session.playbook_id){
       Playbook.list().then(pbs=>{const pb=pbs.find(p=>p.id===session.playbook_id);if(pb)setPlaybook(pb)})
     }
-  },[session.id])
+  },[session.id, loadKey])
 
   useEffect(()=>{
     if(!playing){clearInterval(playRef.current);return}
@@ -378,7 +379,7 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
               </button>
             ))}
             <div className="ml-auto text-xs" style={{color:"var(--text-muted)"}}>
-              {loadingData?<span className="animate-pulse">Loading…</span>:<span>{allCandles.length} candles · idx {candleIdx}</span>}
+              {loadingData?<span className="animate-pulse">Loading {session.symbol} {session.timeframe}…</span>:loadErrMsg?<span style={{color:"var(--accent-danger)"}}>⚠️ No data</span>:<span style={{color:"var(--accent-success)"}}>{allCandles.length} candles loaded ✓</span>}
               {currentPrice&&<span className="ml-3 font-bold" style={{color:"var(--accent-warning)",fontFamily:"var(--font-mono)"}}>{currentPrice}</span>}
             </div>
           </div>
@@ -647,10 +648,22 @@ const EMPTY_SESSION={name:"",symbol:"XAUUSD",timeframe:"H1",description:"",date_
 
 async function fetchAvailableSymbols(supabase) {
   try {
-    const { data } = await supabase.from('sylledge_market_data').select('symbol,timeframe').limit(1000)
+    // Use RPC for proper DISTINCT — raw limit(1000) would only show 1 symbol
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('get_synced_symbols')
+    if (!rpcErr && rpcData?.length) return rpcData  // [{symbol, timeframe, candle_count}]
+  } catch {}
+  try {
+    // Fallback: query with a large range to cover all symbols
+    const { data } = await supabase
+      .from('sylledge_market_data')
+      .select('symbol, timeframe')
+      .order('symbol', { ascending: true })
+      .limit(50000)  // Large enough to cover all candles
     if (!data?.length) return []
     const seen = new Set()
-    return data.filter(r => { const k=r.symbol+'|'+r.timeframe; if(seen.has(k))return false; seen.add(k); return true })
+    return data
+      .filter(r => { const k=r.symbol+'|'+r.timeframe; if(seen.has(k))return false; seen.add(k); return true })
+      .map(r => ({ symbol: r.symbol, timeframe: r.timeframe, candle_count: 0 }))
   } catch { return [] }
 }
 
@@ -709,9 +722,14 @@ function SessionModal({open,onClose,onSaved,editSession}){
             <div>
               <label className="text-xs font-medium block mb-1" style={{color:"var(--text-muted)"}}>Symbol</label>
               <select value={form.symbol} onChange={e=>set("symbol",e.target.value)} className="w-full h-10 rounded-xl px-3 text-sm border" style={{background:"var(--bg-elevated)",borderColor:"var(--border)",color:"var(--text-primary)"}}>
-                {(availSymbols.length>0 ? [...new Set(availSymbols.map(s=>s.symbol))] : SYMBOLS).map(s=>(
-                <option key={s} value={s}>{s}{availSymbols.some(x=>x.symbol===s)?' ✓':''}</option>
-              ))}
+                {(availSymbols.length>0
+                  ? [...new Map(availSymbols.map(s=>[s.symbol, s])).values()]
+                  : SYMBOLS.map(s=>({symbol:s}))
+                ).map(s=>(
+                  <option key={s.symbol} value={s.symbol}>
+                    {s.symbol}{s.candle_count>0 ? ` (${s.candle_count.toLocaleString()} candles)` : s.candle_count===0?'' : ' ✓'}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
