@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, useNavigate } from "react-router-dom"
 import { Trade, Playbook, subscribeToTable } from "@/api/supabaseStore"
 import { supabase } from "@/lib/supabase"
 import { useLanguage } from "@/lib/LanguageContext"
@@ -8,7 +8,7 @@ import {
   Plus, Pencil, Trash2, X, List, CalendarDays,
   TrendingUp, TrendingDown, Activity, ChevronLeft, ChevronRight,
   Upload, CheckCircle, Brain, Sparkles, Download, AlertTriangle, ChevronDown, ChevronUp,
-  BarChart2, Clock, Hash, Play, Pause, SkipBack, SkipForward, FastForward, Rewind
+  BarChart2, Clock, Hash, Play, Pause, SkipBack, SkipForward, FastForward, Rewind, BookOpen, FileText
 } from "lucide-react"
 
 
@@ -88,8 +88,7 @@ const EMPTY_FORM = {
   symbol:"EURUSD", direction:"BUY", entry_price:"", exit_price:"",
   pnl:"", pips:"", session:"LONDON", timeframe:"H1",
   outcome:"WIN", quality:"7", notes:"",
-  entry_time: new Date().toISOString().slice(0,16),
-  mae:"", mfe:"", mae_pips:"", mfe_pips:"",
+  entry_time: new Date().toISOString().slice(0,16)
 }
 
 function TradeModal({ open, onClose, onSaved, editTrade }) {
@@ -106,10 +105,6 @@ function TradeModal({ open, onClose, onSaved, editTrade }) {
         pnl:         editTrade.pnl         ?? "",
         pips:        editTrade.pips        ?? "",
         quality:     editTrade.quality     ?? "7",
-        mae:         editTrade.mae         != null ? editTrade.mae      : "",
-        mfe:         editTrade.mfe         != null ? editTrade.mfe      : "",
-        mae_pips:    editTrade.mae_pips    != null ? editTrade.mae_pips : "",
-        mfe_pips:    editTrade.mfe_pips    != null ? editTrade.mfe_pips : "",
         entry_time:  editTrade.entry_time
           ? new Date(editTrade.entry_time).toISOString().slice(0,16)
           : new Date().toISOString().slice(0,16),
@@ -132,10 +127,6 @@ function TradeModal({ open, onClose, onSaved, editTrade }) {
         pnl:         parseFloat(form.pnl)         || 0,
         pips:        parseFloat(form.pips)        || 0,
         quality:     parseInt(form.quality)       || 5,
-        mae:         form.mae      !== "" ? parseFloat(form.mae)      : null,
-        mfe:         form.mfe      !== "" ? parseFloat(form.mfe)      : null,
-        mae_pips:    form.mae_pips !== "" ? parseFloat(form.mae_pips) : null,
-        mfe_pips:    form.mfe_pips !== "" ? parseFloat(form.mfe_pips) : null,
         entry_time:  new Date(form.entry_time).toISOString(),
       }
       if (isEdit) {
@@ -257,43 +248,6 @@ function TradeModal({ open, onClose, onSaved, editTrade }) {
             <textarea rows={3} placeholder="Setup, reasoning, lessons learned..." value={form.notes} onChange={e=>set("notes",e.target.value)}
               className="w-full rounded-lg px-3 py-2 text-sm border resize-none" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
           </div>
-
-          {/* MAE / MFE */}
-          <div className="col-span-2 pt-2" style={{ borderTop:"1px solid var(--border)" }}>
-            <div className="flex items-center gap-2 mb-2 mt-1">
-              <span className="text-xs font-semibold" style={{ color:"var(--text-primary)" }}>MAE / MFE</span>
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)" }}>optional</span>
-              <span className="text-xs" style={{ color:"var(--text-muted)" }}>improves analytics accuracy</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs mb-1 flex items-center gap-1" style={{ color:"var(--accent-danger)" }}>
-                  <span>↓ MAE (price)</span>
-                  <span style={{ color:"var(--text-muted)", fontWeight:400 }}>max adverse excursion</span>
-                </label>
-                <input type="number" step="any" placeholder="e.g. 10.5" value={form.mae} onChange={e=>set("mae",e.target.value)}
-                  className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-              </div>
-              <div>
-                <label className="text-xs mb-1 flex items-center gap-1" style={{ color:"var(--accent-success)" }}>
-                  <span>↑ MFE (price)</span>
-                  <span style={{ color:"var(--text-muted)", fontWeight:400 }}>max favorable excursion</span>
-                </label>
-                <input type="number" step="any" placeholder="e.g. 25.0" value={form.mfe} onChange={e=>set("mfe",e.target.value)}
-                  className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-              </div>
-              <div>
-                <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>MAE (pips)</label>
-                <input type="number" step="any" placeholder="e.g. 10" value={form.mae_pips} onChange={e=>set("mae_pips",e.target.value)}
-                  className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-              </div>
-              <div>
-                <label className="text-xs mb-1 block" style={{ color:"var(--text-muted)" }}>MFE (pips)</label>
-                <input type="number" step="any" placeholder="e.g. 25" value={form.mfe_pips} onChange={e=>set("mfe_pips",e.target.value)}
-                  className="w-full h-9 rounded-lg px-3 text-sm border" style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}/>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div className="flex gap-3 px-6 pb-6">
@@ -329,8 +283,12 @@ function DeleteConfirm({ trade, onCancel, onConfirm }) {
 
 // ─── Calendar View ────────────────────────────────────────────────────────────
 function CalendarView({ trades, onNewTrade, onEdit, onDelete, onAI, playbooks = [] }) {
+  const navigate = useNavigate()
+  const { user } = useUser()
   const [current,     setCurrent]     = useState(new Date())
   const [selectedDay, setSelectedDay] = useState(null)  // "YYYY-MM-DD"
+  const [dayNote,     setDayNote]     = useState(null)  // daily_notes row for selectedDay
+  const [noteLoading, setNoteLoading] = useState(false)
 
   const year  = current.getFullYear()
   const month = current.getMonth()
@@ -353,6 +311,16 @@ function CalendarView({ trades, onNewTrade, onEdit, onDelete, onAI, playbooks = 
     .reduce((s,[,arr]) => s + arr.reduce((a,t) => a+(t.pnl||0), 0), 0)
 
   const selectedTrades = selectedDay ? (byDay[selectedDay] || []) : []
+
+  // Load notebook note for selected day
+  useEffect(() => {
+    if (!selectedDay || !user?.id) { setDayNote(null); return }
+    setNoteLoading(true)
+    supabase.from('daily_notes').select('*').eq('user_id', user.id).eq('date', selectedDay).single()
+      .then(({ data }) => { setDayNote(data || null); setNoteLoading(false) })
+      .catch(() => { setDayNote(null); setNoteLoading(false) })
+  }, [selectedDay, user?.id])
+
   const selectedPnl    = selectedTrades.reduce((s,t) => s+(t.pnl||0), 0)
 
   const fmtDate = (key) => new Date(key + "T12:00:00").toLocaleDateString("en-US", {
@@ -408,6 +376,7 @@ function CalendarView({ trades, onNewTrade, onEdit, onDelete, onAI, playbooks = 
               const hasTrades  = dayTrades.length > 0
               const isToday    = key === todayKey
               const isSelected = key === selectedDay
+              const hasNote    = false  // will use dayNotes map when available
               const dow = new Date(year,month,day).getDay()
               const isLastInRow = dow===6 || day===daysInMonth
 
@@ -475,12 +444,59 @@ function CalendarView({ trades, onNewTrade, onEdit, onDelete, onAI, playbooks = 
                   )}
                 </p>
               </div>
-              <button onClick={() => setSelectedDay(null)}
-                className="p-1 rounded-lg hover:opacity-70"
-                style={{ color:"var(--text-muted)" }}>
-                <X size={14}/>
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => navigate(`/Notebook?date=${selectedDay}`)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={{ background:"rgba(108,99,255,0.12)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.2)" }}
+                  title="Open Notebook for this day">
+                  <FileText size={12}/> Notebook
+                </button>
+                <button onClick={() => setSelectedDay(null)}
+                  className="p-1 rounded-lg hover:opacity-70"
+                  style={{ color:"var(--text-muted)" }}>
+                  <X size={14}/>
+                </button>
+              </div>
             </div>
+
+            {/* Notebook note preview */}
+            {(dayNote || noteLoading) && (
+              <div className="px-4 py-3" style={{ borderBottom:"1px solid var(--border)", background:"rgba(108,99,255,0.04)" }}>
+                {noteLoading ? (
+                  <p className="text-xs animate-pulse" style={{ color:"var(--text-muted)" }}>Loading note…</p>
+                ) : (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <FileText size={11} style={{ color:"var(--accent)" }}/>
+                        <p className="text-xs font-semibold" style={{ color:"var(--accent)" }}>Notebook Entry</p>
+                      </div>
+                      <span className="text-xs px-1.5 py-0.5 rounded"
+                        style={{ background: dayNote.discipline >= 7 ? "rgba(46,213,115,0.1)" : dayNote.discipline >= 4 ? "rgba(255,165,2,0.1)" : "rgba(255,71,87,0.1)",
+                          color: dayNote.discipline >= 7 ? "var(--accent-success)" : dayNote.discipline >= 4 ? "var(--accent-warning)" : "var(--accent-danger)" }}>
+                        Discipline: {dayNote.discipline || "—"}/10
+                      </span>
+                    </div>
+                    {dayNote.pre_market && (
+                      <div className="mb-1.5">
+                        <p className="text-xs font-medium mb-0.5" style={{ color:"var(--text-muted)" }}>Pre-Market</p>
+                        <p className="text-xs line-clamp-2" style={{ color:"var(--text-secondary)" }}>{dayNote.pre_market}</p>
+                      </div>
+                    )}
+                    {dayNote.post_market && (
+                      <div>
+                        <p className="text-xs font-medium mb-0.5" style={{ color:"var(--text-muted)" }}>Post-Market Review</p>
+                        <p className="text-xs line-clamp-2" style={{ color:"var(--text-secondary)" }}>{dayNote.post_market}</p>
+                      </div>
+                    )}
+                    {!dayNote.pre_market && !dayNote.post_market && dayNote.lessons && (
+                      <p className="text-xs line-clamp-2" style={{ color:"var(--text-secondary)" }}>{dayNote.lessons}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Day stats strip */}
             {selectedTrades.length > 0 && (() => {
@@ -1593,60 +1609,6 @@ function TradeDetailRow({ trade, colSpan, onEdit, onDelete, onAI, playbooks = []
               ))}
               {/* Quality — inline editable */}
               <QualityEditor trade={trade} onUpdate={onEdit}/>
-
-              {/* MAE / MFE */}
-              {(trade.mae != null || trade.mfe != null) && (() => {
-                const mae = parseFloat(trade.mae) || 0
-                const mfe = parseFloat(trade.mfe) || 0
-                const pnl = parseFloat(trade.pnl) || 0
-                const captureRatio = mfe > 0 ? (pnl / mfe * 100).toFixed(1) : null
-                const entryEff = mfe > 0 ? Math.max(0, Math.min(100, pnl / mfe * 100)).toFixed(1) : null
-                return (
-                  <div className="col-span-2 rounded-xl p-3 mt-1" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
-                    <p className="text-xs font-bold mb-2" style={{ color:"var(--text-primary)" }}>MAE / MFE Analysis</p>
-                    <div className="grid grid-cols-2 gap-2 mb-2">
-                      {trade.mae != null && (
-                        <div className="rounded-lg p-2" style={{ background:"rgba(255,71,87,0.07)", border:"1px solid rgba(255,71,87,0.2)" }}>
-                          <p className="text-xs font-bold font-mono" style={{ color:"var(--accent-danger)" }}>
-                            -{parseFloat(trade.mae).toFixed(2)}{trade.mae_pips ? ` (${trade.mae_pips}p)` : ""}
-                          </p>
-                          <p className="text-xs" style={{ color:"var(--text-muted)" }}>↓ MAE (adverse)</p>
-                        </div>
-                      )}
-                      {trade.mfe != null && (
-                        <div className="rounded-lg p-2" style={{ background:"rgba(46,213,115,0.07)", border:"1px solid rgba(46,213,115,0.2)" }}>
-                          <p className="text-xs font-bold font-mono" style={{ color:"var(--accent-success)" }}>
-                            +{parseFloat(trade.mfe).toFixed(2)}{trade.mfe_pips ? ` (${trade.mfe_pips}p)` : ""}
-                          </p>
-                          <p className="text-xs" style={{ color:"var(--text-muted)" }}>↑ MFE (favorable)</p>
-                        </div>
-                      )}
-                    </div>
-                    {captureRatio !== null && (
-                      <div className="space-y-1.5">
-                        <div>
-                          <div className="flex justify-between text-xs mb-0.5">
-                            <span style={{ color:"var(--text-muted)" }}>Capture Ratio</span>
-                            <span style={{ color: parseFloat(captureRatio) >= 50 ? "var(--accent-success)" : "var(--accent-warning)" }}>
-                              {captureRatio}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 rounded-full overflow-hidden" style={{ background:"var(--bg-elevated)" }}>
-                            <div className="h-full rounded-full transition-all"
-                              style={{ width:`${Math.min(100, Math.max(0, parseFloat(captureRatio)))}%`,
-                                background: parseFloat(captureRatio) >= 50 ? "var(--accent-success)" : "var(--accent-warning)" }}/>
-                          </div>
-                        </div>
-                        <p className="text-xs" style={{ color:"var(--text-muted)" }}>
-                          {parseFloat(captureRatio) >= 70 ? "🎯 Excellent exit timing" :
-                           parseFloat(captureRatio) >= 40 ? "📊 Average capture — left some on the table" :
-                           "⚠️ Early exit — missed much of the move"}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
             </div>
 
             {/* Star Rating */}

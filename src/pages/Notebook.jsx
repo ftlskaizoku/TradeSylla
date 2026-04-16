@@ -3,7 +3,7 @@
 // Requires: daily_notes table (run daily_notes.sql migration)
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams, useNavigate } from "react-router-dom"
 import { createPageUrl } from "@/utils"
 import { supabase } from "@/lib/supabase"
 import { useUser } from "@/lib/UserContext"
@@ -31,7 +31,7 @@ const BIAS_OPTS = [
   { value:"ranging",  label:"Ranging",  color:"var(--accent-warning)" },
 ]
 
-const DISCIPLINE_LABELS = ["", "notebook_poor", "below_avg", "average", "good", "notebook_excellent"]
+const DISCIPLINE_LABELS = ["", "Poor", "Below Avg", "Average", "Good", "Excellent"]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function toDateKey(date) {
@@ -133,10 +133,121 @@ function TradeMiniRow({ trade }) {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Month Mini Calendar (shows which days have notes/trades) ────────────────
+function MonthMiniCal({ dateStr, onSelectDate, monthNoteDates, dayTradesMap }) {
+  const [d] = dateStr.split("-")
+  const date   = new Date(dateStr + "T12:00:00")
+  const year   = date.getFullYear()
+  const month  = date.getMonth()
+  const today  = new Date().toISOString().slice(0, 10)
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+  const DAYS   = ["Su","Mo","Tu","We","Th","Fr","Sa"]
+  const firstDay    = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  const prevMonth = () => {
+    const d = new Date(year, month - 1, 1)
+    onSelectDate(d.toISOString().slice(0, 10))
+  }
+  const nextMonth = () => {
+    const d = new Date(year, month + 1, 1)
+    const today = new Date()
+    if (d <= today) onSelectDate(d.toISOString().slice(0, 10))
+  }
+  const isCurrentMonth = year === new Date().getFullYear() && month === new Date().getMonth()
+
+  return (
+    <div className="rounded-2xl p-4" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+      {/* Month header */}
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={prevMonth} className="p-1 rounded-lg hover:opacity-70" style={{ color:"var(--text-secondary)" }}>
+          <ChevronLeft size={14}/>
+        </button>
+        <p className="text-xs font-bold" style={{ color:"var(--text-primary)" }}>
+          {MONTHS[month]} {year}
+        </p>
+        <button onClick={nextMonth} disabled={isCurrentMonth} className="p-1 rounded-lg hover:opacity-70 disabled:opacity-30" style={{ color:"var(--text-secondary)" }}>
+          <ChevronRight size={14}/>
+        </button>
+      </div>
+
+      {/* Day headers */}
+      <div className="grid grid-cols-7 mb-1">
+        {DAYS.map(d => (
+          <div key={d} className="text-center text-xs font-semibold" style={{ color:"var(--text-muted)", fontSize:9 }}>{d}</div>
+        ))}
+      </div>
+
+      {/* Day cells */}
+      <div className="grid grid-cols-7 gap-0.5">
+        {Array.from({ length: firstDay }, (_, i) => (
+          <div key={`empty-${i}`}/>
+        ))}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day   = i + 1
+          const key   = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`
+          const isToday    = key === today
+          const isSelected = key === dateStr
+          const hasNote    = monthNoteDates.has(key)
+          const hasTrades  = dayTradesMap && (dayTradesMap[key]?.length || 0) > 0
+          const isFuture   = key > today
+
+          return (
+            <button key={key}
+              onClick={() => !isFuture && onSelectDate(key)}
+              disabled={isFuture}
+              className="relative flex flex-col items-center justify-center rounded-lg transition-all"
+              style={{
+                height: 28,
+                background: isSelected ? "var(--accent)" : isToday ? "rgba(108,99,255,0.15)" : "transparent",
+                color: isSelected ? "#fff" : isFuture ? "var(--text-muted)" : "var(--text-primary)",
+                fontSize: 10, fontWeight: isSelected || isToday ? 700 : 400,
+                opacity: isFuture ? 0.3 : 1,
+                cursor: isFuture ? "default" : "pointer",
+              }}>
+              {day}
+              {/* Dots for note / trades */}
+              <div className="flex gap-0.5 absolute bottom-0.5">
+                {hasNote    && <div className="w-1 h-1 rounded-full" style={{ background: isSelected ? "rgba(255,255,255,0.8)" : "var(--accent)" }}/>}
+                {hasTrades  && <div className="w-1 h-1 rounded-full" style={{ background: isSelected ? "rgba(255,255,255,0.8)" : "var(--accent-success)" }}/>}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-3 mt-2 pt-2" style={{ borderTop:"1px solid var(--border)" }}>
+        <div className="flex items-center gap-1">
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background:"var(--accent)" }}/>
+          <span className="text-xs" style={{ color:"var(--text-muted)", fontSize:9 }}>Note</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background:"var(--accent-success)" }}/>
+          <span className="text-xs" style={{ color:"var(--text-muted)", fontSize:9 }}>Trades</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Notebook() {
   const { user } = useUser()
   const { t } = useLanguage()
-  const [dateStr,   setDateStr]  = useState(toDateKey(new Date()))
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  // If navigated from Journal calendar with ?date=YYYY-MM-DD, open that date
+  const initialDate = searchParams.get("date") || toDateKey(new Date())
+  const [dateStr,   setDateStr]  = useState(initialDate)
+  const [monthNoteDates, setMonthNoteDates] = useState(new Set())  // dates with notes
+  const [showMiniCal, setShowMiniCal] = useState(false)
+
+  // Build a map of date -> trades for the mini calendar
+  const [allTrades, setAllTrades] = useState([])
+  useEffect(() => {
+    Trade.list().then(d => setAllTrades(d||[]))
+  }, [])
   const [dayTrades, setDayTrades]= useState([])
   const [saving,    setSaving]   = useState(false)
   const [saved,     setSaved]    = useState(false)
@@ -158,6 +269,13 @@ export default function Notebook() {
   const dayWins  = dayTrades.filter(t => t.outcome==="WIN").length
   const dayWR    = dayTrades.length ? (dayWins/dayTrades.length*100).toFixed(0) : 0
   const isToday  = dateStr === toDateKey(new Date())
+  const dayTradesMap = allTrades.reduce((acc, t) => {
+    if (!t.entry_time) return acc
+    const key = t.entry_time.slice(0, 10)
+    if (!acc[key]) acc[key] = []
+    acc[key].push(t)
+    return acc
+  }, {})
 
   // ── Load note for date ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -199,6 +317,19 @@ export default function Notebook() {
     }
     loadNote()
   }, [dateStr, user?.id])
+
+  // Load which days this month have notes (for the date nav badge indicator)
+  useEffect(() => {
+    if (!user?.id || !dateStr) return
+    const [year, month] = dateStr.split("-")
+    const from = `${year}-${month}-01`
+    const to   = `${year}-${month}-31`
+    supabase.from("daily_notes").select("date")
+      .eq("user_id", user.id).gte("date", from).lte("date", to)
+      .then(({ data }) => {
+        setMonthNoteDates(new Set((data||[]).map(r => r.date)))
+      })
+  }, [dateStr.slice(0,7), user?.id])
 
   // ── Save note ───────────────────────────────────────────────────────────────
   const saveNote = useCallback(async (fields) => {
@@ -251,9 +382,15 @@ export default function Notebook() {
           <h1 className="text-2xl font-bold" style={{ color:"var(--text-primary)", fontFamily:"var(--font-display)" }}>
             {t("notebook_title")}
           </h1>
-          <p className="text-sm mt-0.5" style={{ color:"var(--text-muted)" }}>
-            {fmtDateLong(dateStr)}
-          </p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-sm" style={{ color:"var(--text-muted)" }}>{fmtDateLong(dateStr)}</p>
+            {monthNoteDates.size > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded-full"
+                style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)" }}>
+                {monthNoteDates.size} note{monthNoteDates.size!==1?"s":""} this month
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -279,7 +416,20 @@ export default function Notebook() {
               style={{ background:isToday?"var(--accent)":"transparent", color:isToday?"#fff":"var(--text-secondary)" }}>
               Today
             </button>
-            <button onClick={() => goDay(1)} disabled={isToday}
+            <button onClick={() => setShowMiniCal(c => !c)}
+              className="p-2 rounded-lg hover:opacity-70 transition-opacity"
+              title="Month calendar"
+              style={{ color: showMiniCal ? "var(--accent)" : "var(--text-secondary)" }}>
+              <Calendar size={15}/>
+            </button>
+            <button
+              onClick={() => {
+                // Show a small popover with the month's noted days
+                const d = new Date(dateStr + "T12:00:00")
+                d.setDate(d.getDate() + 1)
+                if (d <= new Date()) setDateStr(toDateKey(d))
+              }}
+              disabled={isToday}
               className="p-2 rounded-lg hover:opacity-70 transition-opacity disabled:opacity-30"
               style={{ color:"var(--text-secondary)" }}>
               <ChevronRight size={15}/>
@@ -295,6 +445,18 @@ export default function Notebook() {
         </div>
       </div>
 
+      {/* ── Month mini calendar (toggled by calendar button) ─────────────── */}
+      {showMiniCal && (
+        <div className="mb-4 max-w-xs">
+          <MonthMiniCal
+            dateStr={dateStr}
+            onSelectDate={(d) => { setDateStr(d); setShowMiniCal(false) }}
+            monthNoteDates={monthNoteDates}
+            dayTradesMap={dayTradesMap}
+          />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* ── Left: Journal content (2/3) ──────────────────────────────────── */}
         <div className="lg:col-span-2 flex flex-col gap-4">
@@ -304,7 +466,7 @@ export default function Notebook() {
             <div className="flex flex-col gap-4">
               {/* Market bias */}
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_bias") }</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Market Bias</p>
                 <div className="flex gap-2 flex-wrap">
                   {BIAS_OPTS.map(b => (
                     <button key={b.value} onClick={() => { setBias(b.value); autoSave({ bias: b.value }) }}
@@ -322,10 +484,10 @@ export default function Notebook() {
 
               {/* Watchlist */}
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_watchlist") }</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Symbols to Watch</p>
                 <input value={watchlist}
                   onChange={e => handleField(setWatchlist, "watchlist")(e.target.value)}
-                  placeholder={t("notebook_watchlist_ph")}
+                  placeholder="XAUUSD, UK100, EURUSD…"
                   className="w-full h-9 rounded-xl px-4 text-sm border outline-none"
                   style={{ background:"var(--bg-elevated)", borderColor:"var(--border)", color:"var(--text-primary)" }}
                   onFocus={e => e.target.style.borderColor="var(--accent)"}
@@ -334,14 +496,14 @@ export default function Notebook() {
 
               {/* Plan */}
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_plan") }</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Trading Plan & Key Levels</p>
                 <NoteArea value={preMarket} onChange={handleField(setPreMarket, "preMarket")}
                   placeholder="What setups am I looking for today? Key levels, news events, session focus…" minRows={5}/>
               </div>
 
               {/* Daily goals */}
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_goals") }</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Goals for Today</p>
                 <NoteArea value={goals} onChange={handleField(setGoals, "goals")}
                   placeholder="Max loss limit, target setups, habits to maintain…" minRows={3}/>
               </div>
@@ -357,12 +519,12 @@ export default function Notebook() {
                   placeholder="What happened today? Did the market respect key levels? Any surprises?" minRows={5}/>
               </div>
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_lessons") }</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Lessons Learned</p>
                 <NoteArea value={lessons} onChange={handleField(setLessons, "lessons")}
                   placeholder="What would I do differently? What confirmed my edge today?" minRows={3}/>
               </div>
               <div>
-                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>{ t("notebook_mistakes") }</p>
+                <p className="text-xs font-medium mb-2" style={{ color:"var(--text-muted)" }}>Mistakes to Fix</p>
                 <NoteArea value={mistakes} onChange={handleField(setMistakes, "mistakes")}
                   placeholder="Any rule breaks, emotional decisions, or execution errors…" minRows={3}/>
               </div>
@@ -398,7 +560,7 @@ export default function Notebook() {
               {/* Discipline */}
               <div>
                 <p className="text-xs font-medium mb-3" style={{ color:"var(--text-muted)" }}>
-                  Rule Discipline — <span style={{ color:"var(--text-primary)" }}>{t(DISCIPLINE_LABELS[discipline]) || DISCIPLINE_LABELS[discipline]}</span>
+                  Rule Discipline — <span style={{ color:"var(--text-primary)" }}>{DISCIPLINE_LABELS[discipline]}</span>
                 </p>
                 <div className="flex gap-1.5">
                   {[1,2,3,4,5].map(n => (
@@ -422,8 +584,8 @@ export default function Notebook() {
                   ))}
                 </div>
                 <div className="flex justify-between mt-1">
-                  <span className="text-xs" style={{ color:"var(--accent-danger)", fontSize:9 }}>{ t("notebook_poor") }</span>
-                  <span className="text-xs" style={{ color:"var(--accent-success)", fontSize:9 }}>{ t("notebook_excellent") }</span>
+                  <span className="text-xs" style={{ color:"var(--accent-danger)", fontSize:9 }}>Poor</span>
+                  <span className="text-xs" style={{ color:"var(--accent-success)", fontSize:9 }}>Excellent</span>
                 </div>
               </div>
             </div>
@@ -437,13 +599,13 @@ export default function Notebook() {
           <div className="rounded-2xl p-5" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
             <div className="flex items-center gap-2 mb-4">
               <BarChart2 size={14} style={{ color:"var(--accent)" }}/>
-              <h3 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>{ t("notebook_day_summary") }</h3>
+              <h3 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>Day Summary</h3>
             </div>
 
             {dayTrades.length === 0 ? (
               <div className="text-center py-6">
                 <Calendar size={28} className="mx-auto mb-2" style={{ color:"var(--text-muted)" }}/>
-                <p className="text-sm" style={{ color:"var(--text-muted)" }}>{ t("notebook_no_trades") }</p>
+                <p className="text-sm" style={{ color:"var(--text-muted)" }}>No trades this day</p>
               </div>
             ) : (
               <>
@@ -457,7 +619,7 @@ export default function Notebook() {
                   }}>
                     {dayPnl>=0?"+":""}${dayPnl.toFixed(2)}
                   </p>
-                  <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>{ t("notebook_day_pnl") }</p>
+                  <p className="text-xs mt-1" style={{ color:"var(--text-muted)" }}>Day P&L</p>
                 </div>
 
                 {/* Stats grid */}
@@ -488,7 +650,7 @@ export default function Notebook() {
             <div className="flex items-center gap-2 mb-3">
               <Zap size={14} style={{ color:"var(--accent-warning)" }}/>
               <h3 className="font-semibold text-sm" style={{ color:"var(--text-primary)" }}>
-                Discipline — {t(DISCIPLINE_LABELS[discipline]) || DISCIPLINE_LABELS[discipline]}
+                Discipline — {DISCIPLINE_LABELS[discipline]}
               </h3>
             </div>
             <div className="flex gap-1.5 mt-2">
@@ -519,8 +681,8 @@ export default function Notebook() {
             </div>
           </div>
 
-          {/* Quick nav to Journal */}
-          <Link to={createPageUrl("Journal")}
+          {/* Quick nav to Journal calendar for this day */}
+          <Link to={`/Journal?view=calendar`}
             className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
             style={{ background:"rgba(108,99,255,0.08)", color:"var(--accent)", border:"1px solid rgba(108,99,255,0.2)" }}>
             <BookOpen size={14}/> View Full Journal
