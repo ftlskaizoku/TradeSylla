@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import { Trade, Playbook, subscribeToTable } from "@/api/supabaseStore"
 import { supabase } from "@/lib/supabase"
+import { useUser } from "@/lib/UserContext"
 import { useLanguage } from "@/lib/LanguageContext"
 import { toast } from "@/components/ui/toast"
 import {
