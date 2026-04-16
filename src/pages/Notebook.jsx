@@ -248,6 +248,25 @@ export default function Notebook() {
   useEffect(() => {
     Trade.list().then(d => setAllTrades(d||[]))
   }, [])
+
+  // Load recent notes for the history panel
+  const [recentNotes, setRecentNotes] = useState([])
+  const [notesLoading, setNotesLoading] = useState(false)
+  useEffect(() => {
+    if (!user?.id) return
+    setNotesLoading(true)
+    supabase.from("daily_notes")
+      .select("date,pre_market,post_market,discipline,mindset,lessons")
+      .eq("user_id", user.id)
+      .order("date", { ascending: false })
+      .limit(30)
+      .then(({ data }) => {
+        setRecentNotes((data||[]).filter(n =>
+          n.pre_market || n.post_market || n.lessons
+        ))
+        setNotesLoading(false)
+      })
+  }, [user?.id, saved])  // refresh when saved
   const [dayTrades, setDayTrades]= useState([])
   const [saving,    setSaving]   = useState(false)
   const [saved,     setSaved]    = useState(false)
@@ -286,25 +305,31 @@ export default function Notebook() {
     setMindset(3); setDiscipline(3); setSaved(false)
 
     const loadNote = async () => {
+      // Always reset fields first — prevents previous day bleeding into new day
+      setPreMarket(""); setBias(""); setWatchlist("")
+      setPostMarket(""); setLessons(""); setMindset(3)
+      setDiscipline(3); setGoals(""); setMistakes("")
+
       // Load journal entry
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("daily_notes")
         .select("*")
         .eq("user_id", user.id)
         .eq("date", dateStr)
-        .single()
+        .maybeSingle()  // Use maybeSingle() — returns null instead of error when no row
 
       if (data) {
-        setPreMarket(data.pre_market || "")
-        setBias(data.bias || "")
-        setWatchlist(data.watchlist || "")
-        setPostMarket(data.post_market || "")
-        setLessons(data.lessons || "")
-        setMindset(data.mindset || 3)
+        setPreMarket(data.pre_market  || "")
+        setBias(data.bias             || "")
+        setWatchlist(data.watchlist   || "")
+        setPostMarket(data.post_market|| "")
+        setLessons(data.lessons       || "")
+        setMindset(data.mindset       || 3)
         setDiscipline(data.discipline || 3)
-        setGoals(data.goals || "")
-        setMistakes(data.mistakes || "")
+        setGoals(data.goals           || "")
+        setMistakes(data.mistakes     || "")
       }
+      // else: no note for this day — fields already reset above
 
       // Load trades for this day
       const all = await Trade.list()
@@ -335,7 +360,7 @@ export default function Notebook() {
   const saveNote = useCallback(async (fields) => {
     if (!user?.id) return
     setSaving(true)
-    await supabase.from("daily_notes").upsert({
+    const { error } = await supabase.from("daily_notes").upsert({
       user_id:     user.id,
       date:        dateStr,
       pre_market:  fields.preMarket  ?? preMarket,
@@ -349,8 +374,12 @@ export default function Notebook() {
       mistakes:    fields.mistakes   ?? mistakes,
     }, { onConflict: "user_id,date" })
     setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    if (error) {
+      console.error("Notebook save error:", error.message)
+    } else {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    }
   }, [user?.id, dateStr, preMarket, bias, watchlist, postMarket, lessons, mindset, discipline, goals, mistakes])
 
   const autoSave = useAutoSave(saveNote, 1000)
@@ -679,6 +708,71 @@ export default function Notebook() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* ── Notes History ──────────────────────────────────────────── */}
+          <div className="rounded-2xl overflow-hidden" style={{ background:"var(--bg-card)", border:"1px solid var(--border)" }}>
+            <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom:"1px solid var(--border)", background:"var(--bg-elevated)" }}>
+              <div className="flex items-center gap-2">
+                <BookOpen size={13} style={{ color:"var(--accent)" }}/>
+                <p className="text-xs font-bold" style={{ color:"var(--text-primary)" }}>Recent Notes</p>
+              </div>
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background:"rgba(108,99,255,0.1)", color:"var(--accent)" }}>
+                {recentNotes.length}
+              </span>
+            </div>
+
+            {notesLoading ? (
+              <div className="p-4 flex items-center justify-center">
+                <div className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor:"var(--accent)" }}/>
+              </div>
+            ) : recentNotes.length === 0 ? (
+              <div className="p-4 text-center">
+                <p className="text-xs" style={{ color:"var(--text-muted)" }}>No notes yet — write your first entry above</p>
+              </div>
+            ) : (
+              <div className="divide-y" style={{ maxHeight:320, overflowY:"auto" }}>
+                {recentNotes.map(note => {
+                  const isActive = note.date === dateStr
+                  const d = new Date(note.date + "T12:00:00")
+                  const label = d.toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" })
+                  const preview = note.post_market || note.pre_market || note.lessons || ""
+                  return (
+                    <button key={note.date}
+                      onClick={() => setDateStr(note.date)}
+                      className="w-full text-left px-4 py-3 transition-all hover:opacity-80"
+                      style={{
+                        background: isActive ? "rgba(108,99,255,0.08)" : "transparent",
+                        borderBottom: "1px solid var(--border)"
+                      }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-bold" style={{ color: isActive ? "var(--accent)" : "var(--text-primary)" }}>
+                          {label}
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          {note.discipline > 0 && (
+                            <span className="text-xs px-1.5 py-0.5 rounded"
+                              style={{ background: note.discipline >= 7 ? "rgba(46,213,115,0.1)" : note.discipline >= 4 ? "rgba(255,165,2,0.1)" : "rgba(255,71,87,0.1)",
+                                color: note.discipline >= 7 ? "var(--accent-success)" : note.discipline >= 4 ? "var(--accent-warning)" : "var(--accent-danger)",
+                                fontSize: 9 }}>
+                              D:{note.discipline}
+                            </span>
+                          )}
+                          {isActive && (
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ background:"var(--accent)" }}/>
+                          )}
+                        </div>
+                      </div>
+                      {preview && (
+                        <p className="text-xs truncate" style={{ color:"var(--text-muted)" }}>
+                          {preview.slice(0, 60)}{preview.length > 60 ? "…" : ""}
+                        </p>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* Quick nav to Journal calendar for this day */}
