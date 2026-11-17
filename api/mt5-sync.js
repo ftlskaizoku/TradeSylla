@@ -1,5 +1,5 @@
-// api/mt5-sync.js  v4.3 — FIX: VITE_SUPABASE_URL fallback
-import { createClient } from "@supabase/supabase-js"
+// MT5 sync endpoint backed by Firebase Admin and Firestore.
+import { adminDb } from "./_firebase.js"
 
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
@@ -8,18 +8,13 @@ const CORS = {
   "Content-Type": "application/json",
 }
 
-const SUPA_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 export default async function handler(req) {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS })
   if (req.method !== "POST")   return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: CORS })
 
-  if (!SUPA_URL || !SUPA_KEY) {
-    return new Response(JSON.stringify({ error: "Server config error — Supabase env vars missing" }), { status: 500, headers: CORS })
-  }
-
-  const supabase = createClient(SUPA_URL, SUPA_KEY)
+  let db
+  try { db = adminDb() } catch (e) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: CORS }) }
 
   let body
   try { body = await req.json() }
@@ -29,17 +24,20 @@ export default async function handler(req) {
 
   if (!token) return new Response(JSON.stringify({ error: "Missing token" }), { status: 401, headers: CORS })
 
-  const { data: profile } = await supabase
-    .from("profiles").select("id").eq("ea_token", token).single()
-  if (!profile) return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: CORS })
-
+  let profile = null
+  for (const field of ["ea_token", "user_token", "admin_token"]) {
+    const snap = await db.collectionGroup("profiles").where(field, "==", token).limit(1).get()
+    if (!snap.empty) { profile = snap.docs[0].data(); break }
+  }
+  if (!profile?.id) return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: CORS })
   const userId = profile.id
+  const userCollection = (name) => db.collection("users").doc(userId).collection(name)
 
   // ── HEARTBEAT ─────────────────────────────────────────────────────────────
   if (type === "heartbeat") {
     const { login, name, broker, server, balance, equity, currency, leverage, is_demo, ea_version } = body
     if (login) {
-      await supabase.from("broker_connections").upsert({
+      await userCollection("broker_connections").doc(`${userId}_${String(login)}`).set({
         user_id:      userId,
         mt5_login:    String(login),
         account_name: name    || "",
@@ -54,7 +52,7 @@ export default async function handler(req) {
         status:       "connected",
         last_sync:    new Date().toISOString(),
         ea_version:   ea_version || "3.0",
-      }, { onConflict: "user_id,mt5_login" })
+      }, { merge: true })
     }
     return new Response(JSON.stringify({ ok: true, type: "heartbeat" }), { status: 200, headers: CORS })
   }
@@ -64,22 +62,14 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ ok: true, imported: 0, message: "No trades" }), { status: 200, headers: CORS })
   }
 
-  const { data: connection } = await supabase
-    .from("broker_connections")
-    .select("mt5_login")
-    .eq("user_id", userId)
-    .eq("is_mt5_live", true)
-    .order("last_sync", { ascending: false })
-    .limit(1)
-    .single()
+  const connectionSnap = await userCollection("broker_connections").where("is_mt5_live", "==", true).get()
+  const connection = connectionSnap.docs.map(d => d.data()).sort((a,b) => String(b.last_sync || "").localeCompare(String(a.last_sync || "")))[0]
   const accountLogin = connection?.mt5_login || null
 
   let existingTickets = new Set()
   if (!force) {
-    const { data: existing } = await supabase
-      .from("trades").select("mt5_ticket,id,sl,tp")
-      .eq("user_id", userId).not("mt5_ticket", "is", null)
-    existingTickets = new Set((existing || []).map(t => t.mt5_ticket))
+    const existing = await userCollection("trades").where("mt5_ticket", "!=", null).get()
+    existingTickets = new Set(existing.docs.map(d => d.data().mt5_ticket).filter(Boolean))
   }
 
   let imported = 0, skipped = 0, updated = 0
@@ -95,11 +85,11 @@ export default async function handler(req) {
 
     if (ticket && existingTickets.has(ticket)) {
       if (!force) {
-        const { data: old } = await supabase
-          .from("trades").select("id,sl,tp,commission")
-          .eq("mt5_ticket", ticket).eq("user_id", userId).single()
+        const oldSnap = await userCollection("trades").where("mt5_ticket", "==", ticket).limit(1).get()
+        const oldDoc = oldSnap.docs[0]
+        const old = oldDoc?.data()
         if (old && (!old.sl || old.sl === 0) && parseFloat(t.sl) > 0) {
-          await supabase.from("trades").update({
+          await oldDoc.ref.update({
             sl:           parseFloat(t.sl)         || 0,
             tp:           parseFloat(t.tp)         || 0,
             sl_pips:      parseFloat(t.sl_pips)    || 0,
@@ -111,7 +101,7 @@ export default async function handler(req) {
             swap:         parseFloat(t.swap)       || 0,
             account_login: accountLogin,
             exit_time:    t.exit_time || null,
-          }).eq("id", old.id)
+          })
           updated++
         }
         skipped++; symStats[sym].skipped++
@@ -149,14 +139,12 @@ export default async function handler(req) {
     }
 
     if (force && ticket) {
-      const { error } = await supabase.from("trades")
-        .upsert(trade, { onConflict: "user_id,mt5_ticket" })
-      if (error) { errors.push(`${sym} #${ticket}: ${error.message}`); symStats[sym].errors++ }
-      else { imported++; symStats[sym].imported++; if (ticket) existingTickets.add(ticket) }
+      await userCollection("trades").doc(`${userId}_${ticket}`).set({ ...trade, id: `${userId}_${ticket}`, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { merge: true })
+      imported++; symStats[sym].imported++; if (ticket) existingTickets.add(ticket)
     } else {
-      const { error } = await supabase.from("trades").insert([trade])
-      if (error) { errors.push(`${sym} #${ticket}: ${error.message}`); symStats[sym].errors++ }
-      else { imported++; symStats[sym].imported++; if (ticket) existingTickets.add(ticket) }
+      const ref = ticket ? userCollection("trades").doc(`${userId}_${ticket}`) : userCollection("trades").doc()
+      await ref.set({ ...trade, id: ref.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      imported++; symStats[sym].imported++; if (ticket) existingTickets.add(ticket)
     }
   }
 

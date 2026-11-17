@@ -1,131 +1,60 @@
-// api/sylledge-commands.js
-// Three routes handled:
-//   POST /api/sylledge-commands          → SYLLEDGE creates a command
-//   GET  /api/sylledge-commands/pending  → EA polls for pending commands
-//   POST /api/sylledge-commands/response → EA sends back data
-//   POST /api/sylledge-commands/ack      → EA marks command done/error
-
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+// Vercel endpoints for creating and polling SYLLEDGE market data commands.
+import { getAuth } from "firebase-admin/auth"
+import { adminDb, firebaseAdmin } from "./_firebase.js"
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin",  "*")
+  res.setHeader("Access-Control-Allow-Origin", "*")
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
   if (req.method === "OPTIONS") return res.status(200).end()
+  let db
+  try { db = adminDb() } catch (e) { return res.status(500).json({ error: e.message }) }
 
-  const path  = req.url || ""
-  const token = (req.headers.authorization || "").replace("Bearer ", "").trim()
-
-  // ── EA token auth helper ──────────────────────────────────────────────────
-  async function getProfile() {
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, is_admin")
-      .eq("ea_token", token)
-      .single()
-    return data
+  const path = req.url || ""
+  const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim()
+  const getProfile = async () => {
+    if (!token) return null
+    const snap = await db.collectionGroup("profiles").where("ea_token", "==", token).limit(1).get()
+    return snap.empty ? null : snap.docs[0].data()
+  }
+  const getUser = async () => {
+    if (!token) return null
+    try { return await getAuth(firebaseAdmin()).verifyIdToken(token) } catch { return null }
   }
 
-  // ── User JWT auth helper ──────────────────────────────────────────────────
-  async function getUser() {
-    const { data } = await supabase.auth.getUser(token)
-    return data?.user
-  }
-
-  // ── POST /api/sylledge-commands — SYLLEDGE creates a command ─────────────
-  if (req.method === "POST" && !path.includes("/response") && !path.includes("/ack") && !path.includes("/pending")) {
+  // Authenticated TradeSylla client creates an EA command.
+  if (req.method === "POST" && !/\/(response|ack|pending)(\?|$)/.test(path)) {
     const user = await getUser()
     if (!user) return res.status(401).json({ error: "Unauthorized" })
-
-    const { type, symbol, timeframe, from, to, limit } = req.body
+    const { type, symbol, timeframe, from, to, limit } = req.body || {}
     if (!type) return res.status(400).json({ error: "type required" })
-
-    const { data, error } = await supabase
-      .from("sylledge_commands")
-      .insert({
-        user_id:   user.id,
-        type,
-        symbol:    symbol   || null,
-        timeframe: timeframe|| null,
-        from:      from     || null,
-        to:        to       || null,
-        limit:     limit    || 500,
-        status:    "pending",
-      })
-      .select()
-      .single()
-
-    if (error) return res.status(500).json({ error: error.message })
-    return res.status(200).json(data)
+    const ref = db.collection("users").doc(user.uid).collection("sylledge_commands").doc()
+    const command = { id: ref.id, user_id: user.uid, type, symbol: symbol || null, timeframe: timeframe || null, from: from || null, to: to || null, limit: limit || 500, status: "pending", created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    await ref.set(command)
+    return res.status(200).json(command)
   }
 
-  // ── GET /api/sylledge-commands/pending — EA polls ────────────────────────
   if (req.method === "GET" && path.includes("/pending")) {
     const profile = await getProfile()
-    if (!profile) return res.status(401).json({ error: "Invalid token" })
-
-    const { data, error } = await supabase
-      .from("sylledge_commands")
-      .select("*")
-      .eq("status", "pending")
-      .order("created_at", { ascending: true })
-      .limit(10)
-
-    if (error) return res.status(500).json({ error: error.message })
-
-    // Mark as processing
-    if (data && data.length > 0) {
-      const ids = data.map(c => c.id)
-      await supabase
-        .from("sylledge_commands")
-        .update({ status: "processing", updated_at: new Date().toISOString() })
-        .in("id", ids)
-    }
-
-    return res.status(200).json(data || [])
+    if (!profile?.id) return res.status(401).json({ error: "Invalid token" })
+    const snap = await db.collection("users").doc(profile.id).collection("sylledge_commands").where("status", "==", "pending").orderBy("created_at", "asc").limit(10).get()
+    const commands = snap.docs.map(d => ({ ...d.data(), id: d.id }))
+    await Promise.all(snap.docs.map(d => d.ref.update({ status: "processing", updated_at: new Date().toISOString() })))
+    return res.status(200).json(commands)
   }
 
-  // ── POST /api/sylledge-commands/response — EA sends data back ─────────────
-  if (req.method === "POST" && path.includes("/response")) {
+  if (req.method === "POST" && (path.includes("/response") || path.includes("/ack"))) {
     const profile = await getProfile()
-    if (!profile) return res.status(401).json({ error: "Invalid token" })
-
-    const { command_id, ...responseData } = req.body
+    if (!profile?.id) return res.status(401).json({ error: "Invalid token" })
+    const { command_id, status, ...responseData } = req.body || {}
     if (!command_id) return res.status(400).json({ error: "command_id required" })
-
-    const { error } = await supabase
-      .from("sylledge_commands")
-      .update({
-        status:     "done",
-        response:   responseData,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", command_id)
-
-    if (error) return res.status(500).json({ error: error.message })
+    const ref = db.collection("users").doc(profile.id).collection("sylledge_commands").doc(command_id)
+    const snap = await ref.get()
+    if (!snap.exists) return res.status(404).json({ error: "Command not found" })
+    const update = { status: path.includes("/response") ? "done" : (status || "done"), updated_at: new Date().toISOString() }
+    if (path.includes("/response")) update.response = responseData
+    await ref.update(update)
     return res.status(200).json({ success: true })
   }
-
-  // ── POST /api/sylledge-commands/ack — EA acks with status ─────────────────
-  if (req.method === "POST" && path.includes("/ack")) {
-    const profile = await getProfile()
-    if (!profile) return res.status(401).json({ error: "Invalid token" })
-
-    const { command_id, status } = req.body
-    if (!command_id) return res.status(400).json({ error: "command_id required" })
-
-    await supabase
-      .from("sylledge_commands")
-      .update({ status: status || "done", updated_at: new Date().toISOString() })
-      .eq("id", command_id)
-
-    return res.status(200).json({ success: true })
-  }
-
   return res.status(404).json({ error: "Not found" })
 }

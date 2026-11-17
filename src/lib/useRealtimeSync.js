@@ -1,10 +1,11 @@
 // src/lib/useRealtimeSync.js
-// Cross-device real-time sync via Supabase Realtime
+// Cross-device real-time sync via Firestore snapshots
 // Subscribes to all tables and invalidates React Query cache on changes
 
 import { useEffect, useRef, useCallback } from "react"
 import { useQueryClient }                  from "@tanstack/react-query"
-import { supabase }                        from "@/lib/supabase"
+import { collection, onSnapshot }          from "firebase/firestore"
+import { firestore }                       from "@/lib/firebase"
 import { useUser }                         from "@/lib/UserContext"
 
 const TABLES = [
@@ -47,29 +48,22 @@ export function useRealtimeSync() {
     userIdRef.current = user.id
 
     if (channelRef.current) {
-      supabase.removeChannel(channelRef.current)
+      channelRef.current.forEach(unsubscribe => unsubscribe())
       channelRef.current = null
     }
 
-    const channel = supabase.channel(`ts_realtime_${user.id}`)
-    TABLES.forEach(table => {
-      channel.on("postgres_changes",
-        { event: "*", schema: "public", table, filter: `user_id=eq.${user.id}` },
-        (payload) => handleChange(table, payload)
-      )
-    })
-
-    channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") console.log("[TradeSylla] Realtime sync active")
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        setTimeout(() => { userIdRef.current = null }, 5000)
-      }
-    })
-
-    channelRef.current = channel
+    channelRef.current = TABLES.map(table => onSnapshot(
+      collection(firestore, "users", user.id, table),
+      snapshot => snapshot.docChanges().forEach(change => handleChange(table, {
+        eventType: change.type.toUpperCase(),
+        new: change.type === "removed" ? null : { ...change.doc.data(), id: change.doc.id },
+        old: change.type === "removed" ? { ...change.doc.data(), id: change.doc.id } : null,
+      })),
+      error => console.error(`[TradeSylla] Firestore sync failed for ${table}:`, error.message)
+    ))
     return () => {
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current)
+        channelRef.current.forEach(unsubscribe => unsubscribe())
         channelRef.current = null
         userIdRef.current  = null
       }

@@ -1,7 +1,8 @@
 // Vercel Serverless Function — Stripe Checkout Session
 // Creates a Stripe checkout session for Pro subscription
 
-export const config = { runtime: "edge" }
+import { getAuth } from "firebase-admin/auth"
+import { firebaseAdmin } from "./_firebase.js"
 
 const PLANS = {
   pro_monthly: { price: "price_pro_monthly", name: "Pro Monthly" },
@@ -22,6 +23,12 @@ export default async function handler(req) {
 
   try {
     const { plan, userId, email, successUrl, cancelUrl } = await req.json()
+    const idToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+    if (!idToken) return new Response(JSON.stringify({ error: "Sign in required" }), { status: 401 })
+    let identity
+    try { identity = await getAuth(firebaseAdmin()).verifyIdToken(idToken) }
+    catch { return new Response(JSON.stringify({ error: "Invalid session" }), { status: 401 }) }
+    if (userId && userId !== identity.uid) return new Response(JSON.stringify({ error: "User mismatch" }), { status: 403 })
 
     const planConfig = PLANS[plan]
     if (!planConfig) {
@@ -36,12 +43,12 @@ export default async function handler(req) {
       },
       body: new URLSearchParams({
         "mode":                               "subscription",
-        "customer_email":                     email,
+        "customer_email":                     identity.email || email,
         "line_items[0][price]":               planConfig.price,
         "line_items[0][quantity]":            "1",
         "success_url":                        successUrl || "https://tradesylla.vercel.app/Settings?upgraded=true",
         "cancel_url":                         cancelUrl  || "https://tradesylla.vercel.app/pricing",
-        "metadata[user_id]":                  userId,
+        "metadata[user_id]":                  identity.uid,
         "metadata[plan]":                     plan,
         "allow_promotion_codes":              "true",
         "billing_address_collection":         "auto",

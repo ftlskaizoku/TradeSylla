@@ -164,7 +164,7 @@ function BacktestReplayWindow({session,onBack,onUpdate}){
         if(session.date_to)q=q.lte("candle_time",session.date_to+"T23:59:59")
         const{data,error}=await q
         if(error){
-          console.error("Supabase error:", error.message, {sym,tf})
+          console.error("Firestore error:", error.message, {sym,tf})
           setLoadErrMsg(`DB error: ${error.message}`)
           setLoadingData(false)
           return

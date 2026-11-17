@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useUser } from "@/lib/UserContext"
+import { supabase } from "@/lib/supabase"
 import {
   Check, X, Zap, Shield, Brain, BarChart3, TrendingUp,
   Users, Star, ArrowRight, Sparkles, Crown
@@ -139,9 +140,10 @@ export default function Pricing() {
     const planKey = `${plan.id}_${billingCycle}`
     setCheckoutLoading(planKey)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const res  = await fetch("/api/create-checkout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
         body: JSON.stringify({
           plan:       planKey,
           userId:     user.id,

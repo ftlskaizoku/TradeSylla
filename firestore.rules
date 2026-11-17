@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // User-owned application data lives below users/{Firebase UID}/{collection}/{document}.
+    match /users/{userId}/{collection}/{document=**} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+        && (collection != 'profiles' || !request.resource.data.keys().hasAny(['plan', 'is_admin', 'stripe_sub_id']));
+      allow update: if request.auth != null && request.auth.uid == userId
+        && (collection != 'profiles' || (
+          request.resource.data.get('plan', 'free') == resource.data.get('plan', 'free')
+          && request.resource.data.get('is_admin', false) == resource.data.get('is_admin', false)
+          && request.resource.data.get('stripe_sub_id', null) == resource.data.get('stripe_sub_id', null)
+        ));
+      allow delete: if request.auth != null && request.auth.uid == userId && collection != 'profiles';
+    }
+
+    // Market candles are shared, read-only data. Writes go through trusted Vercel APIs.
+    match /sylledge_market_data/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /market_symbols/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

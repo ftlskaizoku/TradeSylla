@@ -5,12 +5,9 @@
 // admin_token, but others have it in user_token or ea_token.
 //
 // FIX: try admin_token → user_token → ea_token in order.
-// Also fixed: VITE_SUPABASE_URL fallback.
+// Market candles and API tokens are stored in Firestore.
 // ─────────────────────────────────────────────────────────────────────────────
-import { createClient } from "@supabase/supabase-js"
-
-const SUPA_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+import { adminDb } from "./_firebase.js"
 
 // Server-side normalization: any broker alias → canonical name
 // Keeps the DB clean even if older EA versions send broker-specific names
@@ -49,9 +46,8 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization")
   if (req.method === "OPTIONS") return res.status(200).end()
-  if (!SUPA_URL || !SUPA_KEY) return res.status(500).json({ error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars" })
-
-  const supabase = createClient(SUPA_URL, SUPA_KEY)
+  let db
+  try { db = adminDb() } catch (e) { return res.status(500).json({ error: e.message }) }
   const token    = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim()
 
   // ── GET — any authenticated user reads market data ─────────────────────────
@@ -59,16 +55,12 @@ export default async function handler(req, res) {
     const { symbol, timeframe, limit = 500, from, to, order = "asc" } = req.query
     if (!symbol || !timeframe) return res.status(400).json({ error: "symbol and timeframe required" })
     const ascending = order !== "desc"
-    let q = supabase.from("sylledge_market_data")
-      .select("candle_time,open_price,high_price,low_price,close_price,volume")
-      .eq("symbol", normalizeSymbol(symbol)).eq("timeframe", timeframe)
-      .order("candle_time", { ascending })
-      .limit(parseInt(limit))
-    if (from) q = q.gte("candle_time", from)
-    if (to)   q = q.lte("candle_time", to)
-    const { data, error } = await q
-    if (error) return res.status(500).json({ error: error.message })
-    return res.status(200).json(data || [])
+    let q = db.collection("sylledge_market_data").where("symbol", "==", normalizeSymbol(symbol)).where("timeframe", "==", timeframe)
+    if (from) q = q.where("candle_time", ">=", from)
+    if (to) q = q.where("candle_time", "<=", to)
+    const snap = await q.orderBy("candle_time", ascending ? "asc" : "desc").limit(Math.min(parseInt(limit) || 500, 5000)).get()
+    const data = snap.docs.map(d => d.data())
+    return res.status(200).json(data)
   }
 
   // ── POST — Market Data EA writes OHLCV data ────────────────────────────────
@@ -80,8 +72,8 @@ export default async function handler(req, res) {
     // Try all 3 token columns (admin_token first — this EA's intended column)
     let profile = null
     for (const col of ["admin_token", "user_token", "ea_token"]) {
-      const { data } = await supabase.from("profiles").select("id").eq(col, token).maybeSingle()
-      if (data) { profile = data; break }
+      const matches = await db.collectionGroup("profiles").where(col, "==", token).limit(1).get()
+      if (!matches.empty) { profile = matches.docs[0].data(); break }
     }
     if (!profile) return res.status(401).json({
       error: "Invalid token — go to Settings → API Keys, regenerate the Market Data EA Token, paste it into AdminToken in the EA"
@@ -107,10 +99,15 @@ export default async function handler(req, res) {
     let inserted = 0
     const BATCH = 500
     for (let i = 0; i < rows.length; i += BATCH) {
-      const { error } = await supabase.from("sylledge_market_data")
-        .upsert(rows.slice(i, i + BATCH), { onConflict: "symbol,timeframe,candle_time", ignoreDuplicates: true })
-      if (error) return res.status(500).json({ error: error.message })
-      inserted += Math.min(BATCH, rows.length - i)
+      const batch = db.batch()
+      const chunk = rows.slice(i, i + BATCH)
+      for (const row of chunk) {
+        const id = `${row.symbol}_${row.timeframe}_${row.candle_time}`.replace(/[^a-zA-Z0-9_-]/g, "_")
+        batch.set(db.collection("sylledge_market_data").doc(id), row, { merge: true })
+      }
+      batch.set(db.collection("market_symbols").doc(`${symbol}_${timeframe}`), { symbol, timeframe }, { merge: true })
+      await batch.commit()
+      inserted += chunk.length
     }
     return res.status(200).json({ success: true, inserted, symbol, timeframe })
   }

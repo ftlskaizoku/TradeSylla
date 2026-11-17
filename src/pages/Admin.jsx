@@ -67,7 +67,7 @@ export default function Admin() {
 
   const [isAdmin, setIsAdmin] = useState(false)
 
-  // Guard — check session email directly from Supabase
+  // Guard — check the Firebase session email directly
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const email = session?.user?.email
@@ -84,24 +84,15 @@ export default function Admin() {
   const fetchAll = async () => {
     setFetching(true)
     try {
-      const [
-        { data: statsData },
-        { data: signups },
-        { data: views },
-        { data: trades },
-        { data: pages },
-      ] = await Promise.all([
-        supabase.rpc('get_admin_stats'),
-        supabase.rpc('get_signups_per_day'),
-        supabase.rpc('get_views_per_day'),
-        supabase.rpc('get_trades_per_day'),
-        supabase.rpc('get_top_pages'),
-      ])
-      setStats(statsData)
-      setSignupsData(signups || [])
-      setViewsData(views || [])
-      setTradesData(trades || [])
-      setTopPages(pages || [])
+      const { data: { session } } = await supabase.auth.getSession()
+      const response = await fetch('/api/admin-stats', { headers: { Authorization: `Bearer ${session?.access_token || ''}` } })
+      if (!response.ok) throw new Error((await response.json()).error || 'Admin stats request failed')
+      const result = await response.json()
+      setStats(result.stats)
+      setSignupsData(result.signups || [])
+      setViewsData(result.views || [])
+      setTradesData(result.trades || [])
+      setTopPages(result.pages || [])
       setLastRefresh(new Date())
     } catch (e) {
       console.error('Admin fetch error:', e)

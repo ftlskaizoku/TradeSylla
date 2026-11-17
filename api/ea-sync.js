@@ -3,16 +3,14 @@
 // Fixes all stacked problems that were causing 0 inserts:
 //
 //  1. Token lookup checks user_token → ea_token → admin_token (covers all users)
-//  2. Batch dedup: fetches ALL existing tickets in ONE query, not per-trade
+//  2. Batch dedup: fetches existing tickets in Firestore batches
 //  3. Payload only includes columns guaranteed to exist after migration
-//  4. Rich error logging: exact Supabase error + column name returned to MT5 log
+//  4. Rich per-trade error logging for the MT5 response
 //  5. Heartbeat updates broker_connections without needing trades
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createClient } from "@supabase/supabase-js"
+import { adminDb } from "./_firebase.js"
 
-const SUPA_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin",  "*")
@@ -22,11 +20,8 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end()
   if (req.method !== "POST")   return res.status(405).json({ error: "Method not allowed" })
 
-  if (!SUPA_URL || !SUPA_KEY) {
-    return res.status(500).json({ error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars on Vercel" })
-  }
-
-  const supabase = createClient(SUPA_URL, SUPA_KEY)
+  let db
+  try { db = adminDb() } catch (e) { return res.status(500).json({ error: e.message }) }
 
   // ── 1. Auth — EA sends token as: Authorization: Bearer <token> ────────────
   const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim()
@@ -37,13 +32,14 @@ export default async function handler(req, res) {
   // Try all 3 columns — handles every token generation history
   let profile = null
   for (const col of ["user_token", "ea_token", "admin_token"]) {
-    const { data } = await supabase.from("profiles").select("id").eq(col, token).maybeSingle()
-    if (data) { profile = data; break }
+    const matches = await db.collectionGroup("profiles").where(col, "==", token).limit(1).get()
+    if (!matches.empty) { profile = matches.docs[0].data(); break }
   }
   if (!profile) {
     return res.status(401).json({ error: "Invalid token. Go to Settings → API Keys, regenerate Sync EA Token, update UserToken in the EA." })
   }
   const userId = profile.id
+  const userCollection = (name) => db.collection("users").doc(userId).collection(name)
 
   // ── 2. Parse body ──────────────────────────────────────────────────────────
   let body
@@ -57,7 +53,7 @@ export default async function handler(req, res) {
   if (trades.length === 0) {
     const login = String(body.account_login || body.login || "")
     if (login) {
-      await supabase.from("broker_connections").upsert({
+      const connection = {
         user_id:      userId,
         mt5_login:    login,
         account_name: body.account_name || body.name  || "",
@@ -71,7 +67,8 @@ export default async function handler(req, res) {
         is_mt5_live:  true,
         status:       "connected",
         last_sync:    new Date().toISOString(),
-      }, { onConflict: "user_id,mt5_login" })
+      }
+      await userCollection("broker_connections").doc(`${userId}_${login}`).set(connection, { merge: true })
     }
     return res.status(200).json({ success: true, message: "heartbeat ok", inserted: 0, updated: 0, skipped: 0 })
   }
@@ -79,21 +76,20 @@ export default async function handler(req, res) {
   // ── 4. Batch dedup — ONE query to get all existing tickets ─────────────────
   const allTickets = trades.map(t => String(t.ticket || t.mt5_ticket || "")).filter(Boolean)
 
-  const { data: existingRows, error: fetchErr } = await supabase
-    .from("trades")
-    .select("id, mt5_ticket, account_login")
-    .eq("user_id", userId)
-    .in("mt5_ticket", allTickets)
-
-  if (fetchErr) {
-    // If mt5_ticket column doesn't exist yet, skip dedup and just try inserting
-    console.error("Dedup fetch error:", fetchErr.message)
+  const existingDocs = []
+  for (let i = 0; i < allTickets.length; i += 30) {
+    const chunk = allTickets.slice(i, i + 30)
+    if (chunk.length) {
+      const snapshot = await userCollection("trades").where("mt5_ticket", "in", chunk).get()
+      existingDocs.push(...snapshot.docs)
+    }
   }
 
   // Map: "ticket:account_login" → existing row id
   const existingMap = new Map()
-  ;(existingRows || []).forEach(r => {
-    existingMap.set(`${r.mt5_ticket}:${r.account_login || ""}`, r.id)
+  existingDocs.forEach(doc => {
+    const r = doc.data()
+    existingMap.set(`${r.mt5_ticket}:${r.account_login || ""}`, doc.id)
   })
 
   // ── 5. Insert / update each trade ─────────────────────────────────────────
@@ -149,25 +145,14 @@ export default async function handler(req, res) {
 
       if (existingId) {
         // UPDATE existing trade
-        const { error } = await supabase.from("trades").update(payload).eq("id", existingId)
-        if (error) results.errors.push(`Update ${ticket}: ${error.message}`)
-        else       results.updated++
+        await userCollection("trades").doc(existingId).set({ ...payload, updated_at: new Date().toISOString() }, { merge: true })
+        results.updated++
       } else {
         // INSERT new trade
-        const { error } = await supabase.from("trades").insert({ ...payload, quality: 5 })
-        if (error) {
-          // 23505 = unique constraint violation (duplicate) — safe to skip
-          if (error.code === "23505") {
-            results.skipped++
-            // Add to map so we don't retry it in the same batch
-            existingMap.set(mapKey, ticket)
-          } else {
-            results.errors.push(`Insert ${ticket}: [${error.code}] ${error.message}`)
-          }
-        } else {
-          results.inserted++
-          existingMap.set(mapKey, ticket)
-        }
+        const ref = userCollection("trades").doc(`${userId}_${ticket}`)
+        await ref.set({ ...payload, id: ref.id, quality: 5, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        results.inserted++
+        existingMap.set(mapKey, ref.id)
       }
     } catch (e) {
       results.errors.push(`Exception on trade: ${e.message}`)

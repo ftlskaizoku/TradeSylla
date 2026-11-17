@@ -1,10 +1,12 @@
-// src/api/supabaseStore.js
+// Firebase-backed data entities; the legacy filename is kept for existing imports.
 // FIX: Removed orphaned `if (error)` after the pagination while loop.
 // `error` was declared with `const` inside the loop block — accessing it
 // outside threw `ReferenceError: error is not defined` → caught by catch(e)
 // → returned [] → every Trade.list() call returned empty array even though
 // the trades were in the database.
 
+import { collection, onSnapshot } from "firebase/firestore"
+import { firebaseAuth, firestore } from "@/lib/firebase"
 import { supabase } from "@/lib/supabase"
 
 // ── Image helpers (kept intact) ───────────────────────────────────────────────
@@ -99,7 +101,7 @@ function localEntity(name) {
   }
 }
 
-// ── Supabase entity factory ───────────────────────────────────────────────────
+// ── Firebase-backed entity factory ───────────────────────────────────────────
 function sbEntity(table) {
   return {
     async list(filters) {
@@ -127,7 +129,7 @@ function sbEntity(table) {
         while (true) {
           const { data: page, error: pageError } = await q.range(from, from + PAGE - 1)
           if (pageError) {
-            console.error(`[supabaseStore] ${table} list error:`, pageError.message)
+            console.error(`[firebaseStore] ${table} list error:`, pageError.message)
             break
           }
           if (!page || page.length === 0) break
@@ -140,7 +142,7 @@ function sbEntity(table) {
 
         return allData.map(rehydrateImages)
       } catch (e) {
-        console.error(`[supabaseStore] ${table} list exception:`, e.message)
+        console.error(`[firebaseStore] ${table} list exception:`, e.message)
         return []
       }
     },
@@ -150,9 +152,9 @@ function sbEntity(table) {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) return localEntity(table).get(id)
         const { data, error } = await supabase.from(table).select("*").eq("id", id).single()
-        if (error) { console.error(`[supabaseStore] ${table} get:`, error.message); return null }
+        if (error) { console.error(`[firebaseStore] ${table} get:`, error.message); return null }
         return rehydrateImages(data)
-      } catch (e) { console.error(`[supabaseStore] ${table} get exception:`, e.message); return null }
+      } catch (e) { console.error(`[firebaseStore] ${table} get exception:`, e.message); return null }
     },
 
     async create(payload) {
@@ -165,9 +167,9 @@ function sbEntity(table) {
           .insert([{ ...clean, user_id: session.user.id }])
           .select()
           .single()
-        if (error) { console.error(`[supabaseStore] ${table} create:`, error.message); throw error }
+        if (error) { console.error(`[firebaseStore] ${table} create:`, error.message); throw error }
         return rehydrateImages(data)
-      } catch (e) { console.error(`[supabaseStore] ${table} create exception:`, e.message); throw e }
+      } catch (e) { console.error(`[firebaseStore] ${table} create exception:`, e.message); throw e }
     },
 
     async update(id, data) {
@@ -181,9 +183,9 @@ function sbEntity(table) {
           .eq("id", id)
           .select()
           .single()
-        if (error) { console.error(`[supabaseStore] ${table} update:`, error.message); throw error }
+        if (error) { console.error(`[firebaseStore] ${table} update:`, error.message); throw error }
         return rehydrateImages(updated)
-      } catch (e) { console.error(`[supabaseStore] ${table} update exception:`, e.message); throw e }
+      } catch (e) { console.error(`[firebaseStore] ${table} update exception:`, e.message); throw e }
     },
 
     async delete(id) {
@@ -191,9 +193,9 @@ function sbEntity(table) {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) return localEntity(table).delete(id)
         const { error } = await supabase.from(table).delete().eq("id", id)
-        if (error) { console.error(`[supabaseStore] ${table} delete:`, error.message); throw error }
+        if (error) { console.error(`[firebaseStore] ${table} delete:`, error.message); throw error }
         return { id }
-      } catch (e) { console.error(`[supabaseStore] ${table} delete exception:`, e.message); throw e }
+      } catch (e) { console.error(`[firebaseStore] ${table} delete exception:`, e.message); throw e }
     },
   }
 }
@@ -222,12 +224,13 @@ export const localUser = {
   },
 }
 
-// ── Migrate localStorage → Supabase (one-time on first login) ─────────────────
-export async function migrateLocalToSupabase(userId) {
+// ── Migrate localStorage → Firebase (one-time on first login) ─────────────────
+export async function migrateLocalToFirebase(userId) {
   const alreadyMigrated = localStorage.getItem("ts_migrated_" + userId)
   if (alreadyMigrated) return { migrated: 0 }
 
   let total = 0
+  let failed = false
   const tables = [
     { key: "trades",             table: "trades"             },
     { key: "playbooks",          table: "playbooks"          },
@@ -241,29 +244,21 @@ export async function migrateLocalToSupabase(userId) {
     if (!local.length) continue
     for (const item of local) {
       const { id, ...rest } = item
-      try { await supabase.from(table).insert([{ ...rest, user_id: userId }]); total++ }
-      catch {}
+      try {
+        const { error } = await supabase.from(table).upsert({ ...rest, id, user_id: userId }, { onConflict: "id" })
+        if (error) failed = true
+        else total++
+      } catch { failed = true }
     }
   }
 
-  localStorage.setItem("ts_migrated_" + userId, "1")
+  if (!failed) localStorage.setItem("ts_migrated_" + userId, "1")
   return { migrated: total }
 }
 
 // ── Real-time subscription helper ─────────────────────────────────────────────
 export function subscribeToTable(table, onChange) {
-  let channel = null
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    if (!session) return
-    channel = supabase
-      .channel(`realtime_${table}_${session.user.id}`)
-      .on("postgres_changes", {
-        event:  "*",
-        schema: "public",
-        table,
-        filter: `user_id=eq.${session.user.id}`,
-      }, () => onChange())
-      .subscribe()
-  })
-  return () => { if (channel) supabase.removeChannel(channel) }
+  const user = firebaseAuth.currentUser
+  if (!user) return () => {}
+  return onSnapshot(collection(firestore, "users", user.uid, table), onChange)
 }

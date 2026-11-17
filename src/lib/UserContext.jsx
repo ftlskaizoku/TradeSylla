@@ -1,6 +1,6 @@
 import { createContext, useState, useContext, useEffect } from 'react'
 import { supabase, authHelpers } from '@/lib/supabase'
-import { migrateLocalToSupabase } from '@/api/supabaseStore'
+import { migrateLocalToFirebase } from '@/api/supabaseStore'
 
 const UserContext = createContext()
 
@@ -22,9 +22,9 @@ export const UserProvider = ({ children }) => {
         buildProfileWithPlan(session.user).then(setUser)
         if (event === 'SIGNED_IN') {
           try {
-            migrateLocalToSupabase(session.user.id)
+            migrateLocalToFirebase(session.user.id)
               .then(({ migrated }) => {
-                if (migrated > 0) console.log(`Migrated ${migrated} records to Supabase`)
+                if (migrated > 0) console.log(`Migrated ${migrated} local records to Firebase`)
               })
               .catch(() => {})
           } catch {}
